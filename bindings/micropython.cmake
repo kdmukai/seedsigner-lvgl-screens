@@ -1,7 +1,7 @@
 add_library(usermod_dm INTERFACE)
 
 target_sources(usermod_dm INTERFACE
-    ${CMAKE_CURRENT_LIST_DIR}/moddisplay_manager_bindings.c
+    ${CMAKE_CURRENT_LIST_DIR}/moddisplay_manager_bindings.cpp
 )
 
 target_include_directories(usermod_dm INTERFACE
