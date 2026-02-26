@@ -1,0 +1,2 @@
+dependencies:
+  espressif/esp_lcd_axs15231b: "^1.0.0"
