@@ -1,4 +1,4 @@
-set(srcs "display_manager.cpp")
+set(srcs "display_manager.c")
 set(include_dirs ".")
 set(component_requires "")
 

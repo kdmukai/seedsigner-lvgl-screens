@@ -9,7 +9,6 @@
 
 // #include "demos/lv_demos.h"
 #include "display_manager.h"
-#include "seedsigner.h"
 #include "esp_io_expander_tca9554.h"
 
 
@@ -64,18 +63,6 @@ void init(void)
 }
 
 
-void render_demo_ui(void) {
-    if (lvgl_port_lock(0))
-    {
-        // lv_demo_benchmark();
-        // lv_demo_music();
-        // lv_demo_widgets();
-        lv_seedsigner_screen();
-        lvgl_port_unlock();
-    }
-}
-
-
 static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 {
     static lv_coord_t last_x = 0;
@@ -99,9 +86,22 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     data->point.y = last_y;
 }
 
+bool run_screen(display_manager_ui_callback_t cb, void *ctx)
+{
+    if (!cb) {
+        return false;
+    }
+    if (!lvgl_port_lock(0)) {
+        return false;
+    }
+    cb(ctx);
+    lvgl_port_unlock();
+    return true;
+}
+
 void lv_port_init(void)
 {
-    lvgl_port_cfg_t port_cfg = {};
+    lvgl_port_cfg_t port_cfg = {0};
 
     port_cfg.task_priority = 4;
     port_cfg.task_stack = 1024 * 5;
@@ -110,7 +110,7 @@ void lv_port_init(void)
     port_cfg.timer_period_ms = 5;
     lvgl_port_init(&port_cfg);
 
-    lvgl_port_display_cfg_t disp_cfg = {};
+    lvgl_port_display_cfg_t disp_cfg = {0};
     disp_cfg.io_handle = io_handle;
     disp_cfg.panel_handle = panel_handle;
     disp_cfg.buffer_size = LCD_BUFFER_SIZE;

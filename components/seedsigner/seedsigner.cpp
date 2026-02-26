@@ -5,8 +5,9 @@
 #include "lvgl.h"
 
 
-void lv_seedsigner_screen(void)
+void demo_screen(void *ctx)
 {
+    (void)ctx;
     // Create a new screen
     lv_obj_t * scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN); // Set background color to black

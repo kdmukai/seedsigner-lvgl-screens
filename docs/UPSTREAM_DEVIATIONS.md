@@ -4,18 +4,20 @@ This branch keeps `components/` copied from `lvgl_seedsigner_modular_test` as-is
 
 ## 1) MicroPython binding layer (added)
 - `bindings/moddisplay_manager_bindings.c`
-- `bindings/display_manager_shim.cpp`
+- `bindings/modseedsigner_bindings.c`
 - `bindings/micropython.cmake`
 - `usercmodule.cmake`
 
 Purpose:
-- Expose only two functions used by the original project `main.cpp`:
-  - `dm.init()`
-  - `dm.render_demo_ui()`
+- Expose minimal display functionality to MicroPython:
+  - `display_manager.init()`
+  - `display_manager.mem_stats()`
+  - `seedsigner_lvgl.demo_screen()`
 
 Why shim exists:
 - MicroPython binding remains in C for compatibility.
 - `display_manager` APIs are C++ symbols, so a tiny C++ shim exports C-callable wrappers.
+- LVGL lock ownership is centralized in `run_screen(...)`; seedsigner UI calls are executed through this path so neither seedsigner nor MicroPython needs lock awareness.
 
 ## 2) No behavioral edits in imported components
 - `components/` were imported from source project and kept unchanged for this checkpoint.
