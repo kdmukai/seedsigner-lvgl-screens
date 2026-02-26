@@ -117,7 +117,7 @@ void lv_port_init(void)
     disp_cfg.sw_rotate = EXAMPLE_DISPLAY_ROTATION;
     disp_cfg.hres = EXAMPLE_LCD_H_RES;
     disp_cfg.vres = EXAMPLE_LCD_V_RES;
-    disp_cfg.trans_size = LCD_BUFFER_SIZE / 10;
+    disp_cfg.trans_size = LCD_BUFFER_SIZE / 4;
     disp_cfg.draw_wait_cb = NULL;
     disp_cfg.flags.buff_dma = false;
     disp_cfg.flags.buff_spiram = true;
