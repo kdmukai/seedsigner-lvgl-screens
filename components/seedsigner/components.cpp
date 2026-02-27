@@ -3,7 +3,17 @@
 #include "lvgl.h"
 
 
-lv_obj_t* top_nav(const char* label_text) {
+extern "C" const top_nav_ctx_t TOP_NAV_CTX_DEFAULTS = {
+    .title = "My Title",
+    .show_back_button = true,
+    .show_power_button = false,
+};
+
+lv_obj_t* top_nav(const top_nav_ctx_t *ctx) {
+    if (!ctx) {
+        ctx = &TOP_NAV_CTX_DEFAULTS;
+    }
+
     lv_obj_t* lv_parent = lv_scr_act();
     lv_obj_t* lv_top_nav = lv_obj_create(lv_parent);
 
@@ -52,6 +62,7 @@ lv_obj_t* top_nav(const char* label_text) {
     //     this->power_button->add_to_lv_obj(lv_top_nav);
     // }
 
+    const char *label_text = ctx->title;
     lv_obj_t* label = lv_label_create(lv_top_nav);
     lv_label_set_text(label, label_text);
     // lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
@@ -85,30 +96,50 @@ lv_obj_t* top_nav(const char* label_text) {
 
 
 void button_set_active(lv_obj_t* lv_button, bool active) {
+    if (!lv_button) {
+        return;
+    }
+    lv_obj_t* label = lv_obj_get_child(lv_button, 0);
+
     if (active) {
         lv_obj_set_style_bg_color(lv_button, lv_color_hex(ACCENT_COLOR), 0);
-        lv_obj_set_style_text_color(lv_obj_get_child(lv_button, 0), lv_color_hex(BUTTON_SELECTED_FONT_COLOR), 0);
+        if (label) {
+            lv_obj_set_style_text_color(label, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), 0);
+        }
     } else {
         lv_obj_set_style_bg_color(lv_button, lv_color_hex(BUTTON_BACKGROUND_COLOR), 0);
-        lv_obj_set_style_text_color(lv_obj_get_child(lv_button, 0), lv_color_hex(BUTTON_FONT_COLOR), 0);
+        if (label) {
+            lv_obj_set_style_text_color(label, lv_color_hex(BUTTON_FONT_COLOR), 0);
+        }
     }
 }
 
 
 void button_toggle_callback(lv_event_t* e) {
     lv_obj_t* btn = lv_event_get_target(e);
-    lv_obj_t* label = lv_obj_get_child(btn, 0);
-    
-    // Check current state by examining background color
-    lv_color_t current_bg = lv_obj_get_style_bg_color(btn, LV_PART_MAIN);
-    bool is_active = (lv_color_to32(current_bg) == lv_color_to32(lv_color_hex(ACCENT_COLOR)));
-    
-    // Toggle to opposite state
-    button_set_active(btn, !is_active);
+    lv_obj_t* parent = lv_obj_get_parent(btn);
+
+    // Enforce single-select behavior: deactivate all sibling buttons first.
+    if (parent) {
+        uint32_t child_count = lv_obj_get_child_cnt(parent);
+        for (uint32_t i = 0; i < child_count; ++i) {
+            lv_obj_t* child = lv_obj_get_child(parent, i);
+            if (!child || child == btn) {
+                continue;
+            }
+            // Only apply button active-state styling to actual buttons.
+            if (lv_obj_check_type(child, &lv_btn_class)) {
+                button_set_active(child, false);
+            }
+        }
+    }
+
+    // Keep clicked button active (no toggle-off on repeat click).
+    button_set_active(btn, true);
 }
 
 
-lv_obj_t* button(lv_obj_t* lv_parent, char* text, lv_obj_t* align_to) {
+lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     lv_obj_t* lv_button = lv_btn_create(lv_parent);
     lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), BUTTON_HEIGHT);
 
@@ -134,5 +165,19 @@ lv_obj_t* button(lv_obj_t* lv_parent, char* text, lv_obj_t* align_to) {
     button_set_active(lv_button, false);
 
     return lv_button;
+}
+
+lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count) {
+    lv_obj_t* last_button = NULL;
+    if (!lv_parent || !items || item_count == 0) {
+        return last_button;
+    }
+
+    for (size_t i = 0; i < item_count; ++i) {
+        const char *label = items[i].label ? items[i].label : "";
+        last_button = button(lv_parent, label, last_button);
+    }
+
+    return last_button;
 }
 
