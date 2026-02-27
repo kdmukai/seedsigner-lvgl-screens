@@ -8,6 +8,40 @@
 #include "display_manager.h"
 #include "seedsigner.h"
 
+#define SEEDSIGNER_RESULT_QUEUE_CAP 16
+#define SEEDSIGNER_RESULT_LABEL_MAX 96
+
+typedef struct {
+    uint32_t index;
+    char label[SEEDSIGNER_RESULT_LABEL_MAX];
+} seedsigner_result_event_t;
+
+static seedsigner_result_event_t s_result_queue[SEEDSIGNER_RESULT_QUEUE_CAP];
+static uint32_t s_result_head = 0;
+static uint32_t s_result_tail = 0;
+static uint32_t s_result_count = 0;
+
+void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label) {
+    seedsigner_result_event_t ev = {
+        .index = index,
+        .label = {0},
+    };
+
+    if (label) {
+        strncpy(ev.label, label, SEEDSIGNER_RESULT_LABEL_MAX - 1);
+        ev.label[SEEDSIGNER_RESULT_LABEL_MAX - 1] = '\0';
+    }
+
+    if (s_result_count == SEEDSIGNER_RESULT_QUEUE_CAP) {
+        s_result_head = (s_result_head + 1) % SEEDSIGNER_RESULT_QUEUE_CAP;
+        s_result_count--;
+    }
+
+    s_result_queue[s_result_tail] = ev;
+    s_result_tail = (s_result_tail + 1) % SEEDSIGNER_RESULT_QUEUE_CAP;
+    s_result_count++;
+}
+
 static mp_obj_t mp_seedsigner_lvgl_demo_screen(void) {
     if (!run_screen(demo_screen, NULL)) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("display lock unavailable"));
@@ -117,10 +151,37 @@ static mp_obj_t mp_seedsigner_lvgl_button_list_screen(mp_obj_t cfg_obj) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(seedsigner_lvgl_button_list_screen_obj, mp_seedsigner_lvgl_button_list_screen);
 
+static mp_obj_t mp_seedsigner_lvgl_poll_for_result(void) {
+    if (s_result_count == 0) {
+        return mp_const_none;
+    }
+
+    seedsigner_result_event_t ev = s_result_queue[s_result_head];
+    s_result_head = (s_result_head + 1) % SEEDSIGNER_RESULT_QUEUE_CAP;
+    s_result_count--;
+
+    mp_obj_t out[3];
+    out[0] = MP_OBJ_NEW_QSTR(MP_QSTR_button_selected);
+    out[1] = mp_obj_new_int_from_uint(ev.index);
+    out[2] = mp_obj_new_str(ev.label, strlen(ev.label));
+    return mp_obj_new_tuple(3, out);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(seedsigner_lvgl_poll_for_result_obj, mp_seedsigner_lvgl_poll_for_result);
+
+static mp_obj_t mp_seedsigner_lvgl_clear_result_queue(void) {
+    s_result_head = 0;
+    s_result_tail = 0;
+    s_result_count = 0;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(seedsigner_lvgl_clear_result_queue_obj, mp_seedsigner_lvgl_clear_result_queue);
+
 static const mp_rom_map_elem_t seedsigner_lvgl_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_seedsigner_lvgl) },
     { MP_ROM_QSTR(MP_QSTR_demo_screen), MP_ROM_PTR(&seedsigner_lvgl_demo_screen_obj) },
     { MP_ROM_QSTR(MP_QSTR_button_list_screen), MP_ROM_PTR(&seedsigner_lvgl_button_list_screen_obj) },
+    { MP_ROM_QSTR(MP_QSTR_poll_for_result), MP_ROM_PTR(&seedsigner_lvgl_poll_for_result_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clear_result_queue), MP_ROM_PTR(&seedsigner_lvgl_clear_result_queue_obj) },
 };
 static MP_DEFINE_CONST_DICT(seedsigner_lvgl_module_globals, seedsigner_lvgl_module_globals_table);
 

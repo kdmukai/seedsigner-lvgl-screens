@@ -4,7 +4,7 @@
 #include "lvgl.h"
 #include "seedsigner.h"
 
-lv_obj_t* top_nav(const top_nav_ctx_t *ctx);
+lv_obj_t* top_nav(lv_obj_t* parent, const top_nav_ctx_t *ctx);
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count);

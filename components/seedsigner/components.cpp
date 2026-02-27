@@ -2,6 +2,7 @@
 #include "gui_constants.h"
 #include "lvgl.h"
 
+#include <stdint.h>
 
 extern "C" const top_nav_ctx_t TOP_NAV_CTX_DEFAULTS = {
     .title = "My Title",
@@ -9,12 +10,12 @@ extern "C" const top_nav_ctx_t TOP_NAV_CTX_DEFAULTS = {
     .show_power_button = false,
 };
 
-lv_obj_t* top_nav(const top_nav_ctx_t *ctx) {
+lv_obj_t* top_nav(lv_obj_t* parent, const top_nav_ctx_t *ctx) {
     if (!ctx) {
         ctx = &TOP_NAV_CTX_DEFAULTS;
     }
 
-    lv_obj_t* lv_parent = lv_scr_act();
+    lv_obj_t* lv_parent = parent ? parent : lv_scr_act();
     lv_obj_t* lv_top_nav = lv_obj_create(lv_parent);
 
     // TopNav should be the full horizontal width
@@ -115,9 +116,75 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
 }
 
 
+extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label) {
+    (void)index;
+    (void)label;
+}
+
+static lv_obj_t *s_press_btn = NULL;
+static lv_point_t s_press_point = {0, 0};
+static bool s_press_dragged = false;
+
 void button_toggle_callback(lv_event_t* e) {
+    lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* btn = lv_event_get_target(e);
+
+    lv_indev_t *indev = lv_indev_get_act();
+
+    if (code == LV_EVENT_PRESSED) {
+        s_press_btn = btn;
+        s_press_dragged = false;
+        if (indev) {
+            lv_indev_get_point(indev, &s_press_point);
+        }
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING) {
+        if (btn == s_press_btn && indev) {
+            lv_point_t p;
+            lv_indev_get_point(indev, &p);
+            int32_t dx = p.x - s_press_point.x;
+            int32_t dy = p.y - s_press_point.y;
+            if (dx < 0) dx = -dx;
+            if (dy < 0) dy = -dy;
+            const int32_t drag_threshold = BUTTON_HEIGHT / 2;
+            if (dx > drag_threshold || dy > drag_threshold) {
+                s_press_dragged = true;
+            }
+        }
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED) {
+        // Keep press state until CLICKED is evaluated.
+        return;
+    }
+
+    if (code != LV_EVENT_CLICKED) {
+        return;
+    }
+
     lv_obj_t* parent = lv_obj_get_parent(btn);
+
+    // Click must correspond to the same pressed button.
+    if (s_press_btn != btn) {
+        s_press_btn = NULL;
+        s_press_dragged = false;
+        return;
+    }
+
+    // Distinguish tap vs drag gestures.
+    // NOTE: Do not gate clicks on lv_indev_get_scroll_obj(). On some flows
+    // (notably a single-button list after a swipe starts on that button),
+    // LVGL can retain a non-NULL scroll_obj and incorrectly suppress future
+    // taps. The movement threshold tracked via s_press_dragged is the stable
+    // source of truth for rejecting swipe/scroll gestures here.
+    if (s_press_dragged) {
+        s_press_btn = NULL;
+        s_press_dragged = false;
+        return;
+    }
 
     // Enforce single-select behavior: deactivate all sibling buttons first.
     if (parent) {
@@ -127,15 +194,40 @@ void button_toggle_callback(lv_event_t* e) {
             if (!child || child == btn) {
                 continue;
             }
-            // Only apply button active-state styling to actual buttons.
             if (lv_obj_check_type(child, &lv_btn_class)) {
                 button_set_active(child, false);
             }
         }
     }
 
-    // Keep clicked button active (no toggle-off on repeat click).
     button_set_active(btn, true);
+
+    uint32_t selected_index = 0;
+    if (parent) {
+        uint32_t child_count = lv_obj_get_child_cnt(parent);
+        uint32_t btn_pos = 0;
+        for (uint32_t i = 0; i < child_count; ++i) {
+            lv_obj_t* child = lv_obj_get_child(parent, i);
+            if (!child || !lv_obj_check_type(child, &lv_btn_class)) {
+                continue;
+            }
+            if (child == btn) {
+                selected_index = btn_pos;
+                break;
+            }
+            btn_pos++;
+        }
+    }
+
+    const char *label_text = "";
+    lv_obj_t* label = lv_obj_get_child(btn, 0);
+    if (label) {
+        label_text = lv_label_get_text(label);
+    }
+    seedsigner_lvgl_on_button_selected(selected_index, label_text);
+
+    s_press_btn = NULL;
+    s_press_dragged = false;
 }
 
 
@@ -158,8 +250,11 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
     lv_label_set_text(label, text);
 
-    // Wire up the toggle callback
+    // Wire up gesture-aware input callback
+    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_RELEASED, NULL);
 
     // Default to inactive state
     button_set_active(lv_button, false);
@@ -169,6 +264,7 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
 
 lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count) {
     lv_obj_t* last_button = NULL;
+    lv_obj_t* first_button = NULL;
     if (!lv_parent || !items || item_count == 0) {
         return last_button;
     }
@@ -176,6 +272,24 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
     for (size_t i = 0; i < item_count; ++i) {
         const char *label = items[i].label ? items[i].label : "";
         last_button = button(lv_parent, label, last_button);
+        if (i == 0) {
+            first_button = last_button;
+        }
+    }
+
+    // Default behavior:
+    // - no button highlighted when there are multiple buttons
+    // - highlight the only button when there is exactly one
+    if (item_count == 1 && first_button) {
+        button_set_active(first_button, true);
+    } else {
+        uint32_t child_count = lv_obj_get_child_cnt(lv_parent);
+        for (uint32_t i = 0; i < child_count; ++i) {
+            lv_obj_t* child = lv_obj_get_child(lv_parent, i);
+            if (child && lv_obj_check_type(child, &lv_btn_class)) {
+                button_set_active(child, false);
+            }
+        }
     }
 
     return last_button;
