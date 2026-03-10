@@ -50,11 +50,27 @@ brew install cmake sdl2 libpng imagemagick
 
 ### Build steps
 
-TBD (to be finalized with actual runner target and CMake options)
+```bash
+cmake -S tools/screen_runner \
+      -B tools/screen_runner/build \
+      -DLVGL_ROOT=/path/to/lvgl \
+      -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)"
+cmake --build tools/screen_runner/build -j
+```
 
 ### Run steps
 
-TBD (to be finalized with actual executable path/flags)
+```bash
+tools/screen_runner/build/screen_runner [tools/scenarios.json]
+```
+
+Keyboard in current minimal slice:
+- arrows, Enter, `1`/`2`/`3` -> forwarded to LVGL keypad/nav path
+- `PageUp` / `PageDown` -> previous/next scenario
+
+If CMake cannot find SDL2, pass one of:
+- `-DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)"`
+- `-DSDL2_DIR=<path containing SDL2Config.cmake>`
 
 ---
 
