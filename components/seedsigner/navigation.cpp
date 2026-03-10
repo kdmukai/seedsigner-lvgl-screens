@@ -17,6 +17,8 @@ typedef struct {
     size_t body_count;
     nav_zone_t zone;
     size_t top_virtual_index;
+    size_t last_body_index;
+    lv_obj_t *parked_body_obj;
     nav_body_layout_t body_layout;
     nav_aux_policy_t aux_policy;
 } nav_ctx_t;
@@ -89,6 +91,15 @@ static bool focus_top(nav_ctx_t *ctx, size_t idx) {
     ctx->top_virtual_index = idx;
     set_top_virtual_active(ctx, idx);
     set_body_active(ctx, NAV_INDEX_NONE);
+
+    // Prevent ENTER from activating parked body button while top-nav virtual zone is active.
+    if (ctx->group) {
+        lv_obj_t *f = lv_group_get_focused(ctx->group);
+        if (f && lv_obj_is_valid(f)) {
+            ctx->parked_body_obj = f;
+            lv_obj_clear_flag(f, LV_OBJ_FLAG_CLICKABLE);
+        }
+    }
     return true;
 }
 
@@ -99,6 +110,13 @@ static bool focus_body(nav_ctx_t *ctx, size_t idx) {
     ctx->zone = NAV_ZONE_BODY;
     set_top_virtual_active(ctx, NAV_INDEX_NONE);
     set_body_active(ctx, idx);
+    ctx->last_body_index = idx;
+
+    if (ctx->parked_body_obj && lv_obj_is_valid(ctx->parked_body_obj)) {
+        lv_obj_add_flag(ctx->parked_body_obj, LV_OBJ_FLAG_CLICKABLE);
+    }
+    ctx->parked_body_obj = NULL;
+
     lv_group_focus_obj(obj);
     return true;
 }
@@ -224,7 +242,10 @@ static void nav_key_handler(lv_event_t *e) {
 
         if (key == LV_KEY_DOWN) {
             if (ctx->zone == NAV_ZONE_TOP) {
-                if (ctx->body_count > 0) focus_body(ctx, 0);
+                if (ctx->body_count > 0) {
+                    size_t restore = (ctx->last_body_index < ctx->body_count) ? ctx->last_body_index : 0;
+                    focus_body(ctx, restore);
+                }
             } else if (ctx->zone == NAV_ZONE_BODY && body_i >= 0 && (size_t)(body_i + 1) < ctx->body_count) {
                 focus_body(ctx, (size_t)(body_i + 1));
             }
@@ -241,10 +262,13 @@ static void nav_key_handler(lv_event_t *e) {
 
         if (ctx->zone == NAV_ZONE_TOP && key == LV_KEY_DOWN) {
             if (ctx->body_count > 0) {
-                size_t target_col = (top_i >= 0) ? (size_t)top_i : 0;
-                if (target_col >= cols) target_col = cols - 1;
-                size_t target = target_col;
-                if (target >= ctx->body_count) target = ctx->body_count - 1;
+                size_t target = ctx->last_body_index;
+                if (target >= ctx->body_count || !ctx->body_items || !ctx->body_items[target]) {
+                    size_t target_col = (top_i >= 0) ? (size_t)top_i : 0;
+                    if (target_col >= cols) target_col = cols - 1;
+                    target = target_col;
+                    if (target >= ctx->body_count) target = ctx->body_count - 1;
+                }
                 focus_body(ctx, target);
             }
             return;
@@ -276,6 +300,11 @@ static void nav_cleanup_handler(lv_event_t *e) {
 
     nav_ctx_t *ctx = (nav_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
+
+    if (ctx->parked_body_obj && lv_obj_is_valid(ctx->parked_body_obj)) {
+        lv_obj_add_flag(ctx->parked_body_obj, LV_OBJ_FLAG_CLICKABLE);
+        ctx->parked_body_obj = NULL;
+    }
 
     if (ctx->group) {
         lv_group_del(ctx->group);
@@ -342,6 +371,7 @@ void nav_bind(const nav_config_t *cfg) {
         }
 
         if (target != NAV_INDEX_NONE) {
+            ctx->last_body_index = target;
             focus_body(ctx, target);
         } else if (ctx->top_count > 0) {
             focus_top(ctx, 0);
