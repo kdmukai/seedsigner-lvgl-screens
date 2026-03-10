@@ -92,6 +92,7 @@ static void set_body_active(nav_ctx_t *ctx, size_t idx) {
 static bool focus_top(nav_ctx_t *ctx, size_t idx) {
     if (!ctx || idx >= ctx->top_count) return false;
     ctx->zone = NAV_ZONE_TOP;
+    set_nav_top_zone_active(true);
     ctx->top_virtual_index = idx;
     set_top_virtual_active(ctx, idx);
     set_body_active(ctx, NAV_INDEX_NONE);
@@ -112,6 +113,7 @@ static bool focus_body(nav_ctx_t *ctx, size_t idx) {
     lv_obj_t *obj = ctx->body_items[idx];
     if (!obj || !lv_obj_is_valid(obj)) return false;
     ctx->zone = NAV_ZONE_BODY;
+    set_nav_top_zone_active(false);
     set_top_virtual_active(ctx, NAV_INDEX_NONE);
     set_body_active(ctx, idx);
     ctx->last_body_index = idx;
@@ -326,6 +328,7 @@ static void nav_cleanup_handler(lv_event_t *e) {
         lv_obj_add_flag(ctx->parked_body_obj, LV_OBJ_FLAG_CLICKABLE);
         ctx->parked_body_obj = NULL;
     }
+    set_nav_top_zone_active(false);
 
     if (ctx->group) {
         lv_group_del(ctx->group);

@@ -22,4 +22,9 @@ void button_set_active(lv_obj_t* lv_button, bool active);
 // to prevent top-nav ENTER from falling through to parked body selection).
 void suppress_next_body_button_click(void);
 
+// Nav layer sets whether virtual top-nav zone is currently active.
+// Body button callbacks use this to hard-block CLICKED handling while top-nav
+// owns input focus.
+void set_nav_top_zone_active(bool active);
+
 #endif // SEEDSIGNER_COMPONENTS_H
