@@ -74,11 +74,21 @@ static void set_top_virtual_active(nav_ctx_t *ctx, size_t idx) {
     }
 }
 
+static void set_body_active(nav_ctx_t *ctx, size_t idx) {
+    if (!ctx || !ctx->body_items) return;
+    for (size_t i = 0; i < ctx->body_count; ++i) {
+        if (ctx->body_items[i]) {
+            button_set_active(ctx->body_items[i], i == idx);
+        }
+    }
+}
+
 static bool focus_top(nav_ctx_t *ctx, size_t idx) {
     if (!ctx || idx >= ctx->top_count) return false;
     ctx->zone = NAV_ZONE_TOP;
     ctx->top_virtual_index = idx;
     set_top_virtual_active(ctx, idx);
+    set_body_active(ctx, NAV_INDEX_NONE);
     return true;
 }
 
@@ -88,6 +98,7 @@ static bool focus_body(nav_ctx_t *ctx, size_t idx) {
     if (!obj || !lv_obj_is_valid(obj)) return false;
     ctx->zone = NAV_ZONE_BODY;
     set_top_virtual_active(ctx, NAV_INDEX_NONE);
+    set_body_active(ctx, idx);
     lv_group_focus_obj(obj);
     return true;
 }
@@ -181,7 +192,9 @@ static void nav_key_handler(lv_event_t *e) {
     int top_i = (ctx->zone == NAV_ZONE_TOP) ? (int)ctx->top_virtual_index : -1;
     int body_i = focused_index_in(ctx, ctx->body_items, ctx->body_count);
 
-    if (body_i >= 0) {
+    // Keep top zone authoritative while virtual top-nav is active; otherwise,
+    // the still-focused body object can incorrectly force zone/body movement.
+    if (ctx->zone != NAV_ZONE_TOP && body_i >= 0) {
         ctx->zone = NAV_ZONE_BODY;
     }
     if (ctx->zone == NAV_ZONE_TOP && (top_i < 0 || (size_t)top_i >= ctx->top_count)) {
