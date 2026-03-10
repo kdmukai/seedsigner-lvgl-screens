@@ -17,7 +17,7 @@ const int WARNING_COLOR = 0xffd60a;
 const int DIRE_WARNING_COLOR = 0xff0000;
 const int SUCCESS_COLOR = 0x00dd00;
 const int BITCOIN_ORANGE = 0xff9416;
-const int ACCENT_COLOR = 0xff6600;
+const int ACCENT_COLOR = 0xff9f0a;
 const int TESTNET_COLOR = 0x00f100;
 const int REGTEST_COLOR = 0x00caf1;
 

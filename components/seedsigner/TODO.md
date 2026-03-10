@@ -18,3 +18,8 @@ For cross-cutting nav + runner work, use:
 - [ ] Enforce input-mode default focus policy:
   - touch: no default active body button unless single option
   - hardware: default active button in BODY (never TOP_NAV)
+
+## Architecture separation (long-term)
+
+- [ ] Migrate desktop/tooling LVGL dependency to standalone pinned clone workflow (e.g., `third_party/lvgl`) rather than ESP-IDF managed component discovery.
+- [ ] Separate LVGL screen/core modules from ESP-specific integration so screen layer can compile/run without ESP target dependencies.

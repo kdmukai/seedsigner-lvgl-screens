@@ -121,6 +121,13 @@ Exit criteria:
 
 ---
 
+## Architecture migration reminders (long-term)
+
+- [ ] Standardize LVGL acquisition for desktop/simulator workflows via explicit standalone clone (e.g., `third_party/lvgl` pinned to a project tag), instead of relying on ESP-IDF managed component paths.
+- [ ] Define and document the canonical pinned LVGL tag/commit and update setup docs/scripts to enforce it.
+- [ ] Fully separate SeedSigner LVGL screen/core code from ESP-target integration glue so the screen layer builds independently across desktop and ESP targets.
+- [ ] Keep ESP-specific transport/board/bootstrap code behind target-specific adapters/interfaces.
+
 ## Completion / cleanup policy
 
 When all phases are done:
