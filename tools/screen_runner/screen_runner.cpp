@@ -34,6 +34,8 @@ struct scenario_def_t {
 
 static int g_width = 480;
 static int g_height = 320;
+// Runner chrome safety inset to avoid OS/window corner clipping on desktop.
+static int g_viewport_pad = 24;
 static std::vector<lv_color_t> g_fb;
 
 static uint32_t g_pending_key = 0;
@@ -216,7 +218,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    SDL_Window *window = SDL_CreateWindow("screen_runner", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_width, g_height, SDL_WINDOW_SHOWN);
+    int window_w = g_width + (g_viewport_pad * 2);
+    int window_h = g_height + (g_viewport_pad * 2);
+    SDL_Window *window = SDL_CreateWindow("screen_runner", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, window_w, window_h, SDL_WINDOW_SHOWN);
     if (!window) {
         SDL_Log("Window create failed: %s", SDL_GetError());
         SDL_Quit();
@@ -311,8 +315,17 @@ int main(int argc, char **argv) {
         lv_timer_handler();
 
         blit_to_texture(texture);
+        // Use a subtle dark frame so the emulated viewport bounds are obvious.
+        SDL_SetRenderDrawColor(renderer, 18, 18, 18, 255);
         SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
+
+        SDL_Rect dst = {g_viewport_pad, g_viewport_pad, g_width, g_height};
+        SDL_RenderCopy(renderer, texture, NULL, &dst);
+
+        // Thin border around viewport for clear visual separation from window chrome.
+        SDL_SetRenderDrawColor(renderer, 62, 62, 62, 255);
+        SDL_RenderDrawRect(renderer, &dst);
+
         SDL_RenderPresent(renderer);
     }
 

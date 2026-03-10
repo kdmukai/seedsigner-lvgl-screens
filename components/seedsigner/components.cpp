@@ -24,6 +24,10 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
     lv_obj_set_style_radius(btn, BUTTON_RADIUS, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
+    // Top-nav focus/selection should switch instantly (no eased theme transition).
+    lv_obj_set_style_transition_time(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_transition_time(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_transition_time(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
