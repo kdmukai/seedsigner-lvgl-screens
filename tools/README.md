@@ -15,7 +15,6 @@ Utilities for desktop/local validation workflows around SeedSigner C-module scre
 - `screen_runner/`
   - Interactive desktop runner (in progress) for live input/navigation testing.
   - Primary docs: `screen_runner/README.md`
-  - Project-level runner notes: `../docs/SCREEN_RUNNER.md`
 
 ## How these tools relate
 
