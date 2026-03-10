@@ -82,8 +82,9 @@ tools/screen_runner/build/screen_runner [tools/scenarios.json]
 ```
 
 Keyboard in current minimal slice:
-- arrows, Enter, `1`/`2`/`3` -> forwarded to LVGL keypad/nav path
-  - aux fallback: `F1`/`F2`/`F3`
+- arrows, Enter -> forwarded to LVGL keypad/nav path
+- `1`/`2`/`3` and `F1`/`F2`/`F3` -> temporary compatibility mapping to ENTER
+  - note: distinct aux-key semantics will be added with dedicated runner aux-event plumbing
 - scenario switching:
   - `PageUp` / `PageDown`
   - mac-friendly: `[` / `]`
