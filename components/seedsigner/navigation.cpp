@@ -1,5 +1,7 @@
 #include "navigation.h"
 
+#include <cmath>
+
 #define NAV_INDEX_NONE ((size_t)-1)
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_aux_key(const char *key_name) {
@@ -80,6 +82,47 @@ static size_t first_valid_body_index(nav_ctx_t *ctx) {
     return NAV_INDEX_NONE;
 }
 
+static size_t grid_columns_for_count(size_t body_count) {
+    if (body_count <= 1) return 1;
+    if (body_count == 4) return 2; // explicit common case (main_menu 2x2)
+
+    size_t c = (size_t)std::ceil(std::sqrt((double)body_count));
+    return c > 0 ? c : 1;
+}
+
+static size_t grid_move(size_t current, size_t body_count, size_t cols, uint32_t key) {
+    if (body_count == 0 || cols == 0 || current >= body_count) return current;
+
+    size_t row = current / cols;
+    size_t col = current % cols;
+
+    if (key == LV_KEY_LEFT) {
+        if (col == 0) return current;
+        size_t target = current - 1;
+        return target < body_count ? target : current;
+    }
+
+    if (key == LV_KEY_RIGHT) {
+        size_t target = current + 1;
+        if ((target / cols) != row) return current;
+        return target < body_count ? target : current;
+    }
+
+    if (key == LV_KEY_UP) {
+        if (row == 0) return current;
+        size_t target = current - cols;
+        return target < body_count ? target : current;
+    }
+
+    if (key == LV_KEY_DOWN) {
+        size_t target = current + cols;
+        if (target < body_count) return target;
+        return current;
+    }
+
+    return current;
+}
+
 static void nav_key_handler(lv_event_t *e) {
     if (!e) return;
     if (lv_event_get_code(e) != LV_EVENT_KEY) return;
@@ -113,6 +156,14 @@ static void nav_key_handler(lv_event_t *e) {
     if (top_i >= 0) ctx->zone = NAV_ZONE_TOP;
     if (body_i >= 0) ctx->zone = NAV_ZONE_BODY;
 
+    if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+        if (ctx->zone == NAV_ZONE_TOP && ctx->top_count > 1 && top_i >= 0) {
+            if (key == LV_KEY_LEFT && top_i > 0) focus_top(ctx, (size_t)(top_i - 1));
+            else if (key == LV_KEY_RIGHT && (size_t)(top_i + 1) < ctx->top_count) focus_top(ctx, (size_t)(top_i + 1));
+            return;
+        }
+    }
+
     if (ctx->body_layout == NAV_BODY_VERTICAL) {
         if (key == LV_KEY_UP) {
             if (ctx->zone == NAV_ZONE_BODY) {
@@ -135,12 +186,41 @@ static void nav_key_handler(lv_event_t *e) {
         }
 
         if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
-            if (ctx->zone == NAV_ZONE_TOP && ctx->top_count > 1 && top_i >= 0) {
-                if (key == LV_KEY_LEFT && top_i > 0) focus_top(ctx, (size_t)(top_i - 1));
-                else if (key == LV_KEY_RIGHT && (size_t)(top_i + 1) < ctx->top_count) focus_top(ctx, (size_t)(top_i + 1));
+            return; // body no-op; top-nav already handled above
+        }
+    }
+
+    if (ctx->body_layout == NAV_BODY_GRID) {
+        size_t cols = grid_columns_for_count(ctx->body_count);
+
+        if (ctx->zone == NAV_ZONE_TOP && key == LV_KEY_DOWN) {
+            if (ctx->body_count > 0) {
+                size_t target_col = (top_i >= 0) ? (size_t)top_i : 0;
+                if (target_col >= cols) target_col = cols - 1;
+                size_t target = target_col;
+                if (target >= ctx->body_count) target = ctx->body_count - 1;
+                focus_body(ctx, target);
             }
             return;
         }
+
+        if (ctx->zone == NAV_ZONE_BODY && body_i >= 0) {
+            if (key == LV_KEY_UP && (size_t)body_i < cols && ctx->top_count > 0) {
+                size_t target_top = ((size_t)body_i < ctx->top_count) ? (size_t)body_i : 0;
+                focus_top(ctx, target_top);
+                return;
+            }
+
+            if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT || key == LV_KEY_UP || key == LV_KEY_DOWN) {
+                size_t next_i = grid_move((size_t)body_i, ctx->body_count, cols, key);
+                if (next_i != (size_t)body_i) {
+                    focus_body(ctx, next_i);
+                }
+                return;
+            }
+        }
+
+        return;
     }
 }
 

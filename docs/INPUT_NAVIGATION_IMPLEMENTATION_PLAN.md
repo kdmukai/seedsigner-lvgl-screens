@@ -70,10 +70,10 @@ Exit criteria:
 
 ## Phase 3 — Layout-specific navigation rollout
 
-- [ ] `button_list_screen` finalize vertical behavior + top-nav transitions
-- [ ] `main_menu_screen` implement grid (2x2) directional neighbor behavior
-- [ ] Ensure BODY default focus remains in BODY for hardware mode
-- [ ] Validate top-nav enters/exits predictably from each layout
+- [x] `button_list_screen` finalize vertical behavior + top-nav transitions
+- [x] `main_menu_screen` implement grid (2x2) directional neighbor behavior
+- [x] Ensure BODY default focus remains in BODY for hardware mode
+- [x] Validate top-nav enters/exits predictably from each layout
 
 Exit criteria:
 - Vertical and grid screens both conform to intended navigation behavior.
