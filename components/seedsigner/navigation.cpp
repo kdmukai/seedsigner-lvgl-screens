@@ -250,6 +250,9 @@ void nav_bind(const nav_config_t *cfg) {
     lv_memset_00(ctx, sizeof(*ctx));
 
     ctx->group = lv_group_create();
+    // Avoid re-entrant focus/state churn while group population is in progress.
+    // We'll unfreeze and set explicit initial focus once all objects are added.
+    lv_group_focus_freeze(ctx->group, true);
     ctx->body_count = cfg->body_item_count;
     if (ctx->body_count > 0) {
         ctx->body_items = (lv_obj_t **)lv_mem_alloc(sizeof(lv_obj_t *) * ctx->body_count);
@@ -278,6 +281,10 @@ void nav_bind(const nav_config_t *cfg) {
     for (size_t i = 0; i < ctx->body_count; ++i) {
         if (ctx->body_items[i]) lv_group_add_obj(ctx->group, ctx->body_items[i]);
     }
+
+    // Group is now fully populated; enable normal focus behavior and apply
+    // deterministic initial focus policy.
+    lv_group_focus_freeze(ctx->group, false);
 
     input_mode_t mode = cfg->has_input_mode_override ? cfg->input_mode_override : input_profile_get_mode();
     if (mode == INPUT_MODE_HARDWARE) {
