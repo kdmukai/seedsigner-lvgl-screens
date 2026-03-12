@@ -69,6 +69,14 @@ static uint32_t g_pending_key = 0;
 static bool g_key_ready = false;
 
 // ---------------------------------------------------------------------------
+// Pointer indev state (TOUCH/Mouse mode)
+// ---------------------------------------------------------------------------
+
+static int  g_pointer_x       = 0;
+static int  g_pointer_y       = 0;
+static bool g_pointer_pressed = false;
+
+// ---------------------------------------------------------------------------
 // Scenario list (global for load_scenario helper)
 // ---------------------------------------------------------------------------
 
@@ -105,6 +113,13 @@ static int g_title_tex_h = 0;
 // Title bar logo (loaded from screen_runner_logo.bmp at startup)
 static SDL_Texture *g_logo_tex = NULL;
 static int g_logo_w = 0, g_logo_h = 0;
+
+// Title-bar mode badge (clickable, right-aligned)
+static SDL_Texture *g_mode_label_tex  = NULL;  // "Keyboard" or "Mouse" — rebuilt on toggle
+static int          g_mode_label_w    = 0;
+static SDL_Texture *g_mode_prefix_tex = NULL;  // static "Input mode:" label
+static int          g_mode_prefix_w   = 0;
+static SDL_Rect     g_mode_badge_rect = {};    // logical rect of badge; hit-tested on click
 
 // Status bar (below viewport)
 static SDL_Texture *g_status_tex = NULL;
@@ -353,6 +368,32 @@ static void draw_label_strip(SDL_Renderer *renderer) {
     blit_text(renderer, g_label_strip_tex, g_label_rect.x + 6, text_y, w, tex_phys_h);
 }
 
+static void rebuild_mode_label(SDL_Renderer *renderer) {
+    if (g_mode_label_tex) { SDL_DestroyTexture(g_mode_label_tex); g_mode_label_tex = NULL; }
+    if (!g_font_sm) return;
+    const char *label = (input_profile_get_mode() == INPUT_MODE_TOUCH) ? "Mouse" : "Keyboard";
+    SDL_Color white = {0xe8, 0xe8, 0xe8, 0xFF};
+    int h = 0;
+    g_mode_label_tex = make_text_tex(renderer, g_font_sm, label, white, &g_mode_label_w, &h);
+    (void)h;
+}
+
+// Forward declaration (load_scenario defined below).
+static void load_scenario(SDL_Renderer *renderer, size_t idx);
+
+static void toggle_input_mode(SDL_Renderer *renderer) {
+    input_mode_t next = (input_profile_get_mode() == INPUT_MODE_HARDWARE)
+                        ? INPUT_MODE_TOUCH : INPUT_MODE_HARDWARE;
+    input_profile_set_mode(next);
+    g_pointer_pressed = false;
+    g_key_ready       = false;
+    load_scenario(renderer, g_scenario_idx);
+    rebuild_mode_label(renderer);
+    g_status_text = (next == INPUT_MODE_TOUCH) ? "Mouse mode" : "Keyboard mode";
+    if (g_status_tex) { SDL_DestroyTexture(g_status_tex); g_status_tex = NULL; }
+    g_status_set_ms = SDL_GetTicks();
+}
+
 static void draw_title_bar(SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, 0x0e, 0x0e, 0x0e, 0xFF);
     SDL_RenderFillRect(renderer, &g_title_rect);
@@ -380,6 +421,48 @@ static void draw_title_bar(SDL_Renderer *renderer) {
     if (g_title_rest_tex) {
         int text_y = g_title_rect.y + (g_title_rect.h - (int)(g_title_tex_h / g_dpi_scale)) / 2;
         blit_text(renderer, g_title_rest_tex, cur_x, text_y, g_title_rest_w, g_title_tex_h);
+    }
+
+    // Right-aligned mode badge: "Input mode:  [Keyboard]" or "Input mode:  [Mouse]"
+    if (g_mode_label_tex) {
+        const int PAD_X = 10, PAD_Y = 4;
+
+        int label_phys_h = 0;
+        { int tw = 0; SDL_QueryTexture(g_mode_label_tex, NULL, NULL, &tw, &label_phys_h); }
+        int log_label_w = (int)(g_mode_label_w / g_dpi_scale);
+        int log_label_h = (int)(label_phys_h / g_dpi_scale);
+        int badge_w = log_label_w + PAD_X * 2;
+        int badge_h = log_label_h + PAD_Y * 2;
+        int badge_x = g_title_rect.x + g_title_rect.w - badge_w - 8;
+        int badge_y = g_title_rect.y + (g_title_rect.h - badge_h) / 2;
+        g_mode_badge_rect = {badge_x, badge_y, badge_w, badge_h};
+
+        // "Input mode:" prefix to the left of the badge
+        if (g_mode_prefix_tex) {
+            int prefix_phys_h = 0;
+            { int tw = 0; SDL_QueryTexture(g_mode_prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
+            int log_prefix_w = (int)(g_mode_prefix_w / g_dpi_scale);
+            int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
+            int prefix_x = badge_x - log_prefix_w - 6;
+            int prefix_y = g_title_rect.y + (g_title_rect.h - log_prefix_h) / 2;
+            blit_text(renderer, g_mode_prefix_tex, prefix_x, prefix_y,
+                      g_mode_prefix_w, prefix_phys_h);
+        }
+
+        // Colored badge fill + border
+        bool is_touch = (input_profile_get_mode() == INPUT_MODE_TOUCH);
+        SDL_SetRenderDrawColor(renderer,
+            is_touch ? 0xc8 : 0x3d,
+            is_touch ? 0x6f : 0x6b,
+            is_touch ? 0x00 : 0x8c, 0xFF);
+        SDL_RenderFillRect(renderer, &g_mode_badge_rect);
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
+        SDL_RenderDrawRect(renderer, &g_mode_badge_rect);
+
+        // Mode text centered in badge
+        blit_text(renderer, g_mode_label_tex,
+                  badge_x + PAD_X, badge_y + PAD_Y,
+                  g_mode_label_w, label_phys_h);
     }
 }
 
@@ -537,6 +620,10 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 
 static void keypad_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     (void)drv;
+    if (input_profile_get_mode() != INPUT_MODE_HARDWARE) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     if (g_key_ready) {
         data->state = LV_INDEV_STATE_PRESSED;
         data->key   = g_pending_key;
@@ -544,6 +631,18 @@ static void keypad_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
+}
+
+static void pointer_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
+    (void)drv;
+    if (input_profile_get_mode() != INPUT_MODE_TOUCH) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    // Translate SDL logical coords → LVGL viewport-local coords
+    data->point.x = (lv_coord_t)(g_pointer_x - g_viewport_rect.x);
+    data->point.y = (lv_coord_t)(g_pointer_y - g_viewport_rect.y);
+    data->state   = g_pointer_pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 static uint32_t map_sdl_key(SDL_Keycode key) {
@@ -724,9 +823,26 @@ int main(int argc, char **argv) {
     indev_drv.read_cb = keypad_read_cb;
     lv_indev_drv_register(&indev_drv);
 
+    static lv_indev_drv_t pointer_drv;
+    lv_indev_drv_init(&pointer_drv);
+    pointer_drv.type    = LV_INDEV_TYPE_POINTER;
+    pointer_drv.read_cb = pointer_read_cb;
+    lv_indev_drv_register(&pointer_drv);
+
     input_profile_set_mode(INPUT_MODE_HARDWARE);
 
     build_chrome_rows(renderer);
+
+    // Build mode badge textures (prefix is static; label changes on toggle).
+    if (g_font_sm) {
+        SDL_Color dim = {0x60, 0x60, 0x60, 0xFF};
+        int h = 0;
+        g_mode_prefix_tex = make_text_tex(renderer, g_font_sm, "Input mode:",
+                                          dim, &g_mode_prefix_w, &h);
+        (void)h;
+    }
+    rebuild_mode_label(renderer);
+
     load_scenario(renderer, 0);
     SDL_SetWindowTitle(window, "screen_runner");
 
@@ -739,6 +855,14 @@ int main(int argc, char **argv) {
             if (ev.type == SDL_QUIT) {
                 running = false;
 
+            } else if (ev.type == SDL_MOUSEMOTION) {
+                g_pointer_x = ev.motion.x;
+                g_pointer_y = ev.motion.y;
+
+            } else if (ev.type == SDL_MOUSEBUTTONUP) {
+                if (ev.button.button == SDL_BUTTON_LEFT)
+                    g_pointer_pressed = false;
+
             } else if (ev.type == SDL_MOUSEWHEEL) {
                 int mx, my;
                 SDL_GetMouseState(&mx, &my);
@@ -749,6 +873,38 @@ int main(int argc, char **argv) {
                 if (over_chrome) {
                     g_chrome_scroll_y -= ev.wheel.y * g_chrome_row_h * 2;
                     chrome_scroll_clamp();
+                }
+                bool over_viewport = (mx >= g_viewport_rect.x &&
+                                      mx < g_viewport_rect.x + g_viewport_rect.w &&
+                                      my >= g_viewport_rect.y &&
+                                      my < g_viewport_rect.y + g_viewport_rect.h);
+                if (over_viewport && input_profile_get_mode() == INPUT_MODE_TOUCH) {
+                    lv_obj_t *scr = lv_scr_act();
+                    uint32_t n = lv_obj_get_child_cnt(scr);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        lv_obj_t *child = lv_obj_get_child(scr, (int32_t)i);
+                        // Only scroll containers that actually have overflow content.
+                        // This prevents mistakenly scrolling the top_nav (no overflow)
+                        // and correctly targets the body content container.
+                        if (lv_obj_has_flag(child, LV_OBJ_FLAG_SCROLLABLE) &&
+                                lv_obj_get_scroll_dir(child) != LV_DIR_NONE &&
+                                (lv_obj_get_scroll_top(child) > 0 ||
+                                 lv_obj_get_scroll_bottom(child) > 0)) {
+                            // scroll_by(0, +dy): children move down → reveal top (scroll up)
+                            // scroll_by(0, -dy): children move up → reveal bottom (scroll down)
+                            // ev.wheel.y > 0 = user intends scroll up (same convention as chrome scroll)
+                            lv_coord_t dy = (lv_coord_t)(ev.wheel.y * 40);
+                            if (dy > 0) {
+                                lv_coord_t avail = lv_obj_get_scroll_top(child);
+                                if (dy > avail) dy = avail;
+                            } else if (dy < 0) {
+                                lv_coord_t avail = lv_obj_get_scroll_bottom(child);
+                                if (-dy > avail) dy = -avail;
+                            }
+                            if (dy != 0) lv_obj_scroll_by(child, 0, dy, LV_ANIM_OFF);
+                            break;
+                        }
+                    }
                 }
 
             } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
@@ -763,6 +919,24 @@ int main(int argc, char **argv) {
                         load_scenario(renderer, g_chrome_rows[row_idx].scenario_idx);
                 }
 
+                // Mode badge click (in title bar)
+                bool over_badge = (bx >= g_mode_badge_rect.x &&
+                                   bx < g_mode_badge_rect.x + g_mode_badge_rect.w &&
+                                   by >= g_mode_badge_rect.y &&
+                                   by < g_mode_badge_rect.y + g_mode_badge_rect.h);
+                if (over_badge) toggle_input_mode(renderer);
+
+                // Viewport press (touch/mouse mode only)
+                bool over_viewport = (bx >= g_viewport_rect.x &&
+                                      bx < g_viewport_rect.x + g_viewport_rect.w &&
+                                      by >= g_viewport_rect.y &&
+                                      by < g_viewport_rect.y + g_viewport_rect.h);
+                if (over_viewport && input_profile_get_mode() == INPUT_MODE_TOUCH) {
+                    g_pointer_x = bx;
+                    g_pointer_y = by;
+                    g_pointer_pressed = true;
+                }
+
             } else if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode key = ev.key.keysym.sym;
                 bool prev = (key == SDLK_PAGEUP  || key == SDLK_LEFTBRACKET  || key == SDLK_COMMA);
@@ -773,6 +947,8 @@ int main(int argc, char **argv) {
                     load_scenario(renderer, n);
                 } else if (next) {
                     load_scenario(renderer, (g_scenario_idx + 1) % g_scenarios.size());
+                } else if (key == SDLK_t) {
+                    toggle_input_mode(renderer);
                 } else {
                     uint32_t mapped = map_sdl_key(key);
                     if (mapped != 0) { g_pending_key = mapped; g_key_ready = true; }
@@ -810,11 +986,13 @@ int main(int argc, char **argv) {
     }
 
     // Cleanup.
-    if (g_logo_tex)        SDL_DestroyTexture(g_logo_tex);
-    if (g_status_tex)      SDL_DestroyTexture(g_status_tex);
-    if (g_label_strip_tex) SDL_DestroyTexture(g_label_strip_tex);
-    if (g_title_brand_tex) SDL_DestroyTexture(g_title_brand_tex);
-    if (g_title_rest_tex)  SDL_DestroyTexture(g_title_rest_tex);
+    if (g_logo_tex)         SDL_DestroyTexture(g_logo_tex);
+    if (g_mode_label_tex)   SDL_DestroyTexture(g_mode_label_tex);
+    if (g_mode_prefix_tex)  SDL_DestroyTexture(g_mode_prefix_tex);
+    if (g_status_tex)       SDL_DestroyTexture(g_status_tex);
+    if (g_label_strip_tex)  SDL_DestroyTexture(g_label_strip_tex);
+    if (g_title_brand_tex)  SDL_DestroyTexture(g_title_brand_tex);
+    if (g_title_rest_tex)   SDL_DestroyTexture(g_title_rest_tex);
     for (auto &r : g_chrome_rows)
         if (r.label_tex) SDL_DestroyTexture(r.label_tex);
 

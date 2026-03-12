@@ -24,11 +24,6 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
     lv_obj_set_style_radius(btn, BUTTON_RADIUS, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
-    // Top-nav focus/selection should switch instantly (no eased theme transition).
-    // LVGL 8.4-compatible way: clear transition descriptor for relevant selectors.
-    lv_obj_set_style_transition(btn, NULL, LV_PART_MAIN);
-    lv_obj_set_style_transition(btn, NULL, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_transition(btn, NULL, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
@@ -56,6 +51,7 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     // TopNav should be the full horizontal width
     lv_obj_set_size(lv_top_nav, lv_pct(100), TOP_NAV_HEIGHT);
     lv_obj_set_scrollbar_mode(lv_top_nav, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(lv_top_nav, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(lv_top_nav, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_set_style_bg_color(lv_top_nav, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);

@@ -18,6 +18,7 @@ These apply on all platforms.
 - `1` / `2` / `3` — mapped to ENTER (KEY1/KEY2/KEY3 compatibility)
 - `PageUp` / `[` / `,` — load previous scenario
 - `PageDown` / `]` / `.` — load next scenario
+- `T` — toggle input mode (Keyboard / Mouse)
 
 **Mouse**
 - Click any row in the sidebar to load that scenario
