@@ -684,11 +684,23 @@ static void blit_to_texture(SDL_Texture *texture) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char **argv) {
-    const char *scenarios_file = "tools/scenarios.json";
-    if (argc > 1) scenarios_file = argv[1];
+    // Resolve scenarios.json: explicit arg > next to binary > repo-root default.
+    std::string scenarios_path;
+    if (argc > 1) {
+        scenarios_path = argv[1];
+    } else {
+        char *base = SDL_GetBasePath();
+        if (base) {
+            scenarios_path = std::string(base) + "scenarios.json";
+            SDL_free(base);
+        }
+        if (scenarios_path.empty() || load_scenarios_file(scenarios_path.c_str(), g_scenarios) != 0) {
+            scenarios_path = "tools/scenarios.json";
+        }
+    }
 
-    if (load_scenarios_file(scenarios_file, g_scenarios) != 0) {
-        SDL_Log("Failed to load scenarios: %s", scenarios_file);
+    if (g_scenarios.empty() && load_scenarios_file(scenarios_path.c_str(), g_scenarios) != 0) {
+        SDL_Log("Failed to load scenarios: %s", scenarios_path.c_str());
         return 1;
     }
 
