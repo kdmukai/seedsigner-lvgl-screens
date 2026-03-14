@@ -92,6 +92,9 @@ target_include_directories(screen_runner PRIVATE
 )
 
 if(TARGET SDL2::SDL2)
+  if(TARGET SDL2::SDL2main)
+    target_link_libraries(screen_runner PRIVATE SDL2::SDL2main)
+  endif()
   target_link_libraries(screen_runner PRIVATE SDL2::SDL2)
 else()
   target_include_directories(screen_runner PRIVATE ${SDL2_INCLUDE_DIRS})
