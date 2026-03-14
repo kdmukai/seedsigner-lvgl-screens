@@ -42,10 +42,10 @@ jobs:
           name: screenshots
           path: tools/screenshot_generator/screenshots/
 
-  deploy-screenshots:
+  deploy-stable:
     needs: build
     runs-on: ubuntu-24.04
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download screenshot artifacts
         uses: actions/download-artifact@v4
@@ -53,42 +53,85 @@ jobs:
           name: screenshots
           path: screenshots
 
-      - name: Determine deploy path
-        id: path
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "dest_dir=previews/pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
-            echo "msg=Deploy PR #${{ github.event.number }} preview" >> "$GITHUB_OUTPUT"
-          else
-            echo "dest_dir=." >> "$GITHUB_OUTPUT"
-            echo "msg=Deploy stable screenshots" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./screenshots
-          destination_dir: ${{ steps.path.outputs.dest_dir }}
-          commit_message: ${{ steps.path.outputs.msg }}
+          destination_dir: .
+          commit_message: "Deploy stable screenshots"
           keep_files: true
 
-      - name: Post PR preview comment
-        if: github.event_name == 'pull_request'
+  compare-and-deploy-pr:
+    needs: build
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    steps:
+      - name: Checkout repo (for compare script)
+        uses: actions/checkout@v4
+
+      - name: Download screenshot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshots
+          path: after
+
+      - name: Checkout gh-pages baseline
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: gh-pages
+          path: baseline
+
+      - name: Install comparison dependencies
+        run: sudo apt-get update && sudo apt-get install -y imagemagick python3
+
+      - name: Run screenshot comparison
+        run: |
+          python3 tools/screenshot_generator/compare_screenshots.py \
+            --before-dir baseline \
+            --after-dir after \
+            --out-dir report \
+            --pr-number ${{ github.event.number }}
+
+      - name: Deploy diff report to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./report
+          destination_dir: previews/pr-${{ github.event.number }}
+          commit_message: "Deploy screenshot diff for PR #${{ github.event.number }}"
+          keep_files: true
+
+      - name: Post PR comment
         uses: actions/github-script@v7
-        env:
-          DEST_DIR: ${{ steps.path.outputs.dest_dir }}
         with:
           script: |
-            const destDir = process.env.DEST_DIR;
+            const fs = require('fs');
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = context.payload.pull_request.number;
-
-            const pagesUrl = `https://${owner}.github.io/${repo}/${destDir}/`;
-
             const marker = '<!-- ss-lvgl-render-tests -->';
-            const body = `${marker}\n### SeedSigner LVGL screen tests: [view results gallery](${pagesUrl})`;
+
+            let body;
+            try {
+              const result = JSON.parse(fs.readFileSync('report/compare_result.json', 'utf8'));
+              const s = result.summary;
+              const pagesUrl = `https://${owner}.github.io/${repo}/previews/pr-${issue_number}/`;
+
+              if (s.changed === 0 && s.new === 0 && s.removed === 0) {
+                body = `${marker}\n### SeedSigner LVGL screen tests\nNo screenshots affected by this PR (${s.unchanged} unchanged).`;
+              } else {
+                const parts = [];
+                if (s.changed > 0) parts.push(`**${s.changed}** changed`);
+                if (s.new > 0) parts.push(`**${s.new}** new`);
+                if (s.removed > 0) parts.push(`**${s.removed}** removed`);
+                const diff = parts.join(', ');
+                body = `${marker}\n### SeedSigner LVGL screen tests: [view diff report](${pagesUrl})\nScreenshot diff: ${diff}` + (s.unchanged > 0 ? `, ${s.unchanged} unchanged` : '');
+              }
+            } catch (e) {
+              body = `${marker}\n### SeedSigner LVGL screen tests\n⚠️ Failed to read comparison results: ${e.message}`;
+            }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
