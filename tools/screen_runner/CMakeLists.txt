@@ -32,6 +32,11 @@ set(SEEDSIGNER_DIR "${PROJECT_ROOT}/components/seedsigner")
 set(NLOHMANN_JSON_INCLUDE_DIR "${PROJECT_ROOT}/components/nlohmann_json/include")
 
 if(NOT DEFINED LVGL_ROOT OR LVGL_ROOT STREQUAL "")
+    # Preferred: pinned clone in third_party/
+    set(LVGL_ROOT "${PROJECT_ROOT}/third_party/lvgl")
+endif()
+
+if(NOT EXISTS "${LVGL_ROOT}/lvgl.h")
     set(LVGL_ROOT "${PROJECT_ROOT}/../micropython/ports/esp32/managed_components/lvgl__lvgl")
 endif()
 

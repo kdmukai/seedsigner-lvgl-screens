@@ -48,6 +48,7 @@ typedef void (*screen_fn_t)(void *ctx_json);
 static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"main_menu_screen", main_menu_screen},
     {"button_list_screen", button_list_screen},
+    {"screensaver_screen", screensaver_screen},
 };
 
 static screen_fn_t lookup_screen_fn(const std::string &name) {
