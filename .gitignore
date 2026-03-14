@@ -45,7 +45,8 @@ __pycache__/
 tools/screenshot_generator/.build/
 tools/screenshot_generator/screenshot_gen
 
-tools/screenshot_generator/screenshots/
+tools/screenshot_generator/screenshots/manifest.json
+tools/screenshot_generator/screenshots/img/
 
 # Secrets / credentials
 .env
