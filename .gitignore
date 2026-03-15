@@ -37,6 +37,9 @@ Makefile
 *.gcda
 *.gcov
 
+# Python virtualenv
+.venv/
+
 # Python cache
 __pycache__/
 *.pyc
