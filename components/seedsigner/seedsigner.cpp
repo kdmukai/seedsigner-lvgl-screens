@@ -442,6 +442,17 @@ static float saver_bounce_angle(float normal_angle) {
 static void screensaver_timer_cb(lv_timer_t *timer) {
     screensaver_ctx_t *ctx = (screensaver_ctx_t *)timer->user_data;
 
+    // Check for touch dismiss: poll pointer input devices directly
+    // rather than relying on LVGL's object hit-testing.
+    lv_indev_t *indev = NULL;
+    while ((indev = lv_indev_get_next(indev)) != NULL) {
+        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER &&
+            indev->proc.state == LV_INDEV_STATE_PRESSED) {
+            seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, "screensaver_dismiss");
+            return;
+        }
+    }
+
     uint32_t now     = lv_tick_get();
     uint32_t elapsed = now - ctx->last_tick;
     ctx->last_tick   = now;
@@ -530,6 +541,7 @@ void screensaver_screen(void * /*ctx_json*/) {
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_coord_t screen_w = lv_disp_get_hor_res(NULL);
     lv_coord_t screen_h = lv_disp_get_ver_res(NULL);
