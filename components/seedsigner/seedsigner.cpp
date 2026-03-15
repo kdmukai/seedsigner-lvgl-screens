@@ -398,10 +398,13 @@ void main_menu_screen(void *ctx)
 // screensaver_screen
 // ---------------------------------------------------------------------------
 
+extern "C" void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
+
 typedef struct {
     lv_obj_t   *screen;
     lv_obj_t   *logo_img;
     lv_timer_t *timer;
+    lv_group_t *group;
     float       center_x;  // logo center, float for sub-pixel accuracy
     float       center_y;
     float       vel_x;     // pixels per millisecond
@@ -500,6 +503,11 @@ static void screensaver_timer_cb(lv_timer_t *timer) {
                    (lv_coord_t)(ctx->center_y - ctx->logo_h / 2.0f));
 }
 
+static void screensaver_key_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, "screensaver_dismiss");
+}
+
 static void screensaver_cleanup_handler(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
 
@@ -509,6 +517,10 @@ static void screensaver_cleanup_handler(lv_event_t *e) {
     if (ctx->timer) {
         lv_timer_del(ctx->timer);
         ctx->timer = NULL;
+    }
+    if (ctx->group) {
+        lv_group_del(ctx->group);
+        ctx->group = NULL;
     }
     lv_mem_free(ctx);
 }
@@ -522,18 +534,13 @@ void screensaver_screen(void * /*ctx_json*/) {
     lv_coord_t screen_w = lv_disp_get_hor_res(NULL);
     lv_coord_t screen_h = lv_disp_get_ver_res(NULL);
 
-    // Scale the logo so its height is ~25% of the screen height.
-    int raw_w = (int)seedsigner_logo_img.header.w;
-    int raw_h = (int)seedsigner_logo_img.header.h;
-    uint16_t zoom = (uint16_t)((screen_h / 4 * 256) / raw_h);
-    if (zoom < 1) zoom = 1;
-
-    lv_coord_t logo_w = (lv_coord_t)((raw_w * zoom + 128) / 256);
-    lv_coord_t logo_h = (lv_coord_t)((raw_h * zoom + 128) / 256);
+    // Display the logo at native resolution (no zoom).
+    // The image is pre-scaled by png_to_lvgl.py to match the target display.
+    lv_coord_t logo_w = (lv_coord_t)seedsigner_logo_img.header.w;
+    lv_coord_t logo_h = (lv_coord_t)seedsigner_logo_img.header.h;
 
     lv_obj_t *logo_img = lv_img_create(scr);
     lv_img_set_src(logo_img, &seedsigner_logo_img);
-    lv_img_set_zoom(logo_img, zoom);
     lv_obj_set_size(logo_img, logo_w, logo_h);
 
     // Allocate and initialise animation context.
@@ -564,6 +571,31 @@ void screensaver_screen(void * /*ctx_json*/) {
                    (lv_coord_t)(ctx->center_y - logo_h / 2.0f));
 
     ctx->timer = lv_timer_create(screensaver_timer_cb, 16, ctx);
+
+    // Keypad sink: any key press dismisses the screensaver.
+    if (input_profile_get_mode() == INPUT_MODE_HARDWARE) {
+        lv_obj_t *sink = lv_obj_create(scr);
+        lv_obj_set_size(sink, 1, 1);
+        lv_obj_set_pos(sink, 0, 0);
+        lv_obj_set_style_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(sink, 0, LV_PART_MAIN);
+        lv_obj_set_style_outline_width(sink, 0, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(sink, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(sink, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        ctx->group = lv_group_create();
+        lv_group_add_obj(ctx->group, sink);
+        lv_obj_add_event_cb(sink, screensaver_key_handler, LV_EVENT_KEY, ctx);
+
+        lv_indev_t *indev = NULL;
+        while ((indev = lv_indev_get_next(indev)) != NULL) {
+            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
+                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
+                lv_indev_set_group(indev, ctx->group);
+            }
+        }
+    }
 
     lv_obj_add_event_cb(scr, screensaver_cleanup_handler, LV_EVENT_DELETE, ctx);
 
