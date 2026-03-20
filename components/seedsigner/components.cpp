@@ -17,8 +17,8 @@ static void top_nav_button_event_callback(lv_event_t* e) {
     seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, event_label);
 }
 
-static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_align_t align, lv_coord_t x_ofs, const char* event_label) {
-    lv_obj_t* btn = lv_btn_create(lv_parent);
+static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_align_t align, int32_t x_ofs, const char* event_label) {
+    lv_obj_t* btn = lv_button_create(lv_parent);
     lv_obj_set_size(btn, TOP_NAV_BUTTON_SIZE, TOP_NAV_BUTTON_SIZE);
     lv_obj_align(btn, align, x_ofs, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
@@ -51,7 +51,7 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     // TopNav should be the full horizontal width
     lv_obj_set_size(lv_top_nav, lv_pct(100), TOP_NAV_HEIGHT);
     lv_obj_set_scrollbar_mode(lv_top_nav, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(lv_top_nav, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(lv_top_nav, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(lv_top_nav, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_set_style_bg_color(lv_top_nav, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
@@ -82,7 +82,7 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     lv_obj_update_layout(lv_top_nav);
-    lv_coord_t nav_w = lv_obj_get_content_width(lv_top_nav);
+    int32_t nav_w = lv_obj_get_content_width(lv_top_nav);
     if (nav_w <= 0) {
         nav_w = lv_obj_get_width(lv_parent);
     }
@@ -92,8 +92,8 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
 
     // Clip title within the available region between nav buttons.
     // This prevents any title text from appearing to the left of the back button.
-    lv_coord_t left_pad = EDGE_PADDING;
-    lv_coord_t right_pad = EDGE_PADDING;
+    int32_t left_pad = EDGE_PADDING;
+    int32_t right_pad = EDGE_PADDING;
     if (back_btn) {
         left_pad += TOP_NAV_BUTTON_SIZE + COMPONENT_PADDING;
     }
@@ -101,14 +101,14 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
         right_pad += TOP_NAV_BUTTON_SIZE + COMPONENT_PADDING;
     }
 
-    lv_coord_t label_w = nav_w - left_pad - right_pad;
+    int32_t label_w = nav_w - left_pad - right_pad;
     if (label_w < 16) {
         label_w = 16;
     }
     lv_obj_set_width(label, label_w);
 
     lv_point_t text_size = {0, 0};
-    lv_txt_get_size(&text_size, label_text, &TOP_NAV_TITLE_FONT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    lv_text_get_size(&text_size, label_text, &TOP_NAV_TITLE_FONT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
 
     if (text_size.x > label_w) {
         // Overflow case: start from clean left edge inside clipped title region.
@@ -166,9 +166,9 @@ static lv_point_t s_press_point = {0, 0};
 static bool s_press_dragged = false;
 void button_toggle_callback(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t* btn = lv_event_get_target(e);
+    lv_obj_t* btn = (lv_obj_t *)lv_event_get_target(e);
 
-    lv_indev_t *indev = lv_indev_get_act();
+    lv_indev_t *indev = lv_indev_active();
 
     if (code == LV_EVENT_PRESSED) {
         s_press_btn = btn;
@@ -228,7 +228,7 @@ void button_toggle_callback(lv_event_t* e) {
             if (!child || child == btn) {
                 continue;
             }
-            if (lv_obj_check_type(child, &lv_btn_class)) {
+            if (lv_obj_check_type(child, &lv_button_class)) {
                 button_set_active(child, false);
             }
         }
@@ -242,7 +242,7 @@ void button_toggle_callback(lv_event_t* e) {
         uint32_t btn_pos = 0;
         for (uint32_t i = 0; i < child_count; ++i) {
             lv_obj_t* child = lv_obj_get_child(parent, i);
-            if (!child || !lv_obj_check_type(child, &lv_btn_class)) {
+            if (!child || !lv_obj_check_type(child, &lv_button_class)) {
                 continue;
             }
             if (child == btn) {
@@ -275,7 +275,7 @@ void button_toggle_callback(lv_event_t* e) {
 
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
-    lv_obj_t* lv_button = lv_btn_create(lv_parent);
+    lv_obj_t* lv_button = lv_button_create(lv_parent);
     lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), BUTTON_HEIGHT);
 
     if (align_to != NULL) {
@@ -314,7 +314,7 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
 
 
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to) {
-    lv_obj_t* lv_button = lv_btn_create(lv_parent);
+    lv_obj_t* lv_button = lv_button_create(lv_parent);
     lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), MAIN_MENU_BUTTON_HEIGHT);
 
     if (align_to != NULL) {
@@ -383,7 +383,7 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         uint32_t child_count = lv_obj_get_child_cnt(lv_parent);
         for (uint32_t i = 0; i < child_count; ++i) {
             lv_obj_t* child = lv_obj_get_child(lv_parent, i);
-            if (child && lv_obj_check_type(child, &lv_btn_class)) {
+            if (child && lv_obj_check_type(child, &lv_button_class)) {
                 button_set_active(child, false);
             }
         }

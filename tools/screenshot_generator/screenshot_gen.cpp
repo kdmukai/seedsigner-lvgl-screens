@@ -35,7 +35,7 @@
 
 static int g_width = DEFAULT_WIDTH;
 static int g_height = DEFAULT_HEIGHT;
-static std::vector<lv_color_t> g_fb;
+static std::vector<uint16_t> g_fb;
 
 
 // External dependency alias.
@@ -253,8 +253,8 @@ static int mkdir_p(const char *path) {
     return 0;
 }
 
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p) {
-    (void)drv;
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    uint16_t *color_p = (uint16_t *)px_map;
     for (int y = area->y1; y <= area->y2; ++y) {
         if (y < 0 || y >= g_height) continue;
         for (int x = area->x1; x <= area->x2; ++x) {
@@ -264,7 +264,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
             color_p++;
         }
     }
-    lv_disp_flush_ready(drv);
+    lv_display_flush_ready(disp);
 }
 
 static int framebuffer_to_rgb24(std::vector<uint8_t> &rgb) {
@@ -273,10 +273,11 @@ static int framebuffer_to_rgb24(std::vector<uint8_t> &rgb) {
         for (int x = 0; x < g_width; ++x) {
             size_t si = (size_t)y * (size_t)g_width + (size_t)x;
             size_t di = si * 3u;
-            uint32_t c32 = lv_color_to32(g_fb[si]);
-            rgb[di + 0] = (uint8_t)((c32 >> 16) & 0xFF);
-            rgb[di + 1] = (uint8_t)((c32 >> 8) & 0xFF);
-            rgb[di + 2] = (uint8_t)(c32 & 0xFF);
+            // Convert RGB565 to RGB888
+            uint16_t c = g_fb[si];
+            rgb[di + 0] = (uint8_t)((c >> 11) << 3);          // R
+            rgb[di + 1] = (uint8_t)(((c >> 5) & 0x3F) << 2);  // G
+            rgb[di + 2] = (uint8_t)((c & 0x1F) << 3);         // B
         }
     }
     return 0;
@@ -339,7 +340,7 @@ static void cleanup_frames_dir(const char *frames_dir) {
 // 1) Capture frame sequence by advancing LVGL ticks/timers.
 // 2) Assemble GIF using ImageMagick (magick/convert).
 // 3) Delete intermediate frame PNGs to keep output directories clean.
-static int maybe_write_scroll_gif(const char *run_dir, const std::string &scenario, lv_disp_t *disp, const char *im_bin) {
+static int maybe_write_scroll_gif(const char *run_dir, const std::string &scenario, lv_display_t *disp, const char *im_bin) {
     if (!im_bin) {
         return 0;
     }
@@ -479,7 +480,7 @@ int main(int argc, char **argv) {
 
     g_width = width;
     g_height = height;
-    g_fb.assign((size_t)g_width * (size_t)g_height, lv_color_black());
+    g_fb.assign((size_t)g_width * (size_t)g_height, 0);
 
     if (mkdir_p(out_dir) != 0) {
         fprintf(stderr, "Failed creating out dir: %s\n", out_dir);
@@ -507,18 +508,12 @@ int main(int argc, char **argv) {
 
     lv_init();
 
-    static lv_disp_draw_buf_t disp_buf;
-    std::vector<lv_color_t> draw_buf((size_t)g_width * 40u);
-    lv_disp_draw_buf_init(&disp_buf, draw_buf.data(), NULL, (uint32_t)draw_buf.size());
-
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = g_width;
-    disp_drv.ver_res = g_height;
-    disp_drv.flush_cb = lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
-    (void)disp;
+    lv_display_t *disp = lv_display_create(g_width, g_height);
+    lv_display_set_flush_cb(disp, lvgl_flush_cb);
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    static std::vector<uint8_t> draw_buf((size_t)g_width * (size_t)g_height * 2u);
+    lv_display_set_buffers(disp, draw_buf.data(), NULL, draw_buf.size(),
+                           LV_DISPLAY_RENDER_MODE_FULL);
 
     const char *im_bin = imagemagick_binary();
     if (im_bin) {

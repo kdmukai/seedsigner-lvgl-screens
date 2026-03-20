@@ -59,7 +59,7 @@ static int g_label_gap     = 4;
 static int g_status_bar_h  = 32;
 static int g_status_gap    = 4;
 
-static std::vector<lv_color_t> g_fb;
+static std::vector<uint16_t> g_fb;
 
 // ---------------------------------------------------------------------------
 // Keypad indev state
@@ -605,8 +605,8 @@ static int load_scenarios_file(const char *path, std::vector<scenario_def_t> &sc
     return scenarios.empty() ? -1 : 0;
 }
 
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p) {
-    (void)drv;
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    uint16_t *color_p = (uint16_t *)px_map;
     for (int y = area->y1; y <= area->y2; ++y) {
         if (y < 0 || y >= g_height) continue;
         for (int x = area->x1; x <= area->x2; ++x) {
@@ -615,11 +615,11 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
             color_p++;
         }
     }
-    lv_disp_flush_ready(drv);
+    lv_display_flush_ready(disp);
 }
 
-static void keypad_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
-    (void)drv;
+static void keypad_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
+    (void)indev;
     if (input_profile_get_mode() != INPUT_MODE_HARDWARE) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
@@ -633,15 +633,15 @@ static void keypad_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     }
 }
 
-static void pointer_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
-    (void)drv;
+static void pointer_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
+    (void)indev;
     if (input_profile_get_mode() != INPUT_MODE_TOUCH) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
     // Translate SDL logical coords → LVGL viewport-local coords
-    data->point.x = (lv_coord_t)(g_pointer_x - g_viewport_rect.x);
-    data->point.y = (lv_coord_t)(g_pointer_y - g_viewport_rect.y);
+    data->point.x = (int32_t)(g_pointer_x - g_viewport_rect.x);
+    data->point.y = (int32_t)(g_pointer_y - g_viewport_rect.y);
     data->state   = g_pointer_pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
@@ -668,10 +668,11 @@ static void blit_to_texture(SDL_Texture *texture) {
         uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
         for (int x = 0; x < g_width; ++x) {
             size_t si = (size_t)y * (size_t)g_width + (size_t)x;
-            uint32_t c32 = lv_color_to32(g_fb[si]);
-            uint8_t r = (uint8_t)((c32 >> 16) & 0xFF);
-            uint8_t g = (uint8_t)((c32 >>  8) & 0xFF);
-            uint8_t b = (uint8_t)(c32 & 0xFF);
+            // Convert RGB565 to ARGB8888
+            uint16_t c = g_fb[si];
+            uint8_t r = (uint8_t)((c >> 11) << 3);
+            uint8_t g = (uint8_t)(((c >> 5) & 0x3F) << 2);
+            uint8_t b = (uint8_t)((c & 0x1F) << 3);
             row[x] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
         }
     }
@@ -814,32 +815,23 @@ int main(int argc, char **argv) {
 
     // LVGL init.
     lv_init();
-    g_fb.assign((size_t)g_width * (size_t)g_height, lv_color_black());
+    g_fb.assign((size_t)g_width * (size_t)g_height, 0);
 
-    static lv_disp_draw_buf_t disp_buf;
-    std::vector<lv_color_t> draw_buf((size_t)g_width * 40u);
-    lv_disp_draw_buf_init(&disp_buf, draw_buf.data(), NULL, (uint32_t)draw_buf.size());
-
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res  = g_width;
-    disp_drv.ver_res  = g_height;
-    disp_drv.flush_cb = lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    lv_display_t *disp = lv_display_create(g_width, g_height);
+    lv_display_set_flush_cb(disp, lvgl_flush_cb);
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    static std::vector<uint8_t> draw_buf((size_t)g_width * (size_t)g_height * 2u);
+    lv_display_set_buffers(disp, draw_buf.data(), NULL, draw_buf.size(),
+                           LV_DISPLAY_RENDER_MODE_FULL);
     (void)disp;
 
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type    = LV_INDEV_TYPE_KEYPAD;
-    indev_drv.read_cb = keypad_read_cb;
-    lv_indev_drv_register(&indev_drv);
+    lv_indev_t *kb_indev = lv_indev_create();
+    lv_indev_set_type(kb_indev, LV_INDEV_TYPE_KEYPAD);
+    lv_indev_set_read_cb(kb_indev, keypad_read_cb);
 
-    static lv_indev_drv_t pointer_drv;
-    lv_indev_drv_init(&pointer_drv);
-    pointer_drv.type    = LV_INDEV_TYPE_POINTER;
-    pointer_drv.read_cb = pointer_read_cb;
-    lv_indev_drv_register(&pointer_drv);
+    lv_indev_t *ptr_indev = lv_indev_create();
+    lv_indev_set_type(ptr_indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(ptr_indev, pointer_read_cb);
 
     input_profile_set_mode(INPUT_MODE_HARDWARE);
 
@@ -905,12 +897,12 @@ int main(int argc, char **argv) {
                             // scroll_by(0, +dy): children move down → reveal top (scroll up)
                             // scroll_by(0, -dy): children move up → reveal bottom (scroll down)
                             // ev.wheel.y > 0 = user intends scroll up (same convention as chrome scroll)
-                            lv_coord_t dy = (lv_coord_t)(ev.wheel.y * 40);
+                            int32_t dy = (int32_t)(ev.wheel.y * 40);
                             if (dy > 0) {
-                                lv_coord_t avail = lv_obj_get_scroll_top(child);
+                                int32_t avail = lv_obj_get_scroll_top(child);
                                 if (dy > avail) dy = avail;
                             } else if (dy < 0) {
-                                lv_coord_t avail = lv_obj_get_scroll_bottom(child);
+                                int32_t avail = lv_obj_get_scroll_bottom(child);
                                 if (-dy > avail) dy = -avail;
                             }
                             if (dy != 0) lv_obj_scroll_by(child, 0, dy, LV_ANIM_OFF);
