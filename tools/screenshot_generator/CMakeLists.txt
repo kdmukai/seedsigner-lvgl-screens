@@ -76,7 +76,10 @@ add_executable(screenshot_gen
   ${SCREENSHOT_GEN_SOURCE}
 )
 
-target_compile_definitions(screenshot_gen PRIVATE LV_CONF_SKIP)
+target_compile_definitions(screenshot_gen PRIVATE
+  LV_CONF_SKIP
+  LV_USE_DRAW_SW_ASM=LV_DRAW_SW_ASM_NONE
+)
 
 target_include_directories(screenshot_gen PRIVATE
   "${LVGL_ROOT}"

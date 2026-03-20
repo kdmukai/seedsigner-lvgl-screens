@@ -154,7 +154,7 @@ static void nav_key_handler(lv_event_t *e) {
         if (action == NAV_AUX_ENTER) {
             lv_obj_t *item = get_focused_item(ctx);
             if (item && lv_obj_is_valid(item)) {
-                lv_event_send(item, LV_EVENT_CLICKED, NULL);
+                lv_obj_send_event(item, LV_EVENT_CLICKED, NULL);
             }
         } else if (action == NAV_AUX_EMIT) {
             if (aux_idx == 1) seedsigner_lvgl_on_aux_key("KEY1");
@@ -169,7 +169,7 @@ static void nav_key_handler(lv_event_t *e) {
     if (key == LV_KEY_ENTER) {
         lv_obj_t *item = get_focused_item(ctx);
         if (item && lv_obj_is_valid(item)) {
-            lv_event_send(item, LV_EVENT_CLICKED, NULL);
+            lv_obj_send_event(item, LV_EVENT_CLICKED, NULL);
         }
         return;
     }
@@ -255,10 +255,10 @@ static void nav_cleanup_handler(lv_event_t *e) {
         ctx->group = NULL;
     }
     if (ctx->body_items) {
-        lv_mem_free(ctx->body_items);
+        lv_free(ctx->body_items);
         ctx->body_items = NULL;
     }
-    lv_mem_free(ctx);
+    lv_free(ctx);
 }
 
 
@@ -269,9 +269,9 @@ static void nav_cleanup_handler(lv_event_t *e) {
 void nav_bind(const nav_config_t *cfg) {
     if (!cfg || !cfg->screen) return;
 
-    nav_ctx_t *ctx = (nav_ctx_t *)lv_mem_alloc(sizeof(nav_ctx_t));
+    nav_ctx_t *ctx = (nav_ctx_t *)lv_malloc(sizeof(nav_ctx_t));
     if (!ctx) return;
-    lv_memset_00(ctx, sizeof(*ctx));
+    lv_memzero(ctx, sizeof(*ctx));
 
     // Top item: back and power are mutually exclusive; take whichever is set.
     ctx->top_item = cfg->top_back_btn ? cfg->top_back_btn : cfg->top_power_btn;
@@ -279,9 +279,9 @@ void nav_bind(const nav_config_t *cfg) {
     // Copy body items array.
     ctx->body_count = cfg->body_item_count;
     if (ctx->body_count > 0 && cfg->body_items) {
-        ctx->body_items = (lv_obj_t **)lv_mem_alloc(sizeof(lv_obj_t *) * ctx->body_count);
+        ctx->body_items = (lv_obj_t **)lv_malloc(sizeof(lv_obj_t *) * ctx->body_count);
         if (!ctx->body_items) {
-            lv_mem_free(ctx);
+            lv_free(ctx);
             return;
         }
         for (size_t i = 0; i < ctx->body_count; ++i) {
@@ -336,7 +336,7 @@ void nav_bind(const nav_config_t *cfg) {
         lv_obj_set_style_border_width(sink, 0, LV_PART_MAIN);
         lv_obj_set_style_outline_width(sink, 0, LV_PART_MAIN);
         lv_obj_set_style_shadow_width(sink, 0, LV_PART_MAIN);
-        lv_obj_clear_flag(sink, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(sink, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
         lv_group_add_obj(ctx->group, sink);
         lv_obj_add_event_cb(sink, nav_key_handler, LV_EVENT_KEY, ctx);

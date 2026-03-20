@@ -83,7 +83,10 @@ add_executable(screen_runner
   ${SCREEN_RUNNER_SOURCE}
 )
 
-target_compile_definitions(screen_runner PRIVATE LV_CONF_SKIP)
+target_compile_definitions(screen_runner PRIVATE
+  LV_CONF_SKIP
+  LV_USE_DRAW_SW_ASM=LV_DRAW_SW_ASM_NONE
+)
 
 target_include_directories(screen_runner PRIVATE
   "${LVGL_ROOT}"

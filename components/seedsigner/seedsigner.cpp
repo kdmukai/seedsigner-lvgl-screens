@@ -15,7 +15,7 @@
 using json = nlohmann::json;
 
 // Defined in components/seedsigner/images/seedsigner_logo_img.c
-LV_IMG_DECLARE(seedsigner_logo_img);
+LV_IMAGE_DECLARE(seedsigner_logo_img);
 
 
 // Reusable utility: build TopNav from any screen JSON config.
@@ -86,7 +86,7 @@ static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     lv_obj_t *old_screen = lv_scr_act();
     lv_scr_load(new_screen);
     if (old_screen && old_screen != new_screen) {
-        lv_obj_del(old_screen);
+        lv_obj_delete(old_screen);
     }
 }
 
@@ -304,7 +304,7 @@ void button_list_screen(void *ctx_json)
     uint32_t child_count = lv_obj_get_child_cnt(body_content);
     for (uint32_t i = 0; i < child_count; ++i) {
         lv_obj_t *child = lv_obj_get_child(body_content, i);
-        if (child && lv_obj_check_type(child, &lv_btn_class)) {
+        if (child && lv_obj_check_type(child, &lv_button_class)) {
             body_items.push_back(child);
         }
     }
@@ -341,12 +341,12 @@ void main_menu_screen(void *ctx)
     };
     static const char *labels[] = {"Scan", "Seeds", "Tools", "Settings"};
 
-    const lv_coord_t available_w = lv_obj_get_content_width(body_content);
-    const lv_coord_t available_h = lv_obj_get_content_height(body_content);
+    const int32_t available_w = lv_obj_get_content_width(body_content);
+    const int32_t available_h = lv_obj_get_content_height(body_content);
 
-    // Max out the large button width. Note that the body already has edge padding. 
-    lv_coord_t button_w = (available_w - COMPONENT_PADDING) / 2;
-    lv_coord_t button_h = (available_h - COMPONENT_PADDING) / 2;
+    // Max out the large button width. Note that the body already has edge padding.
+    int32_t button_w = (available_w - COMPONENT_PADDING) / 2;
+    int32_t button_h = (available_h - COMPONENT_PADDING) / 2;
 
     lv_obj_t *buttons[4] = {NULL, NULL, NULL, NULL};
     for (uint32_t i = 0; i < 4; ++i) {
@@ -410,10 +410,10 @@ typedef struct {
     float       vel_x;     // pixels per millisecond
     float       vel_y;
     uint32_t    last_tick;
-    lv_coord_t  screen_w;
-    lv_coord_t  screen_h;
-    lv_coord_t  logo_w;    // displayed width after zoom
-    lv_coord_t  logo_h;    // displayed height after zoom
+    int32_t     screen_w;
+    int32_t     screen_h;
+    int32_t     logo_w;    // displayed width after zoom
+    int32_t     logo_h;    // displayed height after zoom
 } screensaver_ctx_t;
 
 // Speed range: 0.07 – 0.18 pixels/ms  (70 – 180 px/s).
@@ -440,14 +440,14 @@ static float saver_bounce_angle(float normal_angle) {
 }
 
 static void screensaver_timer_cb(lv_timer_t *timer) {
-    screensaver_ctx_t *ctx = (screensaver_ctx_t *)timer->user_data;
+    screensaver_ctx_t *ctx = (screensaver_ctx_t *)lv_timer_get_user_data(timer);
 
     // Check for touch dismiss: poll pointer input devices directly
     // rather than relying on LVGL's object hit-testing.
     lv_indev_t *indev = NULL;
     while ((indev = lv_indev_get_next(indev)) != NULL) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER &&
-            indev->proc.state == LV_INDEV_STATE_PRESSED) {
+            lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
             seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, "screensaver_dismiss");
             return;
         }
@@ -510,8 +510,8 @@ static void screensaver_timer_cb(lv_timer_t *timer) {
     }
 
     lv_obj_set_pos(ctx->logo_img,
-                   (lv_coord_t)(ctx->center_x - ctx->logo_w / 2.0f),
-                   (lv_coord_t)(ctx->center_y - ctx->logo_h / 2.0f));
+                   (int32_t)(ctx->center_x - ctx->logo_w / 2.0f),
+                   (int32_t)(ctx->center_y - ctx->logo_h / 2.0f));
 }
 
 static void screensaver_key_handler(lv_event_t *e) {
@@ -533,7 +533,7 @@ static void screensaver_cleanup_handler(lv_event_t *e) {
         lv_group_del(ctx->group);
         ctx->group = NULL;
     }
-    lv_mem_free(ctx);
+    lv_free(ctx);
 }
 
 void screensaver_screen(void * /*ctx_json*/) {
@@ -541,23 +541,23 @@ void screensaver_screen(void * /*ctx_json*/) {
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_coord_t screen_w = lv_disp_get_hor_res(NULL);
-    lv_coord_t screen_h = lv_disp_get_ver_res(NULL);
+    int32_t screen_w = lv_display_get_horizontal_resolution(NULL);
+    int32_t screen_h = lv_display_get_vertical_resolution(NULL);
 
     // Display the logo at native resolution (no zoom).
     // The image is pre-scaled by png_to_lvgl.py to match the target display.
-    lv_coord_t logo_w = (lv_coord_t)seedsigner_logo_img.header.w;
-    lv_coord_t logo_h = (lv_coord_t)seedsigner_logo_img.header.h;
+    int32_t logo_w = (int32_t)seedsigner_logo_img.header.w;
+    int32_t logo_h = (int32_t)seedsigner_logo_img.header.h;
 
-    lv_obj_t *logo_img = lv_img_create(scr);
-    lv_img_set_src(logo_img, &seedsigner_logo_img);
+    lv_obj_t *logo_img = lv_image_create(scr);
+    lv_image_set_src(logo_img, &seedsigner_logo_img);
     lv_obj_set_size(logo_img, logo_w, logo_h);
 
     // Allocate and initialise animation context.
-    screensaver_ctx_t *ctx = (screensaver_ctx_t *)lv_mem_alloc(sizeof(screensaver_ctx_t));
-    lv_memset_00(ctx, sizeof(*ctx));
+    screensaver_ctx_t *ctx = (screensaver_ctx_t *)lv_malloc(sizeof(screensaver_ctx_t));
+    lv_memzero(ctx, sizeof(*ctx));
     ctx->screen   = scr;
     ctx->logo_img = logo_img;
     ctx->screen_w = screen_w;
@@ -579,8 +579,8 @@ void screensaver_screen(void * /*ctx_json*/) {
 
     // Place logo at starting position.
     lv_obj_set_pos(logo_img,
-                   (lv_coord_t)(ctx->center_x - logo_w / 2.0f),
-                   (lv_coord_t)(ctx->center_y - logo_h / 2.0f));
+                   (int32_t)(ctx->center_x - logo_w / 2.0f),
+                   (int32_t)(ctx->center_y - logo_h / 2.0f));
 
     ctx->timer = lv_timer_create(screensaver_timer_cb, 16, ctx);
 
@@ -594,7 +594,7 @@ void screensaver_screen(void * /*ctx_json*/) {
         lv_obj_set_style_border_width(sink, 0, LV_PART_MAIN);
         lv_obj_set_style_outline_width(sink, 0, LV_PART_MAIN);
         lv_obj_set_style_shadow_width(sink, 0, LV_PART_MAIN);
-        lv_obj_clear_flag(sink, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(sink, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
         ctx->group = lv_group_create();
         lv_group_add_obj(ctx->group, sink);
