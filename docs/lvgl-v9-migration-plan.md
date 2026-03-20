@@ -2,13 +2,13 @@
 
 ## Context
 
-SeedSigner's shared LVGL screen code (`components/seedsigner/`) is currently built against LVGL v8.x. The sibling 2048-esp32 project has already been successfully migrated to LVGL v9.5.0 on the same Waveshare ESP32-S3 hardware, and that migration plan (`/home/kdmukai/dev/misc/2048-esp32/lvgl-v9-migration-plan.md`) is the primary reference.
+SeedSigner's shared LVGL screen code (`components/seedsigner/`) has been migrated from LVGL v8.4.0 to v9.5.0. The sibling 2048-esp32 project was migrated first and its migration plan (`/home/kdmukai/dev/misc/2048-esp32/lvgl-v9-migration-plan.md`) served as the primary reference.
 
-This migration touches 4 areas of the repo:
-1. Platform-agnostic screens (the shared code)
-2. ESP32 LVGL port + display manager
-3. Desktop tools (screenshot generator, screen runner)
-4. Image asset generation script
+This migration touched 4 areas of the repo:
+1. **Platform-agnostic screens** (the shared code) — **complete**
+2. **ESP32 LVGL port + display manager** — **deferred to `seedsigner-micropython-builder`** (ESP32 code is being extracted from this repo)
+3. **Desktop tools** (screenshot generator, screen runner) — **complete**
+4. **Image asset generation script** — **complete**
 
 The MicroPython bindings (`bindings/modseedsigner_bindings.c`) have **zero LVGL API calls** — they only call `run_screen()` via `display_manager.h` — so they need no changes.
 
@@ -365,62 +365,96 @@ The font .c files already contain v9-compatible conditional code paths (`LVGL_VE
 
 ---
 
-## Implementation Order
+## Implementation Status
 
-```
-1. Update LVGL submodule (Part 1)
-   |
-   +--→ 2. Screen API renames (Part 2)
-   |      +--→ 5. Image script + regenerate (Part 5)
-   |      |
-   |      +--→ 3. Desktop tools rewrite (Part 3)
-   |             |
-   |             +--→ VERIFY: build screenshot_gen, compare output
-   |             +--→ VERIFY: build screen_runner, test both input modes
-   |
-   +--→ 4. ESP32 port + display_manager (Part 4)
-          |
-          +--→ VERIFY: build in seedsigner-micropython-builder, flash & test
-```
+| Part | Scope | Status |
+|------|-------|--------|
+| **1** | Update LVGL submodule to v9.5.0 | **Done** |
+| **2** | Platform-agnostic screen API renames | **Done** |
+| **3** | Desktop tools (screenshot_gen, screen_runner) | **Done** |
+| **4** | ESP32 display manager + port rewrite | **Moved to `seedsigner-micropython-builder`** |
+| **5** | Image asset script (`png_to_lvgl.py`) + regeneration | **Done** |
 
-Parts 2+3+5 are the **minimum viable migration** — they're enough to verify all widget API changes via the desktop tools without needing hardware.
+Parts 1–3 and 5 are complete and verified. CI passes on all platforms (Linux, macOS, Windows).
 
-Part 4 (ESP32) can be done in parallel or deferred. It requires coordinated changes in `seedsigner-micropython-builder` to update `idf_component.yml` dependencies.
+Part 4 (ESP32 display/touch initialization) will be implemented directly in `seedsigner-micropython-builder` as part of the planned migration of all ESP32-specific code out of this repo. The ESP32 components here (`esp_lv_port/`, `esp_bsp/`, `display_manager/`, `bindings/`) still use LVGL v8 APIs and will be removed from this repo once the micropython-builder has its own v9 implementations.
+
+### Additional v9 API changes discovered during implementation
+
+These were not in the original plan but were caught during compilation:
+
+| v8 | v9 | Notes |
+|----|-----|-------|
+| `lv_obj_clear_flag()` | `lv_obj_remove_flag()` | OR'd flags need cast: `(lv_obj_flag_t)(A \| B)` |
+| `lv_event_send(obj, ...)` | `lv_obj_send_event(obj, ...)` | Signature changed; v9 `lv_event_send` takes `lv_event_list_t*` |
+| `lv_event_get_target(e)` | `(lv_obj_t *)lv_event_get_target(e)` | Returns `void*` in v9; needs explicit cast in C++ |
+| `timer->user_data` | `lv_timer_get_user_data(timer)` | `lv_timer_t` is opaque in v9 |
 
 ---
 
-## Downstream Repo Impact
+## Notes for seedsigner-micropython-builder
 
-| Repo | Changes needed |
-|------|---------------|
-| **seedsigner-micropython-builder** | Update `idf_component.yml`: LVGL → 9.5.0, add `espressif/esp_lvgl_port: 2.7.2`, add `espressif/esp_lcd_axs15231b: 2.1.0`. Remove references to deleted `esp_lv_port`. Update `sdkconfig.defaults` to remove v8-only Kconfig options. |
-| **seedsigner-raspi-lvgl** | Update display/input backend to v9 APIs (same `lv_display_create()` / `lv_indev_create()` pattern as desktop tools). Update its build to link against LVGL v9. |
-| **seedsigner** (Python app) | No changes — Python calls `seedsigner_lvgl.button_list_screen(cfg_dict)` which is unchanged. |
+The following information is relevant when implementing the ESP32 LVGL v9 display/touch initialization in `seedsigner-micropython-builder`. This is based on the working migration in the `2048-esp32` project and the research documented above.
+
+### Dependencies
+
+Update `idf_component.yml`:
+```yaml
+dependencies:
+  lvgl/lvgl: "9.5.0"                             # was "^8"
+  espressif/esp_lvgl_port: "2.7.2"               # replaces custom esp_lv_port
+  espressif/esp_lcd_axs15231b: "2.1.0"           # provides touch driver
+  espressif/esp_io_expander_tca9554: "2.0.3"
+```
+
+### sdkconfig.defaults — remove v8-only options
+
+```
+# REMOVE these (no longer exist in v9):
+CONFIG_LV_MEM_CUSTOM=y
+CONFIG_LV_TXT_ENC_UTF8=y
+CONFIG_LV_COLOR_16_SWAP=y
+```
+
+### Display initialization (AXS15231B QSPI)
+
+See Part 4b above for the full details on the AXS15231B hardware limitation and the `direct_mode` + custom flush callback solution. Key points:
+
+- Must use `direct_mode` with full-screen SPIRAM buffer — partial rendering fails due to CASET/RASET hardware defect
+- Custom flush callback sends entire framebuffer in 80-row bands with DMA bounce buffer byte-swapping
+- Do NOT use `full_refresh`, `swap_bytes`, or `LV_COLOR_16_SWAP` — all fail for different reasons (see Part 4b table)
+- Override flush callback after `lvgl_port_add_disp()`: `lv_display_set_flush_cb(lvgl_disp, axs15231b_flush_cb)`
+
+### Touch initialization
+
+- Use `esp_lcd_touch_new_i2c_axs15231b()` from the registry driver
+- **Critical**: manually set `touch_io_config.scl_speed_hz = 400000` after the `ESP_LCD_TOUCH_IO_I2C_AXS15231B_CONFIG()` macro — the macro leaves it at 0 which causes `i2c_master_bus_add_device()` to fail
+- Do NOT use the `_EX` variant macro — it has a parameter name collision bug
+- Use `lvgl_port_add_touch()` from `esp_lvgl_port` to register with LVGL
+
+### MicroPython bindings
+
+The `seedsigner_lvgl` bindings (`modseedsigner_bindings.c`) have zero LVGL API calls — they only call `run_screen()`, `lvgl_port_lock()`, and `lvgl_port_unlock()` from `display_manager.h`. If the display manager's public API is preserved, the bindings need no changes.
+
+### Timer pitfall (v9)
+
+`lv_timer_create()` defaults to `auto_delete=true` in v9. If a timer has a finite `repeat_count`, LVGL frees the timer object when it expires. Any subsequent access to the timer handle is use-after-free. Use `lv_timer_set_auto_delete(timer, false)` for timers you intend to reset/reuse. See `docs/lvgl-timer-auto-delete.md` in the `2048-esp32` repo for the full debugging story.
+
+### Widget config names (if using lv_conf.h)
+
+If the micropython-builder uses `lv_conf.h` or Kconfig for widget enables:
+- `LV_USE_BTN` → `LV_USE_BUTTON`
+- `LV_USE_IMG` → `LV_USE_IMAGE`
+- `LV_USE_BTNMATRIX` → `LV_USE_BUTTONMATRIX`
+- `LV_USE_IMGBTN` → `LV_USE_IMAGEBUTTON`
+- `LV_USE_ANIMIMG` → `LV_USE_ANIMIMAGE`
+- `LV_USE_COLORWHEEL` → removed
 
 ---
 
 ## Verification
 
-1. **Desktop screenshot test**: Build `screenshot_gen` after Parts 1-3+5. Generate screenshots. Compare against current v8 baseline using existing CI diff infrastructure.
-2. **Desktop interactive test**: Build `screen_runner`. Test keyboard nav (arrow keys, enter, KEY1/2/3), mouse clicks, scroll, scenario switching, mode toggle.
-3. **ESP32 flash test** (after Part 4): Build firmware via `seedsigner-micropython-builder`. Flash device. Verify display, touch, all screens, screensaver bounce + dismiss.
-
----
-
-## Files Modified
-
-| Action | File |
-|--------|------|
-| **Update** | `third_party/lvgl` (submodule → v9.5.0) |
-| **Edit** | `components/seedsigner/seedsigner.cpp` |
-| **Edit** | `components/seedsigner/components.cpp` |
-| **Edit** | `components/seedsigner/navigation.cpp` |
-| **Edit** | `tools/screenshot_generator/screenshot_gen.cpp` |
-| **Edit** | `tools/screen_runner/screen_runner.cpp` |
-| **Edit** | `scripts/png_to_lvgl.py` |
-| **Regenerate** | `components/seedsigner/images/seedsigner_logo_img.c` |
-| **Rewrite** | `components/display_manager/display_manager.cpp` |
-| **Edit** | `components/display_manager/CMakeLists.txt` |
-| **Delete** | `components/esp_lv_port/` (entire directory) |
-| **Edit** | `components/esp_bsp/` (remove bsp_touch.c/.h) |
-| **Edit** | `bindings/micropython.cmake` |
+1. **Desktop screenshot test**: Build `screenshot_gen` after Parts 1-3+5. Generate screenshots. Compare against current v8 baseline using existing CI diff infrastructure. **Done — all 6 scenarios render correctly.**
+2. **Desktop interactive test**: Build `screen_runner`. Test keyboard nav (arrow keys, enter, KEY1/2/3), mouse clicks, scroll, scenario switching, mode toggle. **Done — verified on macOS.**
+3. **CI**: Both `screenshots.yml` and `screen-runner.yml` pass on all platforms. **Done.**
+4. **ESP32 flash test** (Part 4, in micropython-builder): Build firmware, flash device. Verify display, touch, all screens, screensaver bounce + dismiss.
