@@ -25,13 +25,13 @@ jobs:
           fetch-depth: 1
 
       - name: Install dependencies
-        run: scripts/ci/screenshots.sh install-deps
+        run: scripts/ci/ci.sh install-screenshot-deps
 
       - name: Build screenshot generator
-        run: scripts/ci/screenshots.sh build
+        run: scripts/ci/ci.sh build-screenshots
 
       - name: Generate screenshots
-        run: scripts/ci/screenshots.sh generate
+        run: scripts/ci/ci.sh generate-screenshots
 
       - name: Upload screenshot artifacts
         uses: actions/upload-artifact@v4
@@ -85,7 +85,7 @@ jobs:
 
       - name: Run screenshot comparison
         run: |
-          scripts/ci/screenshots.sh compare \
+          scripts/ci/ci.sh compare-screenshots \
             --before-dir baseline \
             --after-dir after \
             --out-dir report \
@@ -164,4 +164,4 @@ jobs:
           fetch-depth: 1
 
       - name: Remove PR preview
-        run: scripts/ci/screenshots.sh cleanup-pages gh-pages "previews/pr-${{ github.event.number }}"
+        run: scripts/ci/ci.sh cleanup-pages gh-pages "previews/pr-${{ github.event.number }}"

@@ -1,0 +1,27 @@
+# Forgejo / Codeberg — Screen runner build (Linux only).
+#
+# Verifies the screen runner compiles successfully. Artifact upload is not
+# supported on Forgejo, so this is a build-only check.
+
+name: Build Screen Runner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: scripts/ci/ci.sh install-screen-runner-deps
+
+      - name: Build screen runner
+        run: scripts/ci/ci.sh build-screen-runner

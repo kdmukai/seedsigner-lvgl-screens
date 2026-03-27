@@ -1,44 +1,87 @@
 #!/usr/bin/env bash
-# Shared CI script for screenshot generation and comparison.
+# Shared CI script for desktop tool builds, screenshot generation, and comparison.
 # Called by platform-specific CI configs (GitHub, GitLab, Forgejo/Codeberg).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Use sudo if available (GitHub Actions, Forgejo/Codeberg runners);
+# fall back to direct invocation (GitLab Docker containers run as root).
+SUDO=""
+if command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
 COMMAND="${1:-help}"
 shift || true
 
 case "$COMMAND" in
-  install-deps)
-    # Use sudo if available (GitHub Actions, Forgejo/Codeberg runners);
-    # fall back to direct invocation (GitLab Docker containers run as root).
-    SUDO=""
-    if command -v sudo >/dev/null 2>&1; then
-      SUDO="sudo"
-    fi
+
+  # ---------------------------------------------------------------------------
+  # Screenshot generator
+  # ---------------------------------------------------------------------------
+
+  install-screenshot-deps)
     $SUDO apt-get update
     $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3
     ;;
 
-  build)
+  build-screenshots)
     cmake -S tools/screenshot_generator -B tools/screenshot_generator/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320
     cmake --build tools/screenshot_generator/build -j"$(nproc)"
     ;;
 
-  generate)
+  generate-screenshots)
     tools/screenshot_generator/build/screenshot_gen ${1:+--out-dir "$1"}
     ;;
 
-  compare)
+  compare-screenshots)
     python3 tools/screenshot_generator/compare_screenshots.py "$@"
     ;;
 
+  # ---------------------------------------------------------------------------
+  # Screen runner
+  # ---------------------------------------------------------------------------
+
+  install-screen-runner-deps)
+    $SUDO apt-get update
+    $SUDO apt-get install -y cmake build-essential libsdl2-dev libsdl2-ttf-dev imagemagick
+    ;;
+
+  build-screen-runner)
+    cmake -S tools/screen_runner -B tools/screen_runner/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
+      "${@}"
+    cmake --build tools/screen_runner/build -j"$(nproc)"
+    ;;
+
+  package-screen-runner)
+    # Copy build outputs into a self-contained artifact directory.
+    # Usage: ci.sh package-screen-runner [ARTIFACT_DIR]
+    ARTIFACT_DIR="${1:-artifact}"
+    mkdir -p "$ARTIFACT_DIR"
+    if [ -f tools/screen_runner/build/screen_runner.exe ]; then
+      cp tools/screen_runner/build/screen_runner.exe "$ARTIFACT_DIR/"
+    else
+      cp tools/screen_runner/build/screen_runner "$ARTIFACT_DIR/"
+    fi
+    cp tools/screen_runner/build/screen_runner_font_regular.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/screen_runner/build/screen_runner_font_semibold.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/screen_runner/build/screen_runner_logo.bmp "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/scenarios.json "$ARTIFACT_DIR/"
+    ;;
+
+  # ---------------------------------------------------------------------------
+  # Pages deployment
+  # ---------------------------------------------------------------------------
+
   deploy-pages)
     # Deploy a directory to a git branch (for Pages hosting).
-    # Usage: screenshots.sh deploy-pages SOURCE_DIR BRANCH [DEST_DIR]
+    # Usage: ci.sh deploy-pages SOURCE_DIR BRANCH [DEST_DIR]
     #
     # Requires git credentials to be configured (CI checkout action handles this).
     # DEST_DIR defaults to "." (full replace); set to e.g. "previews/pr-42" for partial.
@@ -83,7 +126,7 @@ case "$COMMAND" in
 
   cleanup-pages)
     # Remove a subdirectory from the pages branch.
-    # Usage: screenshots.sh cleanup-pages BRANCH SUBDIR
+    # Usage: ci.sh cleanup-pages BRANCH SUBDIR
     PAGES_BRANCH="${1:?Usage: cleanup-pages BRANCH SUBDIR}"
     SUBDIR="${2:?Usage: cleanup-pages BRANCH SUBDIR}"
 
@@ -109,16 +152,27 @@ case "$COMMAND" in
     fi
     ;;
 
+  # ---------------------------------------------------------------------------
+  # Help
+  # ---------------------------------------------------------------------------
+
   help|*)
     echo "Usage: $0 COMMAND [ARGS...]"
     echo ""
-    echo "Commands:"
-    echo "  install-deps               Install build dependencies (Debian/Ubuntu)"
-    echo "  build                      Build the screenshot generator"
-    echo "  generate [OUT_DIR]         Generate screenshots"
-    echo "  compare [ARGS...]          Compare before/after screenshots"
-    echo "  deploy-pages SRC BRANCH [DEST]  Deploy directory to a git branch"
-    echo "  cleanup-pages BRANCH SUBDIR     Remove a subdirectory from pages branch"
+    echo "Screenshot commands:"
+    echo "  install-screenshot-deps          Install screenshot generator dependencies"
+    echo "  build-screenshots                Build the screenshot generator"
+    echo "  generate-screenshots [OUT_DIR]   Generate screenshots"
+    echo "  compare-screenshots [ARGS...]    Compare before/after screenshots"
+    echo ""
+    echo "Screen runner commands:"
+    echo "  install-screen-runner-deps       Install screen runner dependencies"
+    echo "  build-screen-runner [CMAKE_ARGS] Build the screen runner"
+    echo "  package-screen-runner [DIR]      Package build outputs into artifact dir"
+    echo ""
+    echo "Pages commands:"
+    echo "  deploy-pages SRC BRANCH [DEST]   Deploy directory to a git branch"
+    echo "  cleanup-pages BRANCH SUBDIR      Remove a subdirectory from pages branch"
     exit 1
     ;;
 esac

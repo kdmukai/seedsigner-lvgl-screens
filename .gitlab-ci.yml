@@ -1,6 +1,7 @@
-# GitLab CI — Screenshot generation and Pages deployment.
+# GitLab CI — Screenshot generation, screen runner build, and Pages deployment.
 #
 # Builds and deploys screenshots on pushes to main.
+# Screen runner build verifies compilation (Linux only).
 # PR comparison is not yet implemented for GitLab (uses artifact-based Pages,
 # making baseline retrieval different from the branch-based approach on other
 # platforms). Contributions welcome.
@@ -15,13 +16,25 @@ build-screenshots:
   variables:
     GIT_SUBMODULE_STRATEGY: recursive
   script:
-    - scripts/ci/screenshots.sh install-deps
-    - scripts/ci/screenshots.sh build
-    - scripts/ci/screenshots.sh generate
+    - scripts/ci/ci.sh install-screenshot-deps
+    - scripts/ci/ci.sh build-screenshots
+    - scripts/ci/ci.sh generate-screenshots
   artifacts:
     paths:
       - tools/screenshot_generator/screenshots/
     expire_in: 7 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+build-screen-runner:
+  stage: build
+  image: ubuntu:24.04
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - scripts/ci/ci.sh install-screen-runner-deps
+    - scripts/ci/ci.sh build-screen-runner
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"

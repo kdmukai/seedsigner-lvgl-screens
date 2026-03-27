@@ -53,36 +53,19 @@ jobs:
 
       - name: Install dependencies (Linux)
         if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential libsdl2-dev libsdl2-ttf-dev imagemagick
+        run: scripts/ci/ci.sh install-screen-runner-deps
 
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
         run: brew install sdl2 sdl2_ttf imagemagick
 
-      - name: Configure
+      - name: Build
         run: |
-          cmake -S tools/screen_runner -B tools/screen_runner/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
+          scripts/ci/ci.sh build-screen-runner \
             ${{ matrix.platform == 'windows' && '-G Ninja' || '' }}
 
-      - name: Build
-        run: cmake --build tools/screen_runner/build --parallel
-
-      - name: Prepare artifact
-        run: |
-          mkdir -p artifact
-          if [ -f tools/screen_runner/build/screen_runner.exe ]; then
-            cp tools/screen_runner/build/screen_runner.exe artifact/
-          else
-            cp tools/screen_runner/build/screen_runner artifact/
-          fi
-          cp tools/screen_runner/build/screen_runner_font_regular.ttf artifact/ 2>/dev/null || true
-          cp tools/screen_runner/build/screen_runner_font_semibold.ttf artifact/ 2>/dev/null || true
-          cp tools/screen_runner/build/screen_runner_logo.bmp artifact/ 2>/dev/null || true
-          cp tools/scenarios.json artifact/
+      - name: Package artifact
+        run: scripts/ci/ci.sh package-screen-runner artifact
 
       - name: Bundle DLLs (Windows)
         if: matrix.platform == 'windows'

@@ -29,16 +29,16 @@ jobs:
           fetch-depth: 1
 
       - name: Install dependencies
-        run: scripts/ci/screenshots.sh install-deps
+        run: scripts/ci/ci.sh install-screenshot-deps
 
       - name: Build screenshot generator
-        run: scripts/ci/screenshots.sh build
+        run: scripts/ci/ci.sh build-screenshots
 
       - name: Generate screenshots
-        run: scripts/ci/screenshots.sh generate
+        run: scripts/ci/ci.sh generate-screenshots
 
       - name: Deploy to pages branch
-        run: scripts/ci/screenshots.sh deploy-pages tools/screenshot_generator/screenshots pages
+        run: scripts/ci/ci.sh deploy-pages tools/screenshot_generator/screenshots pages
 
   build-and-compare-pr:
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
@@ -51,13 +51,13 @@ jobs:
           fetch-depth: 1
 
       - name: Install dependencies
-        run: scripts/ci/screenshots.sh install-deps
+        run: scripts/ci/ci.sh install-screenshot-deps
 
       - name: Build screenshot generator
-        run: scripts/ci/screenshots.sh build
+        run: scripts/ci/ci.sh build-screenshots
 
       - name: Generate screenshots
-        run: scripts/ci/screenshots.sh generate
+        run: scripts/ci/ci.sh generate-screenshots
 
       - name: Checkout pages baseline
         continue-on-error: true
@@ -68,7 +68,7 @@ jobs:
 
       - name: Run screenshot comparison
         run: |
-          scripts/ci/screenshots.sh compare \
+          scripts/ci/ci.sh compare-screenshots \
             --before-dir baseline \
             --after-dir tools/screenshot_generator/screenshots \
             --out-dir report \
@@ -77,7 +77,7 @@ jobs:
       - name: Deploy diff report to pages branch
         continue-on-error: true
         run: |
-          scripts/ci/screenshots.sh deploy-pages \
+          scripts/ci/ci.sh deploy-pages \
             report pages "previews/pr-${{ github.event.pull_request.number }}"
 
       - name: Post PR comment
@@ -149,4 +149,4 @@ jobs:
           fetch-depth: 1
 
       - name: Remove PR preview
-        run: scripts/ci/screenshots.sh cleanup-pages pages "previews/pr-${{ github.event.pull_request.number }}"
+        run: scripts/ci/ci.sh cleanup-pages pages "previews/pr-${{ github.event.pull_request.number }}"
