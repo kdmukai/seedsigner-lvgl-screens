@@ -478,6 +478,13 @@ static void switch_resolution(SDL_Window *window, SDL_Renderer *renderer) {
     lv_display_set_buffers(g_disp, g_draw_buf.data(), NULL, g_draw_buf.size(),
                            LV_DISPLAY_RENDER_MODE_FULL);
 
+    // lv_display_delete sets all associated indevs' display to NULL, which
+    // silently disables them. Reassign every indev to the new display.
+    lv_indev_t *indev = NULL;
+    while ((indev = lv_indev_get_next(indev)) != NULL) {
+        lv_indev_set_display(indev, g_disp);
+    }
+
     // Recreate SDL viewport texture.
     if (g_viewport_tex) SDL_DestroyTexture(g_viewport_tex);
     g_viewport_tex = SDL_CreateTexture(renderer,
