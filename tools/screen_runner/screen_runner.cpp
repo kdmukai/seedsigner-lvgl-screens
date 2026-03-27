@@ -61,7 +61,8 @@ static int g_viewport_pad  = 12;
 static int g_chrome_w      = 220;
 static int g_chrome_gap    = 8;
 static int g_title_bar_h   = 48;
-static int g_title_gap     = 6;
+static int g_toolbar_h     = 32;
+static int g_toolbar_gap   = 2;
 static int g_label_strip_h = 32;
 static int g_label_gap     = 4;
 static int g_status_bar_h  = 32;
@@ -159,6 +160,7 @@ static float g_dpi_scale = 1.0f;
 
 // SDL rects set in main() after window + renderer creation.
 static SDL_Rect g_title_rect;
+static SDL_Rect g_toolbar_rect;
 static SDL_Rect g_chrome_rect;
 static SDL_Rect g_label_rect;
 static SDL_Rect g_viewport_rect;
@@ -431,17 +433,20 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
 
 static void recalc_layout(SDL_Window *window, SDL_Renderer *renderer) {
     int content_h = g_label_strip_h + g_label_gap + g_height + g_status_gap + g_status_bar_h;
-    int window_w  = g_viewport_pad + g_chrome_w + g_chrome_gap + g_width + g_viewport_pad;
-    int window_h  = g_viewport_pad + g_title_bar_h + g_title_gap + content_h + g_viewport_pad;
+    int full_w    = g_chrome_w + g_chrome_gap + g_width;
+    int window_w  = g_viewport_pad + full_w + g_viewport_pad;
+    int window_h  = g_viewport_pad + g_title_bar_h + g_toolbar_h + g_toolbar_gap
+                    + content_h + g_viewport_pad;
 
     SDL_SetWindowSize(window, window_w, window_h);
     SDL_RenderSetLogicalSize(renderer, window_w, window_h);
 
-    int content_top = g_viewport_pad + g_title_bar_h + g_title_gap;
+    int toolbar_top = g_viewport_pad + g_title_bar_h;
+    int content_top = toolbar_top + g_toolbar_h + g_toolbar_gap;
     int right_col_x = g_viewport_pad + g_chrome_w + g_chrome_gap;
 
-    g_title_rect    = {g_viewport_pad, g_viewport_pad,
-                       g_chrome_w + g_chrome_gap + g_width, g_title_bar_h};
+    g_title_rect    = {g_viewport_pad, g_viewport_pad, full_w, g_title_bar_h};
+    g_toolbar_rect  = {g_viewport_pad, toolbar_top, full_w, g_toolbar_h};
     g_chrome_rect   = {g_viewport_pad, content_top, g_chrome_w, content_h};
     g_label_rect    = {right_col_x, content_top, g_width, g_label_strip_h};
     g_viewport_rect = {right_col_x, content_top + g_label_strip_h + g_label_gap,
@@ -501,10 +506,7 @@ static void draw_title_bar(SDL_Renderer *renderer) {
     int cur_x = g_title_rect.x;
 
     if (g_logo_tex) {
-        // Scale logo to a fixed logical height, preserving aspect ratio.
-        // BMP is generated at 2x physical for Retina crispness; we specify
-        // logical dimensions directly (do NOT divide by g_dpi_scale here).
-        int log_h = g_title_rect.h - 8;  // 40px logical in a 48px title bar
+        int log_h = g_title_rect.h - 8;
         int log_w = (g_logo_h > 0) ? (int)((float)g_logo_w * log_h / (float)g_logo_h) : log_h;
         int logo_y = g_title_rect.y + (g_title_rect.h - log_h) / 2;
         SDL_Rect logo_dst = {cur_x, logo_y, log_w, log_h};
@@ -520,83 +522,77 @@ static void draw_title_bar(SDL_Renderer *renderer) {
         int text_y = g_title_rect.y + (g_title_rect.h - (int)(g_title_tex_h / g_dpi_scale)) / 2;
         blit_text(renderer, g_title_rest_tex, cur_x, text_y, g_title_rest_w, g_title_tex_h);
     }
+}
 
-    // Right-aligned badges: [Resolution: 480x320]  [Input mode: Keyboard]
+// Helper: draw a labeled badge and store its hit rect.
+// Returns the x position to the left of this badge group (for chaining).
+static int draw_badge(SDL_Renderer *renderer, int right_edge, int bar_y, int bar_h,
+                      SDL_Texture *prefix_tex, int prefix_w,
+                      SDL_Texture *label_tex, int label_w,
+                      uint8_t fill_r, uint8_t fill_g, uint8_t fill_b,
+                      SDL_Rect *out_rect) {
     const int PAD_X = 10, PAD_Y = 4;
-    int right_edge = g_title_rect.x + g_title_rect.w - 8;
+    if (!label_tex) return right_edge;
 
-    // --- Mode badge (rightmost) ---
-    if (g_mode_label_tex) {
-        int label_phys_h = 0;
-        { int tw = 0; SDL_QueryTexture(g_mode_label_tex, NULL, NULL, &tw, &label_phys_h); }
-        int log_label_w = (int)(g_mode_label_w / g_dpi_scale);
-        int log_label_h = (int)(label_phys_h / g_dpi_scale);
-        int badge_w = log_label_w + PAD_X * 2;
-        int badge_h = log_label_h + PAD_Y * 2;
-        int badge_x = right_edge - badge_w;
-        int badge_y = g_title_rect.y + (g_title_rect.h - badge_h) / 2;
-        g_mode_badge_rect = {badge_x, badge_y, badge_w, badge_h};
+    int label_phys_h = 0;
+    { int tw = 0; SDL_QueryTexture(label_tex, NULL, NULL, &tw, &label_phys_h); }
+    int log_label_w = (int)(label_w / g_dpi_scale);
+    int log_label_h = (int)(label_phys_h / g_dpi_scale);
+    int badge_w = log_label_w + PAD_X * 2;
+    int badge_h = log_label_h + PAD_Y * 2;
+    int badge_x = right_edge - badge_w;
+    int badge_y = bar_y + (bar_h - badge_h) / 2;
+    *out_rect = {badge_x, badge_y, badge_w, badge_h};
 
-        if (g_mode_prefix_tex) {
-            int prefix_phys_h = 0;
-            { int tw = 0; SDL_QueryTexture(g_mode_prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
-            int log_prefix_w = (int)(g_mode_prefix_w / g_dpi_scale);
-            int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
-            int prefix_x = badge_x - log_prefix_w - 6;
-            int prefix_y = g_title_rect.y + (g_title_rect.h - log_prefix_h) / 2;
-            blit_text(renderer, g_mode_prefix_tex, prefix_x, prefix_y,
-                      g_mode_prefix_w, prefix_phys_h);
-            right_edge = prefix_x - 14;
-        } else {
-            right_edge = badge_x - 14;
-        }
+    int next_edge = badge_x - 14;
 
-        bool is_touch = (input_profile_get_mode() == INPUT_MODE_TOUCH);
-        SDL_SetRenderDrawColor(renderer,
-            is_touch ? 0xc8 : 0x3d,
-            is_touch ? 0x6f : 0x6b,
-            is_touch ? 0x00 : 0x8c, 0xFF);
-        SDL_RenderFillRect(renderer, &g_mode_badge_rect);
-        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
-        SDL_RenderDrawRect(renderer, &g_mode_badge_rect);
-
-        blit_text(renderer, g_mode_label_tex,
-                  badge_x + PAD_X, badge_y + PAD_Y,
-                  g_mode_label_w, label_phys_h);
+    if (prefix_tex) {
+        int prefix_phys_h = 0;
+        { int tw = 0; SDL_QueryTexture(prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
+        int log_prefix_w = (int)(prefix_w / g_dpi_scale);
+        int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
+        int prefix_x = badge_x - log_prefix_w - 6;
+        int prefix_y = bar_y + (bar_h - log_prefix_h) / 2;
+        blit_text(renderer, prefix_tex, prefix_x, prefix_y, prefix_w, prefix_phys_h);
+        next_edge = prefix_x - 14;
     }
 
-    // --- Resolution badge (to the left of mode badge) ---
-    if (g_res_label_tex) {
-        int label_phys_h = 0;
-        { int tw = 0; SDL_QueryTexture(g_res_label_tex, NULL, NULL, &tw, &label_phys_h); }
-        int log_label_w = (int)(g_res_label_w / g_dpi_scale);
-        int log_label_h = (int)(label_phys_h / g_dpi_scale);
-        int badge_w = log_label_w + PAD_X * 2;
-        int badge_h = log_label_h + PAD_Y * 2;
-        int badge_x = right_edge - badge_w;
-        int badge_y = g_title_rect.y + (g_title_rect.h - badge_h) / 2;
-        g_res_badge_rect = {badge_x, badge_y, badge_w, badge_h};
+    SDL_SetRenderDrawColor(renderer, fill_r, fill_g, fill_b, 0xFF);
+    SDL_RenderFillRect(renderer, out_rect);
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
+    SDL_RenderDrawRect(renderer, out_rect);
 
-        if (g_res_prefix_tex) {
-            int prefix_phys_h = 0;
-            { int tw = 0; SDL_QueryTexture(g_res_prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
-            int log_prefix_w = (int)(g_res_prefix_w / g_dpi_scale);
-            int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
-            int prefix_x = badge_x - log_prefix_w - 6;
-            int prefix_y = g_title_rect.y + (g_title_rect.h - log_prefix_h) / 2;
-            blit_text(renderer, g_res_prefix_tex, prefix_x, prefix_y,
-                      g_res_prefix_w, prefix_phys_h);
-        }
+    blit_text(renderer, label_tex,
+              badge_x + PAD_X, badge_y + PAD_Y,
+              label_w, label_phys_h);
 
-        SDL_SetRenderDrawColor(renderer, 0x2c, 0x5a, 0x2c, 0xFF);
-        SDL_RenderFillRect(renderer, &g_res_badge_rect);
-        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
-        SDL_RenderDrawRect(renderer, &g_res_badge_rect);
+    return next_edge;
+}
 
-        blit_text(renderer, g_res_label_tex,
-                  badge_x + PAD_X, badge_y + PAD_Y,
-                  g_res_label_w, label_phys_h);
-    }
+static void draw_toolbar(SDL_Renderer *renderer) {
+    SDL_SetRenderDrawColor(renderer, 0x14, 0x14, 0x14, 0xFF);
+    SDL_RenderFillRect(renderer, &g_toolbar_rect);
+
+    int right_edge = g_toolbar_rect.x + g_toolbar_rect.w - 8;
+
+    // Mode badge (rightmost)
+    bool is_touch = (input_profile_get_mode() == INPUT_MODE_TOUCH);
+    right_edge = draw_badge(renderer, right_edge,
+        g_toolbar_rect.y, g_toolbar_rect.h,
+        g_mode_prefix_tex, g_mode_prefix_w,
+        g_mode_label_tex, g_mode_label_w,
+        is_touch ? 0xc8 : 0x3d,
+        is_touch ? 0x6f : 0x6b,
+        is_touch ? 0x00 : 0x8c,
+        &g_mode_badge_rect);
+
+    // Resolution badge (to the left)
+    draw_badge(renderer, right_edge,
+        g_toolbar_rect.y, g_toolbar_rect.h,
+        g_res_prefix_tex, g_res_prefix_w,
+        g_res_label_tex, g_res_label_w,
+        0x2c, 0x5a, 0x2c,
+        &g_res_badge_rect);
 }
 
 static void draw_status_bar(SDL_Renderer *renderer) {
@@ -845,10 +841,13 @@ int main(int argc, char **argv) {
 
     // Window layout (logical pixels):
     //   title bar spans full width at top.
+    //   toolbar (resolution + input mode badges) below title.
     //   Below: chrome on left, label strip + viewport + status bar on right.
     int content_h = g_label_strip_h + g_label_gap + g_height + g_status_gap + g_status_bar_h;
-    int window_w  = g_viewport_pad + g_chrome_w + g_chrome_gap + g_width + g_viewport_pad;
-    int window_h  = g_viewport_pad + g_title_bar_h + g_title_gap + content_h + g_viewport_pad;
+    int full_w    = g_chrome_w + g_chrome_gap + g_width;
+    int window_w  = g_viewport_pad + full_w + g_viewport_pad;
+    int window_h  = g_viewport_pad + g_title_bar_h + g_toolbar_h + g_toolbar_gap
+                    + content_h + g_viewport_pad;
 
     SDL_Window *window = SDL_CreateWindow("screen_runner",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -875,11 +874,12 @@ int main(int argc, char **argv) {
     SDL_RenderSetLogicalSize(renderer, window_w, window_h);
 
     // Compute SDL rects (in logical pixels).
-    int content_top = g_viewport_pad + g_title_bar_h + g_title_gap;
+    int toolbar_top = g_viewport_pad + g_title_bar_h;
+    int content_top = toolbar_top + g_toolbar_h + g_toolbar_gap;
     int right_col_x = g_viewport_pad + g_chrome_w + g_chrome_gap;
 
-    g_title_rect    = {g_viewport_pad, g_viewport_pad,
-                       g_chrome_w + g_chrome_gap + g_width, g_title_bar_h};
+    g_title_rect    = {g_viewport_pad, g_viewport_pad, full_w, g_title_bar_h};
+    g_toolbar_rect  = {g_viewport_pad, toolbar_top, full_w, g_toolbar_h};
     g_chrome_rect   = {g_viewport_pad, content_top, g_chrome_w, content_h};
     g_label_rect    = {right_col_x, content_top, g_width, g_label_strip_h};
     g_viewport_rect = {right_col_x, content_top + g_label_strip_h + g_label_gap,
@@ -1130,6 +1130,7 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
 
         draw_title_bar(renderer);
+        draw_toolbar(renderer);
         draw_chrome(renderer);
         draw_label_strip(renderer);
         draw_status_bar(renderer);
