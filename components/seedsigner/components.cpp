@@ -1,10 +1,37 @@
 #include "components.h"
 #include "gui_constants.h"
+#include "input_profile.h"
 #include "lvgl.h"
 
 #include <stdint.h>
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
+
+// Reset LVGL's default button chrome (shadow, outline, border) so our
+// buttons render as flat colored rectangles with rounded corners.
+static void reset_button_chrome(lv_obj_t* btn) {
+    lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn, BUTTON_RADIUS, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+}
+
+// Find the last lv_label child of a widget (skips non-label children like icons).
+static lv_obj_t* find_last_label_child(lv_obj_t *parent) {
+    lv_obj_t *result = NULL;
+    uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t *child = lv_obj_get_child(parent, (int32_t)i);
+        if (lv_obj_check_type(child, &lv_label_class)) {
+            result = child;
+        }
+    }
+    return result;
+}
 
 static void top_nav_button_event_callback(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
@@ -22,14 +49,7 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_set_size(btn, TOP_NAV_BUTTON_SIZE, TOP_NAV_BUTTON_SIZE);
     lv_obj_align(btn, align, x_ofs, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_radius(btn, BUTTON_RADIUS, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    reset_button_chrome(btn);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
 
@@ -143,7 +163,7 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
         lv_obj_set_style_bg_color(lv_button, lv_color_hex(BUTTON_BACKGROUND_COLOR), 0);
     }
 
-    uint32_t child_count = lv_obj_get_child_cnt(lv_button);
+    uint32_t child_count = lv_obj_get_child_count(lv_button);
     for (uint32_t i = 0; i < child_count; ++i) {
         lv_obj_t* child = lv_obj_get_child(lv_button, i);
         if (!child) {
@@ -222,7 +242,7 @@ void button_toggle_callback(lv_event_t* e) {
 
     // Enforce single-select behavior: deactivate all sibling buttons first.
     if (parent) {
-        uint32_t child_count = lv_obj_get_child_cnt(parent);
+        uint32_t child_count = lv_obj_get_child_count(parent);
         for (uint32_t i = 0; i < child_count; ++i) {
             lv_obj_t* child = lv_obj_get_child(parent, i);
             if (!child || child == btn) {
@@ -238,7 +258,7 @@ void button_toggle_callback(lv_event_t* e) {
 
     uint32_t selected_index = 0;
     if (parent) {
-        uint32_t child_count = lv_obj_get_child_cnt(parent);
+        uint32_t child_count = lv_obj_get_child_count(parent);
         uint32_t btn_pos = 0;
         for (uint32_t i = 0; i < child_count; ++i) {
             lv_obj_t* child = lv_obj_get_child(parent, i);
@@ -253,24 +273,30 @@ void button_toggle_callback(lv_event_t* e) {
         }
     }
 
-    // Derive label text from the button's label child at event time.
+    // Derive label text from the button's last label child at event time.
     // This avoids dangling pointers when original source strings are temporary.
     const char *label_text = "";
-    uint32_t btn_child_count = lv_obj_get_child_cnt(btn);
-    for (uint32_t i = 0; i < btn_child_count; ++i) {
-        lv_obj_t *child = lv_obj_get_child(btn, i);
-        if (!child) continue;
-        if (lv_obj_check_type(child, &lv_label_class)) {
-            const char *t = lv_label_get_text(child);
-            if (t && t[0] != '\0') {
-                label_text = t;
-            }
-        }
+    lv_obj_t *text_child = find_last_label_child(btn);
+    if (text_child) {
+        const char *t = lv_label_get_text(text_child);
+        if (t && t[0] != '\0') label_text = t;
     }
     seedsigner_lvgl_on_button_selected(selected_index, label_text);
 
     s_press_btn = NULL;
     s_press_dragged = false;
+}
+
+
+// In joystick mode, labels scroll only when their parent button is focused.
+static void label_scroll_on_focus(lv_event_t *e) {
+    lv_obj_t *text_label = find_last_label_child((lv_obj_t *)lv_event_get_target(e));
+    if (text_label) lv_label_set_long_mode(text_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+}
+
+static void label_clip_on_defocus(lv_event_t *e) {
+    lv_obj_t *text_label = find_last_label_child((lv_obj_t *)lv_event_get_target(e));
+    if (text_label) lv_label_set_long_mode(text_label, LV_LABEL_LONG_CLIP);
 }
 
 
@@ -286,17 +312,19 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
         lv_obj_align_to(lv_button, lv_parent, LV_ALIGN_TOP_MID, 0, 0);
     }
 
-    lv_obj_set_style_shadow_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(lv_button, BUTTON_RADIUS, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    reset_button_chrome(lv_button);
 
     lv_obj_t* label = lv_label_create(lv_button);
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
+    lv_obj_set_width(label, lv_obj_get_content_width(lv_button) - 2 * EDGE_PADDING);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    if (input_profile_get_mode() == INPUT_MODE_TOUCH) {
+        lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    } else {
+        lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+        lv_obj_add_event_cb(lv_button, label_scroll_on_focus, LV_EVENT_FOCUSED, NULL);
+        lv_obj_add_event_cb(lv_button, label_clip_on_defocus, LV_EVENT_DEFOCUSED, NULL);
+    }
     lv_label_set_text(label, text);
 
     // Wire up gesture-aware input callback
@@ -314,48 +342,25 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
 
 
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to) {
-    lv_obj_t* lv_button = lv_button_create(lv_parent);
-    lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), MAIN_MENU_BUTTON_HEIGHT);
+    // Start from a regular button (handles styling, label, events, scroll behavior).
+    lv_obj_t* lv_button = button(lv_parent, text, align_to);
 
-    if (align_to != NULL) {
-        lv_obj_align_to(lv_button, align_to, LV_ALIGN_OUT_BOTTOM_MID, 0, LIST_ITEM_PADDING);
-    } else {
-        lv_obj_align_to(lv_button, lv_parent, LV_ALIGN_TOP_MID, 0, 0);
-    }
+    // Override height for the larger main menu buttons.
+    lv_obj_set_height(lv_button, MAIN_MENU_BUTTON_HEIGHT);
 
-    lv_obj_set_style_shadow_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(lv_button, BUTTON_RADIUS, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(lv_button, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-
+    // Switch to vertical flex layout: icon above text.
     lv_obj_set_layout(lv_button, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(lv_button, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(lv_button, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_ver(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
     lv_obj_set_style_pad_row(lv_button, COMPONENT_PADDING / 2, LV_PART_MAIN);
 
+    // Insert the icon label before the text label (which button() already created).
     lv_obj_t* icon_label = lv_label_create(lv_button);
     lv_obj_set_style_text_font(icon_label, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER, LV_PART_MAIN);
     lv_label_set_text(icon_label, icon ? icon : "");
+    lv_obj_move_to_index(icon_label, 0);
 
-    lv_obj_t* text_label = lv_label_create(lv_button);
-    lv_obj_set_style_text_font(text_label, &BUTTON_FONT, LV_PART_MAIN);
-    lv_obj_set_width(text_label, lv_pct(100));
-    lv_obj_set_style_pad_hor(text_label, COMPONENT_PADDING, LV_PART_MAIN);
-    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_label_set_long_mode(text_label, LV_LABEL_LONG_CLIP);
-    lv_label_set_text(text_label, text ? text : "");
-
-    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_PRESSING, NULL);
-    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(lv_button, button_toggle_callback, LV_EVENT_RELEASED, NULL);
-
-    button_set_active(lv_button, false);
     return lv_button;
 }
 
@@ -380,7 +385,7 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
     if (item_count == 1 && first_button) {
         button_set_active(first_button, true);
     } else {
-        uint32_t child_count = lv_obj_get_child_cnt(lv_parent);
+        uint32_t child_count = lv_obj_get_child_count(lv_parent);
         for (uint32_t i = 0; i < child_count; ++i) {
             lv_obj_t* child = lv_obj_get_child(lv_parent, i);
             if (child && lv_obj_check_type(child, &lv_button_class)) {
