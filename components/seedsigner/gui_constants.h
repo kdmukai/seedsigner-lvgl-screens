@@ -32,6 +32,10 @@
 #error "At least one SUPPORT_DISPLAY_HEIGHT_* flag must be defined"
 #endif
 
+// Named PX_MULTIPLIER values — one per supported display height.
+const int PX_MULTIPLIER_100 = 100;   // 240px height (Pi Zero): no scaling
+const int PX_MULTIPLIER_150 = 150;   // 320px height: aesthetic upscale
+
 // ---------------------------------------------------------------------------
 // Font declarations for supported display heights
 // ---------------------------------------------------------------------------

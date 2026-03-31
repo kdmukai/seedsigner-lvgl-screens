@@ -9,17 +9,58 @@ static int px_scale(int base, int multiplier) {
     return static_cast<int>(base * multiplier / 100.0);
 }
 
-static DisplayProfile make_profile(
-    int width, int height, int px_mult,
-    const lv_font_t* title_font,
-    const lv_font_t* btn_font,
-    const lv_font_t* body_font_ptr,
-    const lv_font_t* icon_font,
-    const lv_font_t* icon_large_font)
-{
+// ---------------------------------------------------------------------------
+// Font selection by multiplier. Font files are named by their multiplier value:
+// unsuffixed = PX_MULTIPLIER_100, _150x = PX_MULTIPLIER_150.
+// ---------------------------------------------------------------------------
+struct FontSet {
+    const lv_font_t* title;
+    const lv_font_t* button;
+    const lv_font_t* body;
+    const lv_font_t* icon;
+    const lv_font_t* icon_large;
+};
+
+static FontSet fonts_for_multiplier(int px_mult) {
+#ifdef SUPPORT_DISPLAY_HEIGHT_320
+    if (px_mult == PX_MULTIPLIER_150) {
+        return {
+            &opensans_semibold_20_4bpp_150x,
+            &opensans_semibold_18_4bpp_150x,
+            &opensans_regular_17_4bpp_150x,
+            &seedsigner_icons_24_4bpp_150x,
+            &seedsigner_icons_36_4bpp_150x,
+        };
+    }
+#endif
+#ifdef SUPPORT_DISPLAY_HEIGHT_240
+    if (px_mult == PX_MULTIPLIER_100) {
+        return {
+            &opensans_semibold_20_4bpp,
+            &opensans_semibold_18_4bpp,
+            &opensans_regular_17_4bpp,
+            &seedsigner_icons_24_4bpp,
+            &seedsigner_icons_36_4bpp,
+        };
+    }
+#endif
+    fprintf(stderr, "FATAL: no fonts for PX_MULTIPLIER=%d\n", px_mult);
+    abort();
+}
+
+static DisplayProfile make_profile(int width, int height) {
+    int px_mult;
+    switch (height) {
+        case 240: px_mult = PX_MULTIPLIER_100; break;
+        case 320: px_mult = PX_MULTIPLIER_150; break;
+        default:
+            fprintf(stderr, "FATAL: no PX_MULTIPLIER for height=%d\n", height);
+            abort();
+    }
     int comp_pad   = px_scale(8, px_mult);
     int title_size = px_scale(20, px_mult);
     int min_size   = px_scale(15, px_mult);
+    FontSet fonts  = fonts_for_multiplier(px_mult);
 
     return {
         width, height, px_mult,
@@ -42,7 +83,7 @@ static DisplayProfile make_profile(
         px_scale(32, px_mult),   // button_height
         px_scale(8, px_mult),    // button_radius
         px_scale(56, px_mult),   // main_menu_button_height
-        title_font, btn_font, body_font_ptr, icon_font, icon_large_font,
+        fonts.title, fonts.button, fonts.body, fonts.icon, fonts.icon_large,
     };
 }
 
@@ -50,27 +91,12 @@ static DisplayProfile make_profile(
 // Profile instances for each supported resolution
 // ---------------------------------------------------------------------------
 #ifdef SUPPORT_DISPLAY_HEIGHT_240
-static const DisplayProfile profile_240x240 = make_profile(
-    240, 240, 100,
-    &opensans_semibold_20_4bpp, &opensans_semibold_18_4bpp,
-    &opensans_regular_17_4bpp, &seedsigner_icons_24_4bpp,
-    &seedsigner_icons_36_4bpp
-);
-static const DisplayProfile profile_320x240 = make_profile(
-    320, 240, 100,
-    &opensans_semibold_20_4bpp, &opensans_semibold_18_4bpp,
-    &opensans_regular_17_4bpp, &seedsigner_icons_24_4bpp,
-    &seedsigner_icons_36_4bpp
-);
+static const DisplayProfile profile_240x240 = make_profile(240, 240);
+static const DisplayProfile profile_320x240 = make_profile(320, 240);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
-static const DisplayProfile profile_480x320 = make_profile(
-    480, 320, 150,
-    &opensans_semibold_20_4bpp_150x, &opensans_semibold_18_4bpp_150x,
-    &opensans_regular_17_4bpp_150x, &seedsigner_icons_24_4bpp_150x,
-    &seedsigner_icons_36_4bpp_150x
-);
+static const DisplayProfile profile_480x320 = make_profile(480, 320);
 #endif
 
 // ---------------------------------------------------------------------------
