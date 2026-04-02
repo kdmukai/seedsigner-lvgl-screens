@@ -102,7 +102,6 @@ static DisplayProfile make_profile(int width, int height) {
         px_scale(18, px_mult),   // button_font_size
         px_scale(32, px_mult),   // button_height
         px_scale(8, px_mult),    // button_radius
-        px_scale(56, px_mult),   // main_menu_button_height
         fonts.main_menu_title, fonts.title, fonts.large_button, fonts.button, fonts.body, fonts.icon, fonts.icon_large,
     };
 }

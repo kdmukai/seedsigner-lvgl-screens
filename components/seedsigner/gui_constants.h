@@ -101,7 +101,6 @@ struct DisplayProfile {
     int button_font_size;
     int button_height;
     int button_radius;
-    int main_menu_button_height;
 
     const lv_font_t* main_menu_title_font;
     const lv_font_t* top_nav_title_font;
@@ -143,7 +142,6 @@ const DisplayProfile& display_profile_at(int index);
 #define BUTTON_FONT_SIZE          (active_profile().button_font_size)
 #define BUTTON_HEIGHT             (active_profile().button_height)
 #define BUTTON_RADIUS             (active_profile().button_radius)
-#define MAIN_MENU_BUTTON_HEIGHT   (active_profile().main_menu_button_height)
 
 #define MAIN_MENU_TITLE_FONT               (*active_profile().main_menu_title_font)
 #define TOP_NAV_TITLE_FONT                 (*active_profile().top_nav_title_font)

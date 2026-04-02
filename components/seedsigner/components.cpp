@@ -352,15 +352,12 @@ lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* t
     lv_obj_t* text_label = lv_obj_get_child(lv_button, 0);
     lv_obj_set_style_text_font(text_label, &LARGE_BUTTON_FONT, LV_PART_MAIN);
 
-    // Override height for the larger main menu buttons.
-    lv_obj_set_height(lv_button, MAIN_MENU_BUTTON_HEIGHT);
-
     // Switch to vertical flex layout: icon above text.
     lv_obj_set_layout(lv_button, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(lv_button, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(lv_button, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_ver(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(lv_button, COMPONENT_PADDING / 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
 
     // Insert the icon label before the text label (which button() already created).
     lv_obj_t* icon_label = lv_label_create(lv_button);

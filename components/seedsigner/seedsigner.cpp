@@ -97,8 +97,8 @@ static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
 // boilerplate.
 static lv_obj_t* create_standard_body_content(lv_obj_t *screen, lv_obj_t *top_nav_obj, bool scrollable) {
     lv_obj_t* body_content = lv_obj_create(screen);
-    lv_obj_set_size(body_content, lv_obj_get_width(screen), lv_obj_get_height(screen) - TOP_NAV_HEIGHT - COMPONENT_PADDING);
-    lv_obj_align_to(body_content, top_nav_obj, LV_ALIGN_OUT_BOTTOM_MID, 0, COMPONENT_PADDING);
+    lv_obj_set_size(body_content, lv_obj_get_width(screen), lv_obj_get_height(screen) - TOP_NAV_HEIGHT);
+    lv_obj_align_to(body_content, top_nav_obj, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(body_content, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
     lv_obj_set_style_pad_left(body_content, EDGE_PADDING, LV_PART_MAIN);
     lv_obj_set_style_pad_right(body_content, EDGE_PADDING, LV_PART_MAIN);
@@ -342,11 +342,19 @@ void main_menu_screen(void *ctx)
     static const char *labels[] = {"Scan", "Seeds", "Tools", "Settings"};
 
     const int32_t available_w = lv_obj_get_content_width(body_content);
-    const int32_t available_h = lv_obj_get_content_height(body_content);
+    const int32_t screen_h = lv_obj_get_height(scr);
 
-    // Max out the large button width. Note that the body already has edge padding.
+    // Match the Python LargeButtonScreen button sizing:
+    //   button_height = int((canvas_height - top_nav.height - 2*COMPONENT_PADDING - EDGE_PADDING) / 2)
     int32_t button_w = (available_w - COMPONENT_PADDING) / 2;
-    int32_t button_h = (available_h - COMPONENT_PADDING) / 2;
+    int32_t button_h = (screen_h - TOP_NAV_HEIGHT - 2 * COMPONENT_PADDING - EDGE_PADDING) / 2;
+
+    // Vertically center the 2x2 grid, matching the Python LargeButtonScreen:
+    //   button_start_y = top_nav_h + (canvas_h - (top_nav_h + CP) - 2*button_h - CP) / 2
+    // Computed relative to the body origin (which sits at top_nav bottom).
+    int32_t grid_h = 2 * button_h + COMPONENT_PADDING;
+    int32_t below_nav = screen_h - TOP_NAV_HEIGHT;
+    int32_t y_offset = (below_nav - COMPONENT_PADDING - 2 * button_h - COMPONENT_PADDING) / 2;
 
     lv_obj_t *buttons[4] = {NULL, NULL, NULL, NULL};
     for (uint32_t i = 0; i < 4; ++i) {
@@ -359,25 +367,24 @@ void main_menu_screen(void *ctx)
     lv_obj_set_pos(
         buttons[0],
         0,
-        0
+        y_offset
     );
     lv_obj_set_pos(
         buttons[1],
         button_w + COMPONENT_PADDING,
-        0
+        y_offset
     );
 
     // second row
     lv_obj_set_pos(
         buttons[2],
         0,
-        button_h + COMPONENT_PADDING
+        y_offset + button_h + COMPONENT_PADDING
     );
     lv_obj_set_pos(
         buttons[3],
         button_w + COMPONENT_PADDING,
-        button_h + COMPONENT_PADDING
-
+        y_offset + button_h + COMPONENT_PADDING
     );
 
     // Bind shared nav behavior using this screen's body focusables/layout.
