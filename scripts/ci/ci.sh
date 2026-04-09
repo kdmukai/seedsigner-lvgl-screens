@@ -13,6 +13,9 @@ if command -v sudo >/dev/null 2>&1; then
   SUDO="sudo"
 fi
 
+# Portable CPU count (nproc is Linux-only; macOS uses sysctl).
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+
 COMMAND="${1:-help}"
 shift || true
 
@@ -31,7 +34,7 @@ case "$COMMAND" in
     cmake -S tools/screenshot_generator -B tools/screenshot_generator/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320
-    cmake --build tools/screenshot_generator/build -j"$(nproc)"
+    cmake --build tools/screenshot_generator/build -j"$NPROC"
     ;;
 
   generate-screenshots)
@@ -55,8 +58,8 @@ case "$COMMAND" in
     cmake -S tools/screen_runner -B tools/screen_runner/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
-      "${@}"
-    cmake --build tools/screen_runner/build -j"$(nproc)"
+      ${@+"$@"}
+    cmake --build tools/screen_runner/build -j"$NPROC"
     ;;
 
   package-screen-runner)
