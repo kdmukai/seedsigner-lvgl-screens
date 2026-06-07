@@ -156,14 +156,16 @@ const DisplayProfile& display_profile_at(int index);
 #define BODY_FONT                          (*active_profile().body_font)
 #define ICON_FONT__SEEDSIGNER              (*active_profile().icon_font)
 #define ICON_LARGE_BUTTON_FONT__SEEDSIGNER (*active_profile().icon_large_button_font)
+#define ICON_PRIMARY_SCREEN_FONT__SEEDSIGNER (*active_profile().icon_primary_screen_font)
 
 // ---------------------------------------------------------------------------
 // Non-scaling constants (colors, font names, etc.)
 // ---------------------------------------------------------------------------
 const int BACKGROUND_COLOR = 0x000000;
 const int WARNING_COLOR = 0xffd60a;
-const int DIRE_WARNING_COLOR = 0xff0000;
-const int SUCCESS_COLOR = 0x00dd00;
+const int DIRE_WARNING_COLOR = 0xff5700;
+const int ERROR_COLOR = 0xff1b0a;
+const int SUCCESS_COLOR = 0x30d158;
 const int BITCOIN_ORANGE = 0xff9416;
 const int ACCENT_COLOR = 0xff9f0a;
 const int TESTNET_COLOR = 0x00f100;

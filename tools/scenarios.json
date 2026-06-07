@@ -51,5 +51,67 @@
       }
     ]
   },
-  "screensaver_screen": {}
+  "screensaver_screen": {},
+  "large_icon_status_screen": {
+    "context": {
+      "top_nav": { "title": "Backup Verified", "show_back_button": false, "show_power_button": false },
+      "status_type": "success",
+      "status_headline": "Success!",
+      "text": "All mnemonic backup words were successfully verified!",
+      "button_list": ["OK"],
+      "is_bottom_list": true,
+      "warning_edges": false
+    },
+    "variations": [
+      {
+        "name": "warning",
+        "context": {
+          "top_nav": { "title": "Caution", "show_back_button": true, "show_power_button": false },
+          "status_type": "warning",
+          "status_headline": "Full Spend!",
+          "text": "This transaction spends its entire input value. No change is coming back to your wallet.",
+          "button_list": ["Continue"],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "dire_warning",
+        "context": {
+          "top_nav": { "title": "Caution", "show_back_button": true, "show_power_button": false },
+          "status_type": "dire_warning",
+          "status_headline": "SeedQR is your private key!",
+          "text": "Never photograph or scan it into a device that connects to the internet.",
+          "button_list": ["I understand"],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "error",
+        "context": {
+          "top_nav": { "title": "Hardware Error", "show_back_button": false, "show_power_button": false },
+          "status_type": "error",
+          "status_headline": "Cannot access camera",
+          "text": "Disconnect power and check for a loose camera connection.",
+          "button_list": ["Back to Main Menu"],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "dire_warning_animated",
+        "context": {
+          "top_nav": { "title": "Caution", "show_back_button": true, "show_power_button": false },
+          "status_type": "dire_warning",
+          "status_headline": "SeedQR is your private key!",
+          "text": "Never photograph or scan it into a device that connects to the internet.",
+          "button_list": ["I understand"],
+          "is_bottom_list": true,
+          "warning_edges": true,
+          "animated": true
+        }
+      }
+    ]
+  }
 }

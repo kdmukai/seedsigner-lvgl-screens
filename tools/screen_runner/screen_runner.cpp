@@ -36,6 +36,7 @@ static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"main_menu_screen", main_menu_screen},
     {"button_list_screen", button_list_screen},
     {"screensaver_screen", screensaver_screen},
+    {"large_icon_status_screen", large_icon_status_screen},
 };
 
 struct scenario_def_t {
