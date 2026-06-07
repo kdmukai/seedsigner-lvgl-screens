@@ -21,6 +21,7 @@ struct FontSet {
     const lv_font_t* body;
     const lv_font_t* icon;
     const lv_font_t* icon_large;
+    const lv_font_t* icon_primary_screen;  // 48 px base; scales with multiplier
 };
 
 static FontSet fonts_for_multiplier(int px_mult) {
@@ -34,6 +35,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &opensans_regular_17_4bpp_200x,
             &seedsigner_icons_24_4bpp_200x,
             &seedsigner_icons_36_4bpp_200x,   // icon_large unchanged
+            &seedsigner_icons_48_4bpp_200x,   // icon_primary_screen = 96px
         };
     }
 #endif
@@ -47,6 +49,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &opensans_regular_17_4bpp_150x,
             &seedsigner_icons_24_4bpp_150x,
             &seedsigner_icons_36_4bpp_150x,   // icon_large unchanged
+            &seedsigner_icons_48_4bpp_150x,   // icon_primary_screen = 72px
         };
     }
 #endif
@@ -60,6 +63,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &opensans_regular_17_4bpp,
             &seedsigner_icons_24_4bpp,
             &seedsigner_icons_48_4bpp,         // icon_large = 48px
+            &seedsigner_icons_48_4bpp,         // icon_primary_screen = 48px
         };
     }
 #endif
@@ -102,7 +106,7 @@ static DisplayProfile make_profile(int width, int height) {
         px_scale(18, px_mult),   // button_font_size
         px_scale(32, px_mult),   // button_height
         px_scale(8, px_mult),    // button_radius
-        fonts.main_menu_title, fonts.title, fonts.large_button, fonts.button, fonts.body, fonts.icon, fonts.icon_large,
+        fonts.main_menu_title, fonts.title, fonts.large_button, fonts.button, fonts.body, fonts.icon, fonts.icon_large, fonts.icon_primary_screen,
     };
 }
 
