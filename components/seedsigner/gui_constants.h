@@ -59,6 +59,7 @@ LV_FONT_DECLARE(opensans_semibold_18_4bpp_150x);
 LV_FONT_DECLARE(opensans_regular_17_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_150x);
+LV_FONT_DECLARE(seedsigner_icons_48_4bpp_150x);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
@@ -68,6 +69,7 @@ LV_FONT_DECLARE(opensans_semibold_18_4bpp_200x);
 LV_FONT_DECLARE(opensans_regular_17_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_200x);
+LV_FONT_DECLARE(seedsigner_icons_48_4bpp_200x);
 #endif
 
 // ---------------------------------------------------------------------------
@@ -109,6 +111,10 @@ struct DisplayProfile {
     const lv_font_t* body_font;
     const lv_font_t* icon_font;
     const lv_font_t* icon_large_button_font;
+
+    // 48 px (base) seedsigner icon font, used as the hero icon on
+    // status/error screens. Scales 1.5x at 320 height, 2x at 480 height.
+    const lv_font_t* icon_primary_screen_font;
 };
 
 const DisplayProfile& active_profile();
