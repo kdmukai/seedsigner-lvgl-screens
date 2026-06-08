@@ -1063,6 +1063,16 @@ static void passphrase_update_labels(passphrase_ctx_t *c) {
     }
 }
 
+// Switch the keyboard charset/page and reset the selection to the first key of
+// the new layout. lv_keyboard_set_mode leaves btn_id_sel unchanged, so switching
+// to a smaller page (e.g. from row 4 of letters to the digits page) can leave the
+// selection past the end of the new map — no visible active key, and the joystick
+// has to wander to find it again.
+static void passphrase_switch_mode(passphrase_ctx_t *c, lv_keyboard_mode_t mode) {
+    lv_keyboard_set_mode(c->kb, mode);
+    lv_buttonmatrix_set_selected_button(c->kb, 0);
+}
+
 // KEY1 — on a letters page, toggle case; on the digits/symbols page, return to
 // the remembered letters page.
 static void passphrase_key1_case(passphrase_ctx_t *c) {
@@ -1071,7 +1081,7 @@ static void passphrase_key1_case(passphrase_ctx_t *c) {
         c->letter_mode = (m == LV_KEYBOARD_MODE_TEXT_UPPER)
                          ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_TEXT_UPPER;
     }
-    lv_keyboard_set_mode(c->kb, c->letter_mode);
+    passphrase_switch_mode(c, c->letter_mode);
     passphrase_update_labels(c);
 }
 
@@ -1080,12 +1090,12 @@ static void passphrase_key1_case(passphrase_ctx_t *c) {
 static void passphrase_key2_cycle(passphrase_ctx_t *c) {
     lv_keyboard_mode_t m = lv_keyboard_get_mode(c->kb);
     if (m == LV_KEYBOARD_MODE_NUMBER) {
-        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_SPECIAL);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_SPECIAL);
     } else if (m == LV_KEYBOARD_MODE_SPECIAL) {
-        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_NUMBER);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_NUMBER);
     } else {
         c->letter_mode = m;
-        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_NUMBER);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_NUMBER);
     }
     passphrase_update_labels(c);
 }
@@ -1198,23 +1208,23 @@ static void passphrase_kb_value_changed(lv_event_t *e) {
     // target mode; the custom handler owns this since def_event_cb was removed.
     if (std::strcmp(txt, UPPER_LABEL) == 0) {
         c->letter_mode = LV_KEYBOARD_MODE_TEXT_UPPER;
-        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_UPPER);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_TEXT_UPPER);
         passphrase_update_labels(c);
         return;
     }
     if (std::strcmp(txt, ABC_LABEL) == 0) {
         c->letter_mode = LV_KEYBOARD_MODE_TEXT_LOWER;
-        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_TEXT_LOWER);
         passphrase_update_labels(c);
         return;
     }
     if (std::strcmp(txt, NUM_LABEL) == 0) {
-        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_NUMBER);
         passphrase_update_labels(c);
         return;
     }
     if (std::strcmp(txt, SYM_LABEL) == 0) {
-        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_SPECIAL);
+        passphrase_switch_mode(c, LV_KEYBOARD_MODE_SPECIAL);
         passphrase_update_labels(c);
         return;
     }
