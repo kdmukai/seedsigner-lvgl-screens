@@ -1281,18 +1281,23 @@ static void passphrase_style_keyboard(lv_obj_t *kb) {
     lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    // Selected / pressed key: SeedSigner orange fill, black text.
-    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
-
-    // A selected control key is CHECKED *and* focused/pressed at once; make those
-    // combined states win so the orange selection still shows on control keys.
-    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_PRESSED);
+    // Selected key: SeedSigner orange, FULL opacity, black text. Joystick
+    // navigation marks the key FOCUSED/FOCUS_KEY; touch press and our static
+    // screenshot highlight use PRESSED. bg_opa COVER is set explicitly because
+    // the default theme draws the focus states at partial opacity — that looked
+    // like a muted/inactive dark orange. Control keys are also CHECKED, so the
+    // CHECKED combos are styled too.
+    const lv_state_t sel_states[] = {
+        LV_STATE_PRESSED, LV_STATE_FOCUSED, LV_STATE_FOCUS_KEY,
+        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_PRESSED),
+        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_FOCUSED),
+        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_FOCUS_KEY),
+    };
+    for (lv_state_t st : sel_states) {
+        lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | st);
+        lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | st);
+        lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | st);
+    }
 
     // Recolor the OK key green at draw time (per-key color isn't a style option).
     lv_obj_add_flag(kb, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -1402,35 +1407,57 @@ void seed_add_passphrase_screen(void *ctx_json) {
     // consistent look; SeedSigner dark fill with an accent-orange border/cursor.
     // cursor_click_pos (on by default) lets touch tap to position; the in-grid
     // cursor keys are the precise fallback.
+    const int32_t ta_border = 2;
     lv_obj_t *ta = lv_textarea_create(body);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_placeholder_text(ta, "");
     lv_obj_set_width(ta, main_w);
-    lv_obj_set_height(ta, BUTTON_HEIGHT);
+    // NOTE: do NOT force a fixed height. one_line mode sizes the box to its
+    // content (LV_SIZE_CONTENT). Forcing BUTTON_HEIGHT made the content area
+    // (height - padding - border) slightly shorter than one line, so
+    // scroll_to_cursor perpetually animated a vertical scroll — the box bounced.
     lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(ta, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_text_color(ta, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
     lv_obj_set_style_text_font(ta, &KEYBOARD_FONT, LV_PART_MAIN);
     lv_obj_set_style_border_color(ta, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_border_width(ta, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_width(ta, ta_border, LV_PART_MAIN);
     lv_obj_set_style_radius(ta, BUTTON_RADIUS / 2, LV_PART_MAIN);
-    // Cursor: light gray (matches Python's #ccc bar cursor) — easier to see than
-    // the accent orange against the entered text. The blink is desirable in live
-    // use; disable it only in static-render mode so screenshots reliably capture
-    // the cursor (anim_duration 0 → cursor shown without blinking).
-    lv_obj_set_style_bg_color(ta, lv_color_hex(0xcccccc), LV_PART_CURSOR);
-    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_CURSOR);
+    // Cursor: a thin light-gray I-bar (Python's #ccc bar), drawn as a left border
+    // so it sits between characters as an insert/position cursor — the default
+    // block fill reads as "overwrite the character". The blink is desirable in
+    // live use; disable it only in static-render mode so screenshots reliably
+    // capture the cursor (anim_duration 0 -> cursor shown without blinking).
+    // The default theme already styles the cursor as a thin left-border I-bar,
+    // but with a DARK border (color_text) and on the LV_PART_CURSOR|FOCUSED
+    // selector — so when the box is focused that dark border wins over a base-part
+    // override and the cursor looks dark grey. Override on BOTH the base and the
+    // focused selector with an opaque white border so it's clearly visible.
+    const int32_t cur_w = 2 * active_profile().px_multiplier / 100;
+    const lv_style_selector_t cur_sel[] = {
+        LV_PART_CURSOR, (lv_style_selector_t)(LV_PART_CURSOR | LV_STATE_FOCUSED),
+    };
+    for (lv_style_selector_t cs : cur_sel) {
+        lv_obj_set_style_bg_opa(ta, LV_OPA_TRANSP, cs);
+        lv_obj_set_style_border_color(ta, lv_color_hex(0xffffff), cs);
+        lv_obj_set_style_border_opa(ta, LV_OPA_COVER, cs);
+        lv_obj_set_style_border_width(ta, cur_w, cs);
+        lv_obj_set_style_border_side(ta, LV_BORDER_SIDE_LEFT, cs);
+        // The theme nudges the cursor left (pad_left = -1px) so it sits ON the
+        // previous glyph; zero it so the bar sits in the gap after the character.
+        lv_obj_set_style_pad_left(ta, 0, cs);
+    }
     if (g_static_render) {
         lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
     }
     // One-line entry: never show a (vertical) scrollbar. Horizontal overflow is
     // handled by the textarea scrolling its content to follow the cursor.
     lv_obj_set_scrollbar_mode(ta, LV_SCROLLBAR_MODE_OFF);
-    // Vertically center the text in the box: symmetric top/bottom padding sized
-    // from the font's line height (the default padding leaves it off-center, and
-    // inconsistently so across display profiles).
-    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2;
+    // Vertically center the text in the box via symmetric top/bottom padding. The
+    // box height under LV_SIZE_CONTENT is line_height + 2*pad + 2*border, so size
+    // the padding (minus the border) to land near BUTTON_HEIGHT.
+    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2 - ta_border;
     if (ta_pad_v < 0) ta_pad_v = 0;
     lv_obj_set_style_pad_top(ta, ta_pad_v, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(ta, ta_pad_v, LV_PART_MAIN);
@@ -1533,17 +1560,19 @@ void seed_add_passphrase_screen(void *ctx_json) {
             }
         }
 
-        // Joystick-only: pre-select the last-typed key so the initial view shows
-        // the selection highlight (e.g. the "i" just used in a prefilled
-        // passphrase). Touch has no persistent selection, so this is skipped.
-        if (!initial_text.empty()) {
-            int sel = passphrase_find_button(kb, initial_text.back());
-            if (sel >= 0) {
-                lv_buttonmatrix_set_selected_button(kb, (uint32_t)sel);
-                // PRESSED (not FOCUS_KEY): renders the key in the active orange
-                // style without the panel-level focus outline.
-                lv_obj_add_state(kb, LV_STATE_PRESSED);
-            }
+        // Pre-select an initial key so the joystick selection is visible from the
+        // start. Otherwise btn_id_sel is NONE and it takes an arrow press just to
+        // "enter" the keyboard, with no visible cursor until then. Prefer the
+        // last-typed key (prefilled, e.g. the "i" of satoshi), else the first
+        // letter, else the first key. The highlight shows via the focused-key
+        // style in live use; static-render (screenshots) has no indev to apply
+        // that focus state, so add PRESSED to make the highlight show in the still.
+        int sel = initial_text.empty() ? -1 : passphrase_find_button(kb, initial_text.back());
+        if (sel < 0) sel = passphrase_find_button(kb, 'a');
+        if (sel < 0) sel = 0;
+        lv_buttonmatrix_set_selected_button(kb, (uint32_t)sel);
+        if (g_static_render) {
+            lv_obj_add_state(kb, LV_STATE_PRESSED);
         }
     }
 
