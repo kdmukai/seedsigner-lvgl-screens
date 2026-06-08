@@ -78,6 +78,15 @@ keypad/encoder indevs (same loop `nav_bind` uses). The top-nav handoff is two on
 DOWN on the back button → focus the keyboard. The two nav models coexist via the one
 seam they share (the indevs); existing screens are untouched.
 
+**Event ordering gotcha (UP→back):** added `LV_EVENT_KEY` callbacks run AFTER the
+widget's class handler, so the buttonmatrix moves the selection first. A plain UP
+handler that checks "is the selection in the top row?" then fires on an UP from the
+*second* row too — the buttonmatrix already moved it into the top row before the
+handler reads it, so it wrongly jumps to the back button. Register the handler with
+`LV_EVENT_KEY | LV_EVENT_PREPROCESS` (the `0x8000` flag) so it runs BEFORE the class
+handler and reads the pre-move selection; then a top-row check correctly means "already
+at the top, exit upward."
+
 ## Forcing a selected-key highlight (e.g. for screenshots)
 
 `buttonmatrix` draw applies PRESSED/FOCUSED/FOCUS_KEY to `btn_id_sel` based on the
