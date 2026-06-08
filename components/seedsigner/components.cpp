@@ -125,20 +125,35 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     if (label_w < 16) {
         label_w = 16;
     }
-    lv_obj_set_width(label, label_w);
 
+    // Measure with the font actually applied to the label (title_font override
+    // or the default), not always the default.
+    const lv_font_t *eff_font = title_font ? title_font : &TOP_NAV_TITLE_FONT;
     lv_point_t text_size = {0, 0};
-    lv_text_get_size(&text_size, label_text, &TOP_NAV_TITLE_FONT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    lv_text_get_size(&text_size, label_text, eff_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
 
     if (text_size.x > label_w) {
-        // Overflow case: start from clean left edge inside clipped title region.
+        // Overflow case: clip + scroll within the region between the buttons.
+        lv_obj_set_width(label, label_w);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
         lv_obj_align(label, LV_ALIGN_LEFT_MID, left_pad, 0);
     } else {
-        // Fits case: center title relative to full display/nav width,
-        // regardless of optional side buttons.
+        // Title fits. Prefer centering on the full nav width (visually centered
+        // on screen). But if that would push the text under a side button — the
+        // in-between case where the title is too short to scroll yet long enough
+        // to intrude given the asymmetric button padding — fall back to centering
+        // it within the available region between the buttons so it never overlaps.
+        int32_t centered_left = (nav_w - text_size.x) / 2;
+        bool full_center_safe = (centered_left >= left_pad) &&
+                                (centered_left + text_size.x <= nav_w - right_pad);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        if (full_center_safe) {
+            lv_obj_set_width(label, text_size.x);
+            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        } else {
+            lv_obj_set_width(label, label_w);
+            lv_obj_align(label, LV_ALIGN_LEFT_MID, left_pad, 0);
+        }
     }
 
     if (out_back_btn) {
