@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstring>
+#include <set>
 
 using json = nlohmann::json;
 
@@ -704,6 +706,849 @@ void large_icon_status_screen(void *ctx_json) {
         NAV_BODY_VERTICAL,
         0
     );
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// ---------------------------------------------------------------------------
+// seed_add_passphrase_screen
+// ---------------------------------------------------------------------------
+//
+// The first text-entry screen of the LVGL port. Rather than re-implementing
+// SeedSigner's hand-built button-grid keyboard, this is built on LVGL's native
+// `lv_keyboard` (a `lv_buttonmatrix` underneath) + `lv_textarea`. Pixel parity
+// with the Python screen is intentionally NOT a goal here — a clean native
+// keyboard experience is preferred.
+//
+// Layout diverges by input mode (matching the rest of the codebase):
+//   - Touch (landscape ESP32 boards): full-width keyboard, mouse-driven, with
+//     tap-to-position cursor plus in-grid cursor keys.
+//   - Hardware/joystick (Pi Zero): the keyboard is the LVGL-group-focused
+//     object so the buttonmatrix's own directional navigation moves the key
+//     selection; a small key filter hands focus up to the top-nav back button
+//     from the keyboard's top row and back down again.
+//
+// Character inventory is an exact match of the Python screen — the same 94
+// printable characters (a-z, A-Z, 0-9, and two symbol sets) plus space —
+// enforced by `audit_passphrase_charset()`. Because the native default keymaps
+// have a different inventory, every mode uses a custom map via
+// `lv_keyboard_set_map`.
+//
+// Switching/confirm in v1 uses the native in-grid control keys ("abc"/"ABC"
+// shift, "1#" symbols, OK), which `lv_keyboard_def_event_cb` handles for free
+// in both modes. (The dedicated right-side KEY1/KEY2/KEY3 hardware panel from
+// the plan is a documented fast-follow; the in-grid keys are reachable by both
+// touch and joystick today.)
+
+extern "C" __attribute__((weak)) void seedsigner_lvgl_on_text_entered(const char *text) {
+    (void)text;
+}
+
+// Static-render mode: when enabled, screens render without animations that would
+// make a still capture non-deterministic — currently the text-entry cursor is
+// shown without blinking. Off by default; the screenshot generator turns it on.
+// Live use leaves it off so the cursor blinks normally.
+static bool g_static_render = false;
+extern "C" void seedsigner_lvgl_set_static_render(bool enabled) {
+    g_static_render = enabled;
+}
+
+// Exact character inventory — source of truth mirrored from the Python app
+// (seedsigner/src/seedsigner/gui/screens/seed_screens.py:664-673). These five
+// disjoint sets total 94 distinct printable characters; the keymaps below must
+// reproduce exactly this set (audited at screen build time).
+static const char *PASSPHRASE_CHARSET_LOWER  = "abcdefghijklmnopqrstuvwxyz";
+static const char *PASSPHRASE_CHARSET_UPPER  = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static const char *PASSPHRASE_CHARSET_DIGITS = "0123456789";
+static const char *PASSPHRASE_CHARSET_SYM1   = "!@#$%&();:,.-+='\"?";
+static const char *PASSPHRASE_CHARSET_SYM2   = "^*[]{}_\\|<>/`~";
+
+// Button-matrix control entries. `KBW(n)` is a plain character key of relative
+// width n; `KBC(n)` adds the control-key flags (NO_REPEAT | CLICK_TRIG |
+// CHECKED) for the control labels below — "abc"/"ABC" (case shift), "1#"
+// (symbols), and the LV_SYMBOL_* glyphs — which `lv_keyboard_def_event_cb`
+// handles natively. Casts are required because `lv_buttonmatrix_ctrl_t` is an
+// enum and C++ (unlike LVGL's own C maps) won't implicitly narrow int → enum.
+#define KBW(n) ((lv_buttonmatrix_ctrl_t)(n))
+#define KBC(n) ((lv_buttonmatrix_ctrl_t)(LV_KEYBOARD_CTRL_BUTTON_FLAGS | (n)))
+// Hidden spacer key: reserves a row's height but is not drawn or navigable. Used
+// to add an "empty row" so a short page (digits) keeps normal key proportions
+// instead of stretching to fill the keyboard height.
+#define KBH(n) ((lv_buttonmatrix_ctrl_t)(LV_BUTTONMATRIX_CTRL_HIDDEN | LV_BUTTONMATRIX_CTRL_DISABLED | (n)))
+
+// Mode-switch key labels. Our custom keyboard handler
+// (passphrase_kb_value_changed) maps each to a target mode, so we choose
+// readable labels (the native def_event_cb, which forces "abc"/"ABC"/"1#", is
+// removed): ABC→uppercase, abc→lowercase, 123→digits, !?&→symbols.
+#define SYM_LABEL "!?&"
+#define NUM_LABEL "123"
+#define ABC_LABEL "abc"
+#define UPPER_LABEL "ABC"
+
+// ===========================================================================
+// QWERTY maps — used at >240px height (320/480), where there is room for a full
+// 10-wide QWERTY plus a persistent digit row, so digits need no separate page.
+// In-grid controls (shift / symbols / OK); these serve both touch and (the
+// unlikely) joystick input at >240, which has no side panel.
+// ===========================================================================
+
+// Lowercase letters page: digit row, QWERTY letters, shift-to-uppercase ("ABC"),
+// backspace, symbols toggle ("!?&"), cursor keys, space, and OK.
+static const char * const passphrase_kb_map_lower[] = {
+    "1","2","3","4","5","6","7","8","9","0","\n",
+    "q","w","e","r","t","y","u","i","o","p","\n",
+    "a","s","d","f","g","h","j","k","l","\n",
+    UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
+    SYM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBC(2),KBW(6),KBC(1),KBC(1),KBC(2)
+};
+
+// Uppercase letters page: mirror of lowercase; "abc" shifts back to lowercase.
+static const char * const passphrase_kb_map_upper[] = {
+    "1","2","3","4","5","6","7","8","9","0","\n",
+    "Q","W","E","R","T","Y","U","I","O","P","\n",
+    "A","S","D","F","G","H","J","K","L","\n",
+    ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
+    SYM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBC(2),KBW(6),KBC(1),KBC(1),KBC(2)
+};
+
+// Symbols page (LV_KEYBOARD_MODE_SPECIAL): all 32 symbols on one page; "abc"
+// returns to the lowercase letters page.
+static const char * const passphrase_kb_map_special[] = {
+    "!","@","#","$","%","&","(",")","\n",
+    ";",":",",",".","-","+","=","'","\n",
+    "\"","?","^","*","[","]","{","}","\n",
+    "_","\\","|","<",">","/","`","~","\n",
+    "abc"," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_special[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBW(4),KBC(1),KBC(1),KBC(2),KBC(2)
+};
+
+// ===========================================================================
+// 240px maps — digits get their OWN page (NUMBER mode) rather than a top row
+// that shrinks the letters (matching the Python rationale). Letter ORDERING
+// depends on input mode (the user's call): touch favors QWERTY (thumb-typing
+// muscle memory), joystick favors alphabetical (easier to step to a letter).
+// Pages: letters (lower/upper), digits, symbols — cycled by 123 / !?& / abc.
+//
+//   *_240    — touch: QWERTY letters, in-grid mode/OK control keys.
+//   *_240hw  — joystick: alphabetical letters, NO in-grid mode/OK keys (the side
+//              KEY1/KEY2/KEY3 panel switches charset + confirms); cursor / space
+//              / backspace stay in-grid.
+// ===========================================================================
+
+// --- 240 touch (QWERTY, in-grid controls) ---
+static const char * const passphrase_kb_map_lower_240[] = {
+    "q","w","e","r","t","y","u","i","o","p","\n",
+    "a","s","d","f","g","h","j","k","l","\n",
+    UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
+    NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBC(2),KBW(3),KBC(1),KBC(1),KBC(2)
+};
+
+static const char * const passphrase_kb_map_upper_240[] = {
+    "Q","W","E","R","T","Y","U","I","O","P","\n",
+    "A","S","D","F","G","H","J","K","L","\n",
+    ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
+    NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBC(2),KBW(3),KBC(1),KBC(1),KBC(2)
+};
+
+static const char * const passphrase_kb_map_digits_240[] = {
+    "1","2","3","4","5","6","\n",
+    "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
+    ABC_LABEL,SYM_LABEL,LV_SYMBOL_OK,"\n",
+    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBC(2),KBC(2),KBC(2),
+    KBW(4),KBC(1),KBC(1)
+};
+
+static const char * const passphrase_kb_map_symbols_240[] = {
+    "!","@","#","$","%","&","(",")","\n",
+    ";",":",",",".","-","+","=","'","\n",
+    "\"","?","^","*","[","]","{","}","\n",
+    "_","\\","|","<",">","/","`","~","\n",
+    ABC_LABEL,NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBC(2),KBC(2),KBW(3),KBC(1),KBC(1),KBC(2),KBC(2)
+};
+
+// --- 240 joystick (no in-grid mode/OK keys; side panel handles those) ---
+static const char * const passphrase_kb_map_lower_240hw[] = {
+    "a","b","c","d","e","f","g","\n",
+    "h","i","j","k","l","m","n","\n",
+    "o","p","q","r","s","t","u","\n",
+    "v","w","x","y","z",LV_SYMBOL_BACKSPACE,"\n",
+    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240hw[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBW(4),KBC(1),KBC(1)
+};
+
+static const char * const passphrase_kb_map_upper_240hw[] = {
+    "A","B","C","D","E","F","G","\n",
+    "H","I","J","K","L","M","N","\n",
+    "O","P","Q","R","S","T","U","\n",
+    "V","W","X","Y","Z",LV_SYMBOL_BACKSPACE,"\n",
+    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBW(4),KBC(1),KBC(1)
+};
+
+static const char * const passphrase_kb_map_digits_240hw[] = {
+    "1","2","3","4","5","6","\n",
+    "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
+    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,"\n",
+    " ",""  // hidden spacer row — keeps the digit keys from stretching tall
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240hw[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
+    KBW(4),KBC(1),KBC(1),
+    KBH(1)
+};
+
+static const char * const passphrase_kb_map_symbols_240hw[] = {
+    "!","@","#","$","%","&","(",")","\n",
+    ";",":",",",".","-","+","=","'","\n",
+    "\"","?","^","*","[","]","{","}","\n",
+    "_","\\","|","<",">","/","`","~","\n",
+    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,""
+};
+static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240hw[] = {
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(5),KBC(1),KBC(1),KBC(2)
+};
+
+// Verify (once, at screen build) that the union of single-character keys across
+// the given maps is exactly the 94-char Python inventory — no additions, no
+// omissions, no duplicates. Guards against silent drift if a map is edited.
+// Run for whichever map set (touch or hardware) the screen is about to use.
+static void audit_passphrase_charset(const char * const * const *maps, size_t map_count) {
+    std::set<char> expected;
+    for (const char *s : { PASSPHRASE_CHARSET_LOWER, PASSPHRASE_CHARSET_UPPER,
+                           PASSPHRASE_CHARSET_DIGITS, PASSPHRASE_CHARSET_SYM1,
+                           PASSPHRASE_CHARSET_SYM2 }) {
+        for (; *s; ++s) expected.insert(*s);
+    }
+
+    std::set<char> actual;
+    for (size_t m = 0; m < map_count; ++m) {
+        const char * const *map = maps[m];
+        for (size_t i = 0; map[i][0] != '\0'; ++i) {
+            // Single-byte tokens that aren't the row separator or space are the
+            // typeable characters; multi-byte LV_SYMBOL_* glyphs and the
+            // "abc"/"ABC"/"1#" mode labels are >1 byte and thus skipped.
+            if (std::strlen(map[i]) == 1 && map[i][0] != '\n' && map[i][0] != ' ') {
+                actual.insert(map[i][0]);
+            }
+        }
+    }
+
+    if (actual != expected) {
+        throw std::runtime_error("passphrase keyboard charset does not match the Python inventory");
+    }
+}
+
+// Hardware/joystick screen state. Lives for the screen's lifetime; freed in
+// passphrase_cleanup_cb. Holds what the KEY1/KEY2/KEY3 handlers need plus the
+// remembered letter case for returning from the symbols page.
+typedef struct {
+    lv_obj_t          *kb;
+    lv_obj_t          *ta;
+    lv_obj_t          *back_btn;
+    lv_obj_t          *key1_label;   // KEY1 (case toggle) label
+    lv_obj_t          *key2_label;   // KEY2 (symbols toggle) label
+    lv_group_t        *group;
+    lv_keyboard_mode_t letter_mode;  // LOWER/UPPER to restore when leaving symbols
+} passphrase_ctx_t;
+
+// Number of keys in the keyboard's current top row (used for the UP→back-button
+// handoff). Counts buttons in the active map until the first row break, so it
+// works for any page (alphabetic 7, digits 5, symbols 8, QWERTY 10).
+static size_t passphrase_top_row_count(lv_obj_t *kb) {
+    const char * const *map = lv_keyboard_get_map_array(kb);
+    size_t n = 0;
+    while (map && map[n] && map[n][0] != '\0' && std::strcmp(map[n], "\n") != 0) {
+        n++;
+    }
+    return n;
+}
+
+// Button index of a single-character key in the current map (-1 if absent).
+// Used to pre-select the last-typed key for the joystick selection highlight.
+static int passphrase_find_button(lv_obj_t *kb, char ch) {
+    const char * const *map = lv_keyboard_get_map_array(kb);
+    int id = 0;
+    for (size_t i = 0; map && map[i] && map[i][0] != '\0'; ++i) {
+        if (std::strcmp(map[i], "\n") == 0) continue;  // row break: not a button
+        if (std::strlen(map[i]) == 1 && map[i][0] == ch) return id;
+        id++;
+    }
+    return -1;
+}
+
+// Refresh the KEY1/KEY2 side-panel labels to reflect what pressing them does
+// next (mirrors the Python passphrase screen's right-panel labels).
+static void passphrase_update_labels(passphrase_ctx_t *c) {
+    lv_keyboard_mode_t m = lv_keyboard_get_mode(c->kb);
+    bool on_letters = (m == LV_KEYBOARD_MODE_TEXT_LOWER || m == LV_KEYBOARD_MODE_TEXT_UPPER);
+    if (c->key1_label) {
+        // KEY1: on letters, the case to switch TO; otherwise, back to letters.
+        const char *t = !on_letters ? ABC_LABEL
+                        : (m == LV_KEYBOARD_MODE_TEXT_UPPER ? ABC_LABEL : UPPER_LABEL);
+        lv_label_set_text(c->key1_label, t);
+    }
+    if (c->key2_label) {
+        // KEY2 cycles digits <-> symbols: on digits show "!?&", otherwise "123".
+        lv_label_set_text(c->key2_label, (m == LV_KEYBOARD_MODE_NUMBER) ? SYM_LABEL : NUM_LABEL);
+    }
+}
+
+// KEY1 — on a letters page, toggle case; on the digits/symbols page, return to
+// the remembered letters page.
+static void passphrase_key1_case(passphrase_ctx_t *c) {
+    lv_keyboard_mode_t m = lv_keyboard_get_mode(c->kb);
+    if (m == LV_KEYBOARD_MODE_TEXT_LOWER || m == LV_KEYBOARD_MODE_TEXT_UPPER) {
+        c->letter_mode = (m == LV_KEYBOARD_MODE_TEXT_UPPER)
+                         ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_TEXT_UPPER;
+    }
+    lv_keyboard_set_mode(c->kb, c->letter_mode);
+    passphrase_update_labels(c);
+}
+
+// KEY2 — cycle letters → digits → symbols → digits (the way back to letters is
+// KEY1). Remembers the letters case when leaving a letters page.
+static void passphrase_key2_cycle(passphrase_ctx_t *c) {
+    lv_keyboard_mode_t m = lv_keyboard_get_mode(c->kb);
+    if (m == LV_KEYBOARD_MODE_NUMBER) {
+        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_SPECIAL);
+    } else if (m == LV_KEYBOARD_MODE_SPECIAL) {
+        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_NUMBER);
+    } else {
+        c->letter_mode = m;
+        lv_keyboard_set_mode(c->kb, LV_KEYBOARD_MODE_NUMBER);
+    }
+    passphrase_update_labels(c);
+}
+
+// Hardware-mode key filter on the keyboard. Handles the KEY1/KEY2/KEY3 aux keys
+// (case / symbols / confirm) and the top-nav handoff: when the selection is on
+// the top row and UP is pressed, focus the back button. The buttonmatrix does
+// not wrap UP off the top row, so this is the seam between the keyboard's
+// internal navigation and the top-nav zone.
+static void passphrase_kb_key_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    passphrase_ctx_t *c = (passphrase_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+
+    uint32_t key = lv_event_get_key(e);
+
+    // KEY1/KEY2/KEY3 (ASCII '1'/'2'/'3'; see is_aux_key in navigation.cpp) only
+    // act when the side panel is present (240 joystick). At >240 there is no
+    // panel — switching/confirm is via the in-grid mode/OK keys.
+    if (c->key2_label) {
+        if (key == (uint32_t)'1') { passphrase_key1_case(c); return; }
+        if (key == (uint32_t)'2') { passphrase_key2_cycle(c); return; }
+        if (key == (uint32_t)'3') {
+            if (c->ta && lv_obj_is_valid(c->ta)) {
+                seedsigner_lvgl_on_text_entered(lv_textarea_get_text(c->ta));
+            }
+            return;
+        }
+    }
+
+    if (key == LV_KEY_UP) {
+        if (!c->back_btn || !lv_obj_is_valid(c->back_btn)) return;
+        uint32_t sel = lv_keyboard_get_selected_button(c->kb);
+        if (sel == LV_BUTTONMATRIX_BUTTON_NONE) return;
+        if (sel < passphrase_top_row_count(c->kb)) {
+            lv_group_focus_obj(c->back_btn);
+        }
+    }
+}
+
+// Hardware-mode key filter on the back button: DOWN returns focus to the
+// keyboard.
+static void passphrase_back_key_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    if (lv_event_get_key(e) != LV_KEY_DOWN) return;
+
+    passphrase_ctx_t *c = (passphrase_ctx_t *)lv_event_get_user_data(e);
+    if (c && c->kb && lv_obj_is_valid(c->kb)) {
+        lv_group_focus_obj(c->kb);
+    }
+}
+
+// Tear down the group + ctx when the screen is destroyed (mirrors
+// nav_cleanup_handler / screensaver_cleanup_handler). lv_group_del clears the
+// indev's group pointer so no stale reference survives the screen swap.
+static void passphrase_cleanup_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
+    passphrase_ctx_t *c = (passphrase_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+    if (c->group) {
+        lv_group_del(c->group);
+    }
+    lv_free(c);
+}
+
+// Build one right-side panel button (KEY1/KEY2/KEY3 indicator). These are
+// display-only — they show what the physical keys do; they are not
+// joystick-navigable targets.
+static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
+                                        int32_t w, int32_t h, const char *text,
+                                        const lv_font_t *font, int color,
+                                        lv_obj_t **out_label) {
+    lv_obj_t *btn = lv_obj_create(parent);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_set_pos(btn, x, y);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn, BUTTON_RADIUS / 2, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(btn, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+
+    lv_obj_t *label = lv_label_create(btn);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_center(label);
+
+    if (out_label) *out_label = label;
+    return btn;
+}
+
+// Custom keyboard handler, installed in place of lv_keyboard_def_event_cb so we
+// control the in-grid control-key labels (notably the symbols toggle, which the
+// native handler would force to "1#"). Handles touch-mode in-grid control keys
+// plus character insertion / backspace / cursor for both modes.
+static void passphrase_kb_value_changed(lv_event_t *e) {
+    lv_obj_t *kb = lv_event_get_target_obj(e);
+    passphrase_ctx_t *c = (passphrase_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+
+    uint32_t id = lv_keyboard_get_selected_button(kb);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) return;
+    const char *txt = lv_keyboard_get_button_text(kb, id);
+    if (!txt) return;
+
+    lv_obj_t *ta = c->ta;
+
+    // In-grid mode-switch keys (present in the touch maps). Each label maps to a
+    // target mode; the custom handler owns this since def_event_cb was removed.
+    if (std::strcmp(txt, UPPER_LABEL) == 0) {
+        c->letter_mode = LV_KEYBOARD_MODE_TEXT_UPPER;
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_UPPER);
+        passphrase_update_labels(c);
+        return;
+    }
+    if (std::strcmp(txt, ABC_LABEL) == 0) {
+        c->letter_mode = LV_KEYBOARD_MODE_TEXT_LOWER;
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+        passphrase_update_labels(c);
+        return;
+    }
+    if (std::strcmp(txt, NUM_LABEL) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+        passphrase_update_labels(c);
+        return;
+    }
+    if (std::strcmp(txt, SYM_LABEL) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_SPECIAL);
+        passphrase_update_labels(c);
+        return;
+    }
+    if (std::strcmp(txt, LV_SYMBOL_OK) == 0) {
+        if (ta && lv_obj_is_valid(ta)) {
+            seedsigner_lvgl_on_text_entered(lv_textarea_get_text(ta));
+        }
+        return;
+    }
+
+    if (!ta || !lv_obj_is_valid(ta)) return;
+
+    // Editing keys + character insertion (both modes).
+    if (std::strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) { lv_textarea_delete_char(ta); return; }
+    if (std::strcmp(txt, LV_SYMBOL_LEFT) == 0)  { lv_textarea_cursor_left(ta); return; }
+    if (std::strcmp(txt, LV_SYMBOL_RIGHT) == 0) { lv_textarea_cursor_right(ta); return; }
+    lv_textarea_add_text(ta, txt);
+}
+
+// Per-key recolor: the OK (confirm) key should be green, not the accent orange
+// used for the other control keys — matching the green check on the hardware
+// side panel. The keyboard uses one text color for all keys, so this is done at
+// draw time. (buttonmatrix tags each label draw task with the button index in
+// base.id1.)
+static void passphrase_kb_draw_cb(lv_event_t *e) {
+    lv_draw_task_t *task = lv_event_get_draw_task(e);
+    lv_draw_label_dsc_t *label_dsc = lv_draw_task_get_label_dsc(task);
+    if (!label_dsc) return;  // not a label draw task
+
+    lv_draw_dsc_base_t *base = (lv_draw_dsc_base_t *)lv_draw_task_get_draw_dsc(task);
+    if (!base || base->part != LV_PART_ITEMS) return;
+
+    lv_obj_t *kb = lv_event_get_target_obj(e);
+    const char *txt = lv_buttonmatrix_get_button_text(kb, base->id1);
+    if (txt && std::strcmp(txt, LV_SYMBOL_OK) == 0) {
+        label_dsc->color = lv_color_hex(SUCCESS_COLOR);
+    }
+}
+
+// Apply SeedSigner styling to the keyboard: black panel, dark keys with light
+// text, control keys marked in accent orange, and the selected/pressed key
+// highlighted in SeedSigner orange (matches button_set_active elsewhere).
+static void passphrase_style_keyboard(lv_obj_t *kb) {
+    lv_obj_set_style_bg_color(kb, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(kb, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(kb, 0, LV_PART_MAIN);
+    // The keyboard is the focused group object in joystick mode; suppress the
+    // theme's focus outline/border on the panel (we show focus per-key instead).
+    lv_obj_set_style_outline_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    // Tight inter-key gaps + modest rounding so the keys read as large hit
+    // targets (the default theme padding/radius made them look small).
+    lv_obj_set_style_pad_row(kb, COMPONENT_PADDING / 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(kb, COMPONENT_PADDING / 4, LV_PART_MAIN);
+
+    // Keys: fixed-width font (matches the text-entry box), dark fill, light text.
+    lv_obj_set_style_text_font(kb, &KEYBOARD_FONT, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_FONT_COLOR), LV_PART_ITEMS);
+    lv_obj_set_style_radius(kb, BUTTON_RADIUS / 2, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
+
+    // Control keys are flagged CHECKED; the theme would draw them light. Force
+    // the same dark fill as every other key (dark-mode throughout) and mark them
+    // only with accent-orange text so they read as actions, not a light key.
+    lv_obj_set_style_bg_color(kb, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED);
+
+    // Selected / pressed key: SeedSigner orange fill, black text.
+    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
+
+    // A selected control key is CHECKED *and* focused/pressed at once; make those
+    // combined states win so the orange selection still shows on control keys.
+    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED | LV_STATE_PRESSED);
+
+    // Recolor the OK key green at draw time (per-key color isn't a style option).
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+    lv_obj_add_event_cb(kb, passphrase_kb_draw_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
+}
+
+// Parse cfg["initial_mode"] into a starting keyboard mode (for screenshots /
+// deep-links into a specific charset page). Defaults to lowercase letters.
+static lv_keyboard_mode_t passphrase_initial_mode(const json &cfg) {
+    if (cfg.contains("initial_mode") && cfg["initial_mode"].is_string()) {
+        std::string m = cfg["initial_mode"].get<std::string>();
+        if (m == "upper")   return LV_KEYBOARD_MODE_TEXT_UPPER;
+        if (m == "digits")  return LV_KEYBOARD_MODE_NUMBER;
+        if (m == "symbols") return LV_KEYBOARD_MODE_SPECIAL;
+    }
+    return LV_KEYBOARD_MODE_TEXT_LOWER;
+}
+
+void seed_add_passphrase_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // Default the title if the caller didn't supply top_nav (keeps minimal
+    // scenarios terse).
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) {
+        cfg["top_nav"] = json::object();
+    }
+    if (!cfg["top_nav"].contains("title")) {
+        cfg["top_nav"]["title"] = "Enter Passphrase";
+    }
+
+    // Resolve input mode early — it selects letter ordering and the layout.
+    bool has_mode_override = false;
+    input_mode_t mode_override = INPUT_MODE_TOUCH;
+    nav_mode_override_from_cfg(cfg, has_mode_override, mode_override);
+    bool hardware = (has_mode_override ? mode_override : input_profile_get_mode()) == INPUT_MODE_HARDWARE;
+
+    // Layout decisions:
+    //  - is_240: at 240px there is no room for a number row, so digits get their
+    //    own page (keeps letter keys from shrinking); >240 keeps the number row.
+    //  - use_side_panel: only at 240 + joystick — the Pi Zero, the one device
+    //    with physical KEY1/KEY2/KEY3. Larger screens never show the panel.
+    const bool is_240 = (active_profile().height == 240);
+    const bool use_side_panel = hardware && is_240;
+    const bool has_digits_page = is_240;
+
+    // Keymap set:
+    //  - >240 (touch or joystick): QWERTY + number row, in-grid controls.
+    //  - 240 touch:   QWERTY (no number row) + digits page, in-grid controls.
+    //  - 240 joystick: alphabetical (no number row) + digits page, NO in-grid
+    //                  controls (the side panel switches charset + confirms).
+    const char * const *map_lower;
+    const char * const *map_upper;
+    const char * const *map_special;
+    const char * const *map_digits = nullptr;
+    const lv_buttonmatrix_ctrl_t *ctrl_lower;
+    const lv_buttonmatrix_ctrl_t *ctrl_upper;
+    const lv_buttonmatrix_ctrl_t *ctrl_special;
+    const lv_buttonmatrix_ctrl_t *ctrl_digits = nullptr;
+    if (!is_240) {
+        map_lower = passphrase_kb_map_lower;       ctrl_lower = passphrase_kb_ctrl_lower;
+        map_upper = passphrase_kb_map_upper;       ctrl_upper = passphrase_kb_ctrl_upper;
+        map_special = passphrase_kb_map_special;   ctrl_special = passphrase_kb_ctrl_special;
+    } else if (use_side_panel) {
+        map_lower = passphrase_kb_map_lower_240hw;     ctrl_lower = passphrase_kb_ctrl_lower_240hw;
+        map_upper = passphrase_kb_map_upper_240hw;     ctrl_upper = passphrase_kb_ctrl_upper_240hw;
+        map_digits = passphrase_kb_map_digits_240hw;   ctrl_digits = passphrase_kb_ctrl_digits_240hw;
+        map_special = passphrase_kb_map_symbols_240hw; ctrl_special = passphrase_kb_ctrl_symbols_240hw;
+    } else {
+        map_lower = passphrase_kb_map_lower_240;     ctrl_lower = passphrase_kb_ctrl_lower_240;
+        map_upper = passphrase_kb_map_upper_240;     ctrl_upper = passphrase_kb_ctrl_upper_240;
+        map_digits = passphrase_kb_map_digits_240;   ctrl_digits = passphrase_kb_ctrl_digits_240;
+        map_special = passphrase_kb_map_symbols_240; ctrl_special = passphrase_kb_ctrl_symbols_240;
+    }
+
+    // Fail fast if a future edit ever breaks the exact-inventory guarantee.
+    if (has_digits_page) {
+        const char * const * audit_maps[] = { map_lower, map_upper, map_digits, map_special };
+        audit_passphrase_charset(audit_maps, 4);
+    } else {
+        const char * const * audit_maps[] = { map_lower, map_upper, map_special };
+        audit_passphrase_charset(audit_maps, 3);
+    }
+
+    // No button_list: the body is custom (textarea + keyboard). upper_body == body.
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+    lv_obj_t *body = screen.body;
+    lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_OFF);
+
+    const int32_t content_w = lv_obj_get_content_width(body);
+    const int32_t content_h = lv_obj_get_content_height(body);
+
+    // Reserve a right-side strip for the KEY1/KEY2/KEY3 panel only when it is
+    // shown (240 + joystick). Python's right_panel_buttons_width = 56, scaled per
+    // profile. The text strip and keyboard occupy the remaining width.
+    const int32_t panel_w = use_side_panel ? (56 * active_profile().px_multiplier / 100) : 0;
+    const int32_t main_w = use_side_panel ? (content_w - panel_w - COMPONENT_PADDING) : content_w;
+
+    // Per-screen state (both modes). Freed in passphrase_cleanup_cb.
+    passphrase_ctx_t *c = (passphrase_ctx_t *)lv_malloc(sizeof(passphrase_ctx_t));
+    lv_memzero(c, sizeof(*c));
+
+    // Text-entry strip: one-line, cleartext. Font matches the keyboard for a
+    // consistent look; SeedSigner dark fill with an accent-orange border/cursor.
+    // cursor_click_pos (on by default) lets touch tap to position; the in-grid
+    // cursor keys are the precise fallback.
+    lv_obj_t *ta = lv_textarea_create(body);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_placeholder_text(ta, "");
+    lv_obj_set_width(ta, main_w);
+    lv_obj_set_height(ta, BUTTON_HEIGHT);
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ta, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ta, &KEYBOARD_FONT, LV_PART_MAIN);
+    lv_obj_set_style_border_color(ta, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_border_width(ta, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(ta, BUTTON_RADIUS / 2, LV_PART_MAIN);
+    // Cursor: light gray (matches Python's #ccc bar cursor) — easier to see than
+    // the accent orange against the entered text. The blink is desirable in live
+    // use; disable it only in static-render mode so screenshots reliably capture
+    // the cursor (anim_duration 0 → cursor shown without blinking).
+    lv_obj_set_style_bg_color(ta, lv_color_hex(0xcccccc), LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_CURSOR);
+    if (g_static_render) {
+        lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
+    }
+    // One-line entry: never show a (vertical) scrollbar. Horizontal overflow is
+    // handled by the textarea scrolling its content to follow the cursor.
+    lv_obj_set_scrollbar_mode(ta, LV_SCROLLBAR_MODE_OFF);
+    // Vertically center the text in the box: symmetric top/bottom padding sized
+    // from the font's line height (the default padding leaves it off-center, and
+    // inconsistently so across display profiles).
+    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2;
+    if (ta_pad_v < 0) ta_pad_v = 0;
+    lv_obj_set_style_pad_top(ta, ta_pad_v, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(ta, ta_pad_v, LV_PART_MAIN);
+
+    std::string initial_text;
+    if (cfg.contains("initial_text") && cfg["initial_text"].is_string()) {
+        initial_text = cfg["initial_text"].get<std::string>();
+        lv_textarea_set_text(ta, initial_text.c_str());
+    }
+    if (cfg.contains("max_length") && cfg["max_length"].is_number_integer()) {
+        int max_length = cfg["max_length"].get<int>();
+        if (max_length > 0) {
+            lv_textarea_set_max_length(ta, (uint32_t)max_length);
+        }
+    }
+    lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
+
+    // Native keyboard with our custom maps. Replace the default event handler
+    // with ours so we control the control-key labels (e.g. the symbols toggle).
+    lv_obj_t *kb = lv_keyboard_create(body);
+    lv_obj_remove_event_cb(kb, lv_keyboard_def_event_cb);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_LOWER, map_lower, ctrl_lower);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_UPPER, map_upper, ctrl_upper);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_SPECIAL, map_special, ctrl_special);
+    if (has_digits_page) {
+        lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_NUMBER, map_digits, ctrl_digits);
+    }
+    lv_keyboard_set_textarea(kb, ta);
+    passphrase_style_keyboard(kb);
+
+    lv_keyboard_mode_t start_mode = passphrase_initial_mode(cfg);
+    // The digits page only exists at 240; elsewhere fall back to letters.
+    if (start_mode == LV_KEYBOARD_MODE_NUMBER && !has_digits_page) {
+        start_mode = LV_KEYBOARD_MODE_TEXT_LOWER;
+    }
+    lv_keyboard_set_mode(kb, start_mode);
+
+    c->kb = kb;
+    c->ta = ta;
+    c->back_btn = screen.top_back_btn;
+    c->letter_mode = (start_mode == LV_KEYBOARD_MODE_TEXT_UPPER)
+                     ? LV_KEYBOARD_MODE_TEXT_UPPER : LV_KEYBOARD_MODE_TEXT_LOWER;
+
+    lv_obj_add_event_cb(kb, passphrase_kb_value_changed, LV_EVENT_VALUE_CHANGED, c);
+
+    const int32_t kb_top = BUTTON_HEIGHT + COMPONENT_PADDING;
+    const int32_t kb_h = content_h - kb_top;
+
+    // Keyboard fills the area left of any reserved panel strip (main_w ==
+    // content_w when there is no panel). lv_obj_align (not set_pos):
+    // lv_keyboard_create sets a default BOTTOM_MID anchor in its constructor, so
+    // a bare set_pos would offset from the bottom; TOP_LEFT resets the anchor.
+    lv_obj_set_size(kb, main_w, kb_h);
+    lv_obj_align(kb, LV_ALIGN_TOP_LEFT, 0, kb_top);
+
+    if (use_side_panel) {
+        // KEY1/KEY2/KEY3 indicator buttons. Their vertical positions must line up
+        // with the device's physical buttons, so they replicate the Python
+        // SeedAddPassphraseScreen layout: KEY2 centered on the full canvas,
+        // KEY1/KEY3 offset by (3*COMPONENT_PADDING + BUTTON_HEIGHT). Those offsets
+        // are canvas-relative; `body` sits TOP_NAV_HEIGHT below the canvas top, so
+        // subtract it to get body-local y.
+        const int32_t btn_h = BUTTON_HEIGHT;
+        const int32_t screen_h = lv_obj_get_height(screen.screen);
+        const int32_t spacing = 3 * COMPONENT_PADDING + btn_h;
+        const int32_t center_y = (screen_h - btn_h) / 2 - TOP_NAV_HEIGHT;
+        const int32_t px = main_w + COMPONENT_PADDING;
+        passphrase_side_button(body, px, center_y - spacing, panel_w, btn_h,
+                               UPPER_LABEL, &BUTTON_FONT, BUTTON_FONT_COLOR, &c->key1_label);
+        passphrase_side_button(body, px, center_y, panel_w, btn_h,
+                               NUM_LABEL, &BUTTON_FONT, BUTTON_FONT_COLOR, &c->key2_label);
+        passphrase_side_button(body, px, center_y + spacing, panel_w, btn_h,
+                               SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, NULL);
+        passphrase_update_labels(c);
+    }
+
+    if (hardware) {
+        // Localized LVGL-native focus (this screen does NOT use nav_bind): the
+        // keyboard is the group-focused object so the buttonmatrix's own
+        // directional navigation drives key selection; the back button is the
+        // other group member for the top-nav handoff. Used at any size for
+        // joystick input; at >240 there is no side panel, so the in-grid mode/OK
+        // keys (reached by navigating to them) do the switching/confirming.
+        c->group = lv_group_create();
+        lv_group_set_wrap(c->group, false);
+        lv_group_add_obj(c->group, kb);
+        if (screen.top_back_btn) {
+            lv_group_add_obj(c->group, screen.top_back_btn);
+            lv_obj_add_event_cb(kb, passphrase_kb_key_cb, LV_EVENT_KEY, c);
+            lv_obj_add_event_cb(screen.top_back_btn, passphrase_back_key_cb, LV_EVENT_KEY, c);
+        }
+        lv_group_focus_obj(kb);
+
+        // Connect all keypad/encoder indevs to this group.
+        lv_indev_t *indev = NULL;
+        while ((indev = lv_indev_get_next(indev)) != NULL) {
+            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
+                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
+                lv_indev_set_group(indev, c->group);
+            }
+        }
+
+        // Joystick-only: pre-select the last-typed key so the initial view shows
+        // the selection highlight (e.g. the "i" just used in a prefilled
+        // passphrase). Touch has no persistent selection, so this is skipped.
+        if (!initial_text.empty()) {
+            int sel = passphrase_find_button(kb, initial_text.back());
+            if (sel >= 0) {
+                lv_buttonmatrix_set_selected_button(kb, (uint32_t)sel);
+                // PRESSED (not FOCUS_KEY): renders the key in the active orange
+                // style without the panel-level focus outline.
+                lv_obj_add_state(kb, LV_STATE_PRESSED);
+            }
+        }
+    }
+
+    // Free ctx (+ group, if any) when the screen is destroyed.
+    lv_obj_add_event_cb(screen.screen, passphrase_cleanup_cb, LV_EVENT_DELETE, c);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

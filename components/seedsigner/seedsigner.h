@@ -59,9 +59,15 @@ void button_list_screen(void *ctx_json);
 void main_menu_screen(void *ctx);
 void screensaver_screen(void *ctx_json);
 void large_icon_status_screen(void *ctx_json);
+void seed_add_passphrase_screen(void *ctx_json);
 
 // misc
 void lv_seedsigner_screen_close(void);
+
+// Enable static-render mode: screens render without animations that would make a
+// still capture non-deterministic (e.g. the text-entry cursor is shown without
+// blinking). Intended for the screenshot generator; off by default for live use.
+void seedsigner_lvgl_set_static_render(bool enabled);
 
 
 #ifdef __cplusplus
