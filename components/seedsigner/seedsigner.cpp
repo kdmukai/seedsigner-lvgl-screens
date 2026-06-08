@@ -847,7 +847,15 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_special[] = {
 // 240px maps — digits get their OWN page (NUMBER mode) rather than a top row
 // that shrinks the letters (matching the Python rationale). Letter ORDERING
 // depends on input mode (the user's call): touch favors QWERTY (thumb-typing
-// muscle memory), joystick favors alphabetical (easier to step to a letter).
+// muscle memory), joystick favors ALPHABETICAL for two reasons:
+//   1. Navigation: stepping a joystick cursor to a known letter is easier when
+//      the letters are in a predictable A-Z order than scattered QWERTY.
+//   2. Key size: a small 240px screen doesn't have the WIDTH for QWERTY, whose
+//      top row needs 10 columns (q-w-e-r-t-y-u-i-o-p) and so squeezes the keys
+//      narrow. Alphabetical lets us choose the column count — 26 letters over
+//      4 rows of ~7 columns — trading a row of height (which we have) for key
+//      width (which we don't). This is also why the joystick keyboard matches
+//      the Pi Zero Python layout, which is alphabetical for the same reason.
 // Pages: letters (lower/upper), digits, symbols — cycled by 123 / !?& / abc.
 //
 //   *_240    — touch: QWERTY letters, in-grid mode/OK control keys.
@@ -1546,7 +1554,12 @@ void seed_add_passphrase_screen(void *ctx_json) {
         lv_group_add_obj(c->group, kb);
         if (screen.top_back_btn) {
             lv_group_add_obj(c->group, screen.top_back_btn);
-            lv_obj_add_event_cb(kb, passphrase_kb_key_cb, LV_EVENT_KEY, c);
+            // PREPROCESS: run before the buttonmatrix's own key handler so we read
+            // the selection BEFORE it moves. Otherwise an UP from the 2nd row first
+            // moves the selection into the top row, then our handler sees a top-row
+            // selection and wrongly jumps to the back button.
+            lv_obj_add_event_cb(kb, passphrase_kb_key_cb,
+                                (lv_event_code_t)(LV_EVENT_KEY | LV_EVENT_PREPROCESS), c);
             lv_obj_add_event_cb(screen.top_back_btn, passphrase_back_key_cb, LV_EVENT_KEY, c);
         }
         lv_group_focus_obj(kb);
