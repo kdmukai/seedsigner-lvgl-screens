@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-08 23:14:29Z",
+  "generated_at": "2026-06-08 23:17:34Z",
   "resolutions": [
     {
       "width": 240,
@@ -60,6 +60,31 @@
           "name": "large_icon_status_screen__dire_warning_animated",
           "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
           "path": "img/240x240/large_icon_status_screen__dire_warning_animated_240x240.gif"
+        },
+        {
+          "name": "seed_add_passphrase_screen",
+          "display_name": "seed_add_passphrase_screen",
+          "path": "img/240x240/seed_add_passphrase_screen_240x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__prefilled",
+          "display_name": "seed_add_passphrase_screen (_prefilled)",
+          "path": "img/240x240/seed_add_passphrase_screen__prefilled_240x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__uppercase",
+          "display_name": "seed_add_passphrase_screen (_uppercase)",
+          "path": "img/240x240/seed_add_passphrase_screen__uppercase_240x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__digits",
+          "display_name": "seed_add_passphrase_screen (_digits)",
+          "path": "img/240x240/seed_add_passphrase_screen__digits_240x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__symbols",
+          "display_name": "seed_add_passphrase_screen (_symbols)",
+          "path": "img/240x240/seed_add_passphrase_screen__symbols_240x240.png"
         }
       ]
     },
@@ -122,6 +147,31 @@
           "name": "large_icon_status_screen__dire_warning_animated",
           "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
           "path": "img/320x240/large_icon_status_screen__dire_warning_animated_320x240.gif"
+        },
+        {
+          "name": "seed_add_passphrase_screen",
+          "display_name": "seed_add_passphrase_screen",
+          "path": "img/320x240/seed_add_passphrase_screen_320x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__prefilled",
+          "display_name": "seed_add_passphrase_screen (_prefilled)",
+          "path": "img/320x240/seed_add_passphrase_screen__prefilled_320x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__uppercase",
+          "display_name": "seed_add_passphrase_screen (_uppercase)",
+          "path": "img/320x240/seed_add_passphrase_screen__uppercase_320x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__digits",
+          "display_name": "seed_add_passphrase_screen (_digits)",
+          "path": "img/320x240/seed_add_passphrase_screen__digits_320x240.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__symbols",
+          "display_name": "seed_add_passphrase_screen (_symbols)",
+          "path": "img/320x240/seed_add_passphrase_screen__symbols_320x240.png"
         }
       ]
     },
@@ -184,6 +234,26 @@
           "name": "large_icon_status_screen__dire_warning_animated",
           "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
           "path": "img/480x320/large_icon_status_screen__dire_warning_animated_480x320.gif"
+        },
+        {
+          "name": "seed_add_passphrase_screen",
+          "display_name": "seed_add_passphrase_screen",
+          "path": "img/480x320/seed_add_passphrase_screen_480x320.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__prefilled",
+          "display_name": "seed_add_passphrase_screen (_prefilled)",
+          "path": "img/480x320/seed_add_passphrase_screen__prefilled_480x320.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__uppercase",
+          "display_name": "seed_add_passphrase_screen (_uppercase)",
+          "path": "img/480x320/seed_add_passphrase_screen__uppercase_480x320.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__symbols",
+          "display_name": "seed_add_passphrase_screen (_symbols)",
+          "path": "img/480x320/seed_add_passphrase_screen__symbols_480x320.png"
         }
       ]
     },
@@ -246,6 +316,26 @@
           "name": "large_icon_status_screen__dire_warning_animated",
           "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
           "path": "img/800x480/large_icon_status_screen__dire_warning_animated_800x480.gif"
+        },
+        {
+          "name": "seed_add_passphrase_screen",
+          "display_name": "seed_add_passphrase_screen",
+          "path": "img/800x480/seed_add_passphrase_screen_800x480.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__prefilled",
+          "display_name": "seed_add_passphrase_screen (_prefilled)",
+          "path": "img/800x480/seed_add_passphrase_screen__prefilled_800x480.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__uppercase",
+          "display_name": "seed_add_passphrase_screen (_uppercase)",
+          "path": "img/800x480/seed_add_passphrase_screen__uppercase_800x480.png"
+        },
+        {
+          "name": "seed_add_passphrase_screen__symbols",
+          "display_name": "seed_add_passphrase_screen (_symbols)",
+          "path": "img/800x480/seed_add_passphrase_screen__symbols_800x480.png"
         }
       ]
     }
