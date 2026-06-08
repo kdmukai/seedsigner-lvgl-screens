@@ -84,7 +84,10 @@ jobs:
           path: artifact/
 
   pr-comment:
-    if: github.event_name == 'pull_request'
+    # Skipped on fork PRs: posting a PR comment needs a writable token, which
+    # GitHub withholds for pull_request events from a fork (403). The build
+    # jobs above still run and upload artifacts normally.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
     needs: build
     runs-on: ubuntu-24.04
     steps:
