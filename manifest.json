@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-08 23:05:49Z",
+  "generated_at": "2026-06-08 23:14:29Z",
   "resolutions": [
     {
       "width": 240,
@@ -35,6 +35,31 @@
           "name": "screensaver_screen",
           "display_name": "screensaver_screen",
           "path": "img/240x240/screensaver_screen_240x240.png"
+        },
+        {
+          "name": "large_icon_status_screen",
+          "display_name": "large_icon_status_screen",
+          "path": "img/240x240/large_icon_status_screen_240x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__warning",
+          "display_name": "large_icon_status_screen (_warning)",
+          "path": "img/240x240/large_icon_status_screen__warning_240x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning",
+          "display_name": "large_icon_status_screen (_dire_warning)",
+          "path": "img/240x240/large_icon_status_screen__dire_warning_240x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__error",
+          "display_name": "large_icon_status_screen (_error)",
+          "path": "img/240x240/large_icon_status_screen__error_240x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning_animated",
+          "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
+          "path": "img/240x240/large_icon_status_screen__dire_warning_animated_240x240.gif"
         }
       ]
     },
@@ -72,6 +97,31 @@
           "name": "screensaver_screen",
           "display_name": "screensaver_screen",
           "path": "img/320x240/screensaver_screen_320x240.png"
+        },
+        {
+          "name": "large_icon_status_screen",
+          "display_name": "large_icon_status_screen",
+          "path": "img/320x240/large_icon_status_screen_320x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__warning",
+          "display_name": "large_icon_status_screen (_warning)",
+          "path": "img/320x240/large_icon_status_screen__warning_320x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning",
+          "display_name": "large_icon_status_screen (_dire_warning)",
+          "path": "img/320x240/large_icon_status_screen__dire_warning_320x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__error",
+          "display_name": "large_icon_status_screen (_error)",
+          "path": "img/320x240/large_icon_status_screen__error_320x240.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning_animated",
+          "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
+          "path": "img/320x240/large_icon_status_screen__dire_warning_animated_320x240.gif"
         }
       ]
     },
@@ -109,6 +159,31 @@
           "name": "screensaver_screen",
           "display_name": "screensaver_screen",
           "path": "img/480x320/screensaver_screen_480x320.png"
+        },
+        {
+          "name": "large_icon_status_screen",
+          "display_name": "large_icon_status_screen",
+          "path": "img/480x320/large_icon_status_screen_480x320.png"
+        },
+        {
+          "name": "large_icon_status_screen__warning",
+          "display_name": "large_icon_status_screen (_warning)",
+          "path": "img/480x320/large_icon_status_screen__warning_480x320.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning",
+          "display_name": "large_icon_status_screen (_dire_warning)",
+          "path": "img/480x320/large_icon_status_screen__dire_warning_480x320.png"
+        },
+        {
+          "name": "large_icon_status_screen__error",
+          "display_name": "large_icon_status_screen (_error)",
+          "path": "img/480x320/large_icon_status_screen__error_480x320.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning_animated",
+          "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
+          "path": "img/480x320/large_icon_status_screen__dire_warning_animated_480x320.gif"
         }
       ]
     },
@@ -146,6 +221,31 @@
           "name": "screensaver_screen",
           "display_name": "screensaver_screen",
           "path": "img/800x480/screensaver_screen_800x480.png"
+        },
+        {
+          "name": "large_icon_status_screen",
+          "display_name": "large_icon_status_screen",
+          "path": "img/800x480/large_icon_status_screen_800x480.png"
+        },
+        {
+          "name": "large_icon_status_screen__warning",
+          "display_name": "large_icon_status_screen (_warning)",
+          "path": "img/800x480/large_icon_status_screen__warning_800x480.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning",
+          "display_name": "large_icon_status_screen (_dire_warning)",
+          "path": "img/800x480/large_icon_status_screen__dire_warning_800x480.png"
+        },
+        {
+          "name": "large_icon_status_screen__error",
+          "display_name": "large_icon_status_screen (_error)",
+          "path": "img/800x480/large_icon_status_screen__error_800x480.png"
+        },
+        {
+          "name": "large_icon_status_screen__dire_warning_animated",
+          "display_name": "large_icon_status_screen (_dire_warning_animated) [animated]",
+          "path": "img/800x480/large_icon_status_screen__dire_warning_animated_800x480.gif"
         }
       ]
     }
