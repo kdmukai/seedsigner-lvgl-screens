@@ -1164,9 +1164,14 @@ static void passphrase_cleanup_cb(lv_event_t *e) {
 // Build one right-side panel button (KEY1/KEY2/KEY3 indicator). These are
 // display-only — they show what the physical keys do; they are not
 // joystick-navigable targets.
+// `clipped_right` is how many px of the button run off the right screen edge.
+// The label is centered within the VISIBLE portion (full width minus the clipped
+// strip), not the full button — matching Python, which re-centers the text for
+// what remains on-screen. Pass 0 for a fully-visible button.
 static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
                                         int32_t w, int32_t h, const char *text,
                                         const lv_font_t *font, int color,
+                                        int32_t clipped_right,
                                         lv_obj_t **out_label) {
     lv_obj_t *btn = lv_obj_create(parent);
     lv_obj_set_size(btn, w, h);
@@ -1182,7 +1187,8 @@ static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_center(label);
+    // Center within the on-screen portion: shift left by half the clipped strip.
+    lv_obj_align(label, LV_ALIGN_CENTER, -clipped_right / 2, 0);
 
     if (out_label) *out_label = label;
     return btn;
@@ -1415,7 +1421,11 @@ void seed_add_passphrase_screen(void *ctx_json) {
     // shown (240 + joystick). Python's right_panel_buttons_width = 56, scaled per
     // profile. The text strip and keyboard occupy the remaining width.
     const int32_t panel_w = use_side_panel ? (56 * active_profile().px_multiplier / 100) : 0;
-    const int32_t main_w = use_side_panel ? (content_w - panel_w - COMPONENT_PADDING) : content_w;
+    // The side panel deliberately runs off the right screen edge to line up with
+    // the three physical Waveshare buttons (mirrors Python, whose hw buttons
+    // overshoot canvas_width by COMPONENT_PADDING). Reclaiming the right
+    // EDGE_PADDING gutter widens the keyboard + text-entry strip by that much.
+    const int32_t main_w = use_side_panel ? (content_w - panel_w + EDGE_PADDING) : content_w;
 
     // Per-screen state (both modes). Freed in passphrase_cleanup_cb.
     passphrase_ctx_t *c = (passphrase_ctx_t *)lv_malloc(sizeof(passphrase_ctx_t));
@@ -1542,13 +1552,20 @@ void seed_add_passphrase_screen(void *ctx_json) {
         const int32_t screen_h = lv_obj_get_height(screen.screen);
         const int32_t spacing = 3 * COMPONENT_PADDING + btn_h;
         const int32_t center_y = (screen_h - btn_h) / 2 - TOP_NAV_HEIGHT;
-        const int32_t px = main_w + COMPONENT_PADDING;
+        // Buttons sit COMPONENT_PADDING right of the keyboard and overshoot the
+        // right screen edge by COMPONENT_PADDING (clipped at the body boundary) so
+        // they read as aligned with the physical hardware keys.
+        const int32_t px = content_w + EDGE_PADDING + COMPONENT_PADDING - panel_w;
+        // ABC/123 use the fixed-width keyboard font (Inconsolata), matching the
+        // keys and the Python side panel (FIXED_WIDTH_EMPHASIS_FONT_NAME), not the
+        // OpenSans body button font.
+        const int32_t clipped = COMPONENT_PADDING;  // overshoot off the right edge
         passphrase_side_button(body, px, center_y - spacing, panel_w, btn_h,
-                               UPPER_LABEL, &BUTTON_FONT, BUTTON_FONT_COLOR, &c->key1_label);
+                               UPPER_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key1_label);
         passphrase_side_button(body, px, center_y, panel_w, btn_h,
-                               NUM_LABEL, &BUTTON_FONT, BUTTON_FONT_COLOR, &c->key2_label);
+                               NUM_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key2_label);
         passphrase_side_button(body, px, center_y + spacing, panel_w, btn_h,
-                               SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, NULL);
+                               SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, clipped, NULL);
         passphrase_update_labels(c);
     }
 
