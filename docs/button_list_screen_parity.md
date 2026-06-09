@@ -1,8 +1,10 @@
 # Button List Screen: Python vs LVGL Parity Analysis
 
-_Generated 2026-03-31_
+_Generated 2026-03-31 · Status updated 2026-06-09_
 
 This document catalogs every option available in the Python/PIL `ButtonListScreen` and identifies which are not yet supported in the LVGL C implementation. Use it as a roadmap for incremental feature parity.
+
+> **Status update (2026-06-09):** Since first writing, `is_bottom_list` is implemented (via a shared screen scaffold that stacks an optional `upper_body` above the button list and pins the buttons to the bottom). The status/warning family is implemented as a **separate** `large_icon_status_screen` entry point (status icon + headline + body text + `warning_edges` + bottom buttons) rather than as a `button_list_screen` mode. A first keyboard/text-entry screen, `seed_add_passphrase_screen`, also exists. Remaining `button_list_screen` gaps below (left-aligned text, per-button icons, checkbox/radio variants, top-nav icon, scroll restore) are still accurate.
 
 ## Source Files
 
@@ -65,9 +67,12 @@ This document catalogs every option available in the Python/PIL `ButtonListScree
 | Title text | `top_nav.title` | Supported |
 | Back button | `top_nav.show_back_button` | Supported |
 | Power button | `top_nav.show_power_button` | Supported |
+| Bottom-pinned button list | `is_bottom_list` | Supported (shared scaffold; stacks optional upper body above bottom-pinned buttons) |
 | Initial selected index | `initial_selected_index` | Supported |
 | Input mode | `input.mode` | Supported (LVGL-only, no Python equivalent) |
 | Aux key policy | `input.keys.*` | Supported (LVGL-only, no Python equivalent) |
+
+> Body text above the button list is rendered by the shared scaffold's `upper_body` and is currently driven by `large_icon_status_screen` (via its `text` key); `button_list_screen` does not yet expose a body-text JSON key of its own.
 
 ### Per-button (via button_list_item_t)
 
@@ -86,7 +91,6 @@ These are needed for common screen types beyond basic menus.
 | Missing Feature | Python Option(s) | Used By |
 |---|---|---|
 | Left-aligned text | `is_button_text_centered = False` | Seed options, tools menu, most non-main-menu screens |
-| Bottom-pinned button list | `is_bottom_list = True` | Confirmation screens, multisig wallet descriptor loading, settings QR |
 | Checked/radio buttons | `Button_cls = CheckedSelectionButton`, `checked_buttons` | All single-select settings screens |
 | Checkbox buttons | `Button_cls = CheckboxButton`, `checked_buttons` | All multi-select settings screens |
 | Inline left icon | `ButtonOption.icon_name` | Seed options, tools menu, many screens with contextual icons |

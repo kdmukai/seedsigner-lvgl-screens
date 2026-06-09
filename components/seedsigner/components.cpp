@@ -1,6 +1,7 @@
 #include "components.h"
 #include "gui_constants.h"
 #include "input_profile.h"
+#include "seedsigner.h"
 #include "lvgl.h"
 
 #include <stdint.h>
@@ -33,18 +34,28 @@ static lv_obj_t* find_last_label_child(lv_obj_t *parent) {
     return result;
 }
 
+// User-data attached to each top-nav icon button: the reserved code the host
+// receives via seedsigner_lvgl_on_button_selected(), plus a short informational
+// label (logging / desktop status line only — the host dispatches on the code).
+struct top_nav_event_t {
+    uint32_t    code;
+    const char *label;
+};
+static const top_nav_event_t TOP_NAV_BACK_EVENT  = { SEEDSIGNER_RET_BACK_BUTTON,  "back"  };
+static const top_nav_event_t TOP_NAV_POWER_EVENT = { SEEDSIGNER_RET_POWER_BUTTON, "power" };
+
 static void top_nav_button_event_callback(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
-    const char *event_label = (const char *)lv_event_get_user_data(e);
-    if (!event_label) {
-        event_label = "";
+    const top_nav_event_t *event = (const top_nav_event_t *)lv_event_get_user_data(e);
+    if (!event) {
+        return;
     }
-    seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, event_label);
+    seedsigner_lvgl_on_button_selected(event->code, event->label);
 }
 
-static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_align_t align, int32_t x_ofs, const char* event_label) {
+static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_align_t align, int32_t x_ofs, const top_nav_event_t* event) {
     lv_obj_t* btn = lv_button_create(lv_parent);
     lv_obj_set_size(btn, TOP_NAV_BUTTON_SIZE, TOP_NAV_BUTTON_SIZE);
     lv_obj_align(btn, align, x_ofs, 0);
@@ -59,7 +70,7 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_set_style_text_color(lbl, lv_color_hex(BUTTON_FONT_COLOR), LV_PART_MAIN);
     lv_obj_center(lbl);
 
-    lv_obj_add_event_cb(btn, top_nav_button_event_callback, LV_EVENT_CLICKED, (void*)event_label);
+    lv_obj_add_event_cb(btn, top_nav_button_event_callback, LV_EVENT_CLICKED, (void*)event);
     return btn;
 }
 
@@ -85,11 +96,11 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     lv_obj_t* power_btn = NULL;
 
     if (show_back_button) {
-        back_btn = top_nav_icon_button(lv_top_nav, SeedSignerIconConstants::CHEVRON_LEFT, LV_ALIGN_LEFT_MID, EDGE_PADDING, "topnav_back");
+        back_btn = top_nav_icon_button(lv_top_nav, SeedSignerIconConstants::CHEVRON_LEFT, LV_ALIGN_LEFT_MID, EDGE_PADDING, &TOP_NAV_BACK_EVENT);
     }
 
     if (show_power_button) {
-        power_btn = top_nav_icon_button(lv_top_nav, SeedSignerIconConstants::POWER, LV_ALIGN_RIGHT_MID, -EDGE_PADDING, "topnav_power");
+        power_btn = top_nav_icon_button(lv_top_nav, SeedSignerIconConstants::POWER, LV_ALIGN_RIGHT_MID, -EDGE_PADDING, &TOP_NAV_POWER_EVENT);
     }
 
     const char *label_text = title ? title : "";

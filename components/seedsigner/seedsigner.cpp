@@ -1739,7 +1739,7 @@ static void screensaver_timer_cb(lv_timer_t *timer) {
     while ((indev = lv_indev_get_next(indev)) != NULL) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER &&
             lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
-            seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, "screensaver_dismiss");
+            seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_SCREENSAVER_DISMISS, "screensaver_dismiss");
             return;
         }
     }
@@ -1807,7 +1807,7 @@ static void screensaver_timer_cb(lv_timer_t *timer) {
 
 static void screensaver_key_handler(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_KEY) return;
-    seedsigner_lvgl_on_button_selected(0xFFFFFFFFu, "screensaver_dismiss");
+    seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_SCREENSAVER_DISMISS, "screensaver_dismiss");
 }
 
 static void screensaver_cleanup_handler(lv_event_t *e) {

@@ -53,6 +53,18 @@ typedef struct {
     lv_obj_t *button_list[SEEDSIGNER_SCAFFOLD_MAX_BUTTONS];
 } screen_scaffold_t;
 
+// Reserved result codes passed as the `index` argument to
+// seedsigner_lvgl_on_button_selected(). Body buttons report their 0-based
+// position (0..N-1); these reserved values sit far above any real button count.
+// The host checks for them first, then treats `index` as a body-button position
+// — the same order SeedSigner's Python Views use.
+//
+// 1000/1001 mirror RET_CODE__BACK_BUTTON / RET_CODE__POWER_BUTTON in
+// seedsigner/.../gui/screens/screen.py so the host reads one int and compares.
+#define SEEDSIGNER_RET_BACK_BUTTON          1000u  // == RET_CODE__BACK_BUTTON
+#define SEEDSIGNER_RET_POWER_BUTTON         1001u  // == RET_CODE__POWER_BUTTON
+#define SEEDSIGNER_RET_SCREENSAVER_DISMISS  1100u  // host-handled, not Python-routed
+
 // Screens
 void demo_screen(void *ctx);
 void button_list_screen(void *ctx_json);
