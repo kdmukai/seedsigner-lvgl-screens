@@ -800,7 +800,7 @@ static const char * const passphrase_kb_map_lower[] = {
     "q","w","e","r","t","y","u","i","o","p","\n",
     "a","s","d","f","g","h","j","k","l","\n",
     UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
-    SYM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    SYM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -816,7 +816,7 @@ static const char * const passphrase_kb_map_upper[] = {
     "Q","W","E","R","T","Y","U","I","O","P","\n",
     "A","S","D","F","G","H","J","K","L","\n",
     ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
-    SYM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    SYM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -833,7 +833,7 @@ static const char * const passphrase_kb_map_special[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    "abc"," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+    "abc",SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_special[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -869,7 +869,7 @@ static const char * const passphrase_kb_map_lower_240[] = {
     "q","w","e","r","t","y","u","i","o","p","\n",
     "a","s","d","f","g","h","j","k","l","\n",
     UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
-    NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -882,7 +882,7 @@ static const char * const passphrase_kb_map_upper_240[] = {
     "Q","W","E","R","T","Y","U","I","O","P","\n",
     "A","S","D","F","G","H","J","K","L","\n",
     ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
-    NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -895,7 +895,7 @@ static const char * const passphrase_kb_map_digits_240[] = {
     "1","2","3","4","5","6","\n",
     "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
     ABC_LABEL,SYM_LABEL,LV_SYMBOL_OK,"\n",
-    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -909,7 +909,7 @@ static const char * const passphrase_kb_map_symbols_240[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    ABC_LABEL,NUM_LABEL," ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+    ABC_LABEL,NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -925,7 +925,7 @@ static const char * const passphrase_kb_map_lower_240hw[] = {
     "h","i","j","k","l","m","n","\n",
     "o","p","q","r","s","t","u","\n",
     "v","w","x","y","z",LV_SYMBOL_BACKSPACE,"\n",
-    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -940,7 +940,7 @@ static const char * const passphrase_kb_map_upper_240hw[] = {
     "H","I","J","K","L","M","N","\n",
     "O","P","Q","R","S","T","U","\n",
     "V","W","X","Y","Z",LV_SYMBOL_BACKSPACE,"\n",
-    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -953,7 +953,7 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
 static const char * const passphrase_kb_map_digits_240hw[] = {
     "1","2","3","4","5","6","\n",
     "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
-    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,"\n",
+    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,"\n",
     " ",""  // hidden spacer row — keeps the digit keys from stretching tall
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240hw[] = {
@@ -968,7 +968,7 @@ static const char * const passphrase_kb_map_symbols_240hw[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    " ",LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,""
+    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -1247,6 +1247,8 @@ static void passphrase_kb_value_changed(lv_event_t *e) {
     if (std::strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) { lv_textarea_delete_char(ta); return; }
     if (std::strcmp(txt, LV_SYMBOL_LEFT) == 0)  { lv_textarea_cursor_left(ta); return; }
     if (std::strcmp(txt, LV_SYMBOL_RIGHT) == 0) { lv_textarea_cursor_right(ta); return; }
+    // The space key displays the seedsigner space glyph; insert a real space.
+    if (std::strcmp(txt, SeedSignerIconConstants::SPACE) == 0) { lv_textarea_add_text(ta, " "); return; }
     lv_textarea_add_text(ta, txt);
 }
 
