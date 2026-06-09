@@ -238,9 +238,11 @@ static void blit_text(SDL_Renderer *renderer, SDL_Texture *tex,
 // ---------------------------------------------------------------------------
 
 extern "C" void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label) {
-    if (index == 0xFFFFFFFFu) {
-        SDL_Log("[nav] top-nav: %s", label ? label : "");
-        g_status_text = std::string("TOP  |  ") + (label ? label : "");
+    if (index == SEEDSIGNER_RET_BACK_BUTTON ||
+        index == SEEDSIGNER_RET_POWER_BUTTON ||
+        index == SEEDSIGNER_RET_SCREENSAVER_DISMISS) {
+        SDL_Log("[nav] reserved[%u]: %s", (unsigned)index, label ? label : "");
+        g_status_text = std::string("RET  |  ") + (label ? label : "");
     } else {
         SDL_Log("[nav] body[%u]: %s", (unsigned)index, label ? label : "");
         g_status_text = std::string("BODY  |  ") + (label ? label : "");
