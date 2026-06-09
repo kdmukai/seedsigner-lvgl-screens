@@ -1,8 +1,10 @@
 # Screen Implementation Plan: Python to LVGL
 
-_Generated 2026-04-08_
+_Generated 2026-04-08 · Status updated 2026-06-09_
 
 This document catalogs every screen in the Python SeedSigner codebase, identifies which can be implemented using an enhanced reusable `button_list_screen`, and which require dedicated LVGL screen types. Companion doc: [button_list_screen_parity.md](button_list_screen_parity.md) (feature-level gap analysis).
+
+> **Status update (2026-06-09):** Progress since first writing — the **`is_bottom_list` + upper-body scaffold** (Phase 1) is implemented; the **status/warning family** (Phase 3) shipped as a dedicated `large_icon_status_screen` entry point (icon + headline + body `text` + `warning_edges`), and the **first keyboard screen** (Phase 5a), `seed_add_passphrase_screen`, is done. Still outstanding: left-aligned text + per-button icons (rest of Phase 1), checkbox/radio variants + scroll restore + top-nav icon (Phase 2), structured body content blocks (Phase 4), and the remaining dedicated screens (more keyboards, QR display, camera preview). Section statuses below are annotated inline.
 
 ## Source Files
 
@@ -39,7 +41,9 @@ The current LVGL `button_list_screen` has no body content area — buttons fill 
 |---|---|---|
 | Main Menu | `main_menu_screen()` | Done |
 | Screensaver | `screensaver_screen()` | Done |
-| Basic button list menus | `button_list_screen()` | Done (simple cases) |
+| Basic button list menus | `button_list_screen()` | Done (incl. `is_bottom_list` + upper-body scaffold) |
+| Status / Warning / Error / Success family | `large_icon_status_screen()` | Done (icon + headline + body text + `warning_edges`) |
+| Passphrase entry (keyboard) | `seed_add_passphrase_screen()` | Done (first Phase 5a keyboard screen) |
 
 
 ## Part 2: Screens Achievable with Enhanced `button_list_screen`
@@ -48,7 +52,7 @@ These Python screens are all `ButtonListScreen` subclasses. They add custom comp
 
 ### Group A: Needs `is_bottom_list` + body text
 
-These screens display informational text above bottom-pinned buttons. The body content is plain text (TextArea) or simple icon+text lines. This is the biggest group and the highest-value enhancement.
+These screens display informational text above bottom-pinned buttons. The body content is plain text (TextArea) or simple icon+text lines. This is the biggest group and the highest-value enhancement. _(2026-06-09: `is_bottom_list` and the upper-body scaffold are done; what remains for this group is exposing a body-text JSON key on `button_list_screen` — the same `upper_body` mechanism `large_icon_status_screen` already uses for its `text` field.)_
 
 | Screen | File | Body Content | Buttons |
 |---|---|---|---|
@@ -167,19 +171,20 @@ These follow a distinct pattern that's close to button_list_screen but has a lar
 | `ErrorScreen` | screen.py | ERROR | Red | Error messages |
 | `SeedAddressVerificationSuccessScreen` | seed_screens.py | SUCCESS | Green | Address verified |
 
-**Recommendation**: Add a `status_icon` mode to `button_list_screen` rather than a new screen type:
+**Status (2026-06-09): IMPLEMENTED** as a dedicated `large_icon_status_screen()` entry point (not a `button_list_screen` mode, as originally proposed). Actual JSON config:
 ```json
 {
-  "status_icon": "SUCCESS",
-  "status_color": "#00FF00",
-  "status_headline": "Address Verified!",
-  "body_text": "The address matches your seed.",
+  "top_nav": { "title": "Backup Verified", "show_back_button": false },
+  "status_type": "success",
+  "status_headline": "Success!",
+  "text": "All mnemonic backup words were successfully verified!",
+  "button_list": ["OK"],
   "is_bottom_list": true,
-  "button_list": ["Done"]
+  "warning_edges": false
 }
 ```
 
-For `WarningScreen` / `DireWarningScreen`, the animated warning edge pattern could be an additional boolean flag: `"warning_edges": true`.
+`status_type` selects the icon/color (success / warning / error / …). The animated warning-edge pattern for `WarningScreen` / `DireWarningScreen` is the `warning_edges` boolean. This single screen covers the whole family above.
 
 
 ## Part 4: SeedWordsScreen (Paginated Word Display)
@@ -260,10 +265,10 @@ These screens have fundamentally different rendering needs that cannot be handle
 
 Add these features to `button_list_screen` to unlock ~20 screens:
 
-1. **`is_bottom_list`** — Pin buttons to bottom of screen
-2. **`body_text`** — Simple text block between top_nav and buttons
-3. **`is_button_text_centered`** — Left-align option for icon menus
-4. **Per-button icons** — `icon` field in button_list items
+1. ✅ **`is_bottom_list`** — Pin buttons to bottom of screen _(done)_
+2. ◑ **`body_text`** — Simple text block between top_nav and buttons _(scaffold `upper_body` exists and is used by `large_icon_status_screen`; not yet exposed as a `button_list_screen` JSON key)_
+3. ⬜ **`is_button_text_centered`** — Left-align option for icon menus
+4. ⬜ **Per-button icons** — `icon` field in button_list items
 
 ### Phase 2: Settings and selection screens
 
@@ -271,10 +276,10 @@ Add these features to `button_list_screen` to unlock ~20 screens:
 6. **`scroll_y_initial_offset`** — Restore scroll position on re-entry
 7. **`top_nav_icon_name`** — Icon in top nav bar
 
-### Phase 3: Status/warning pattern
+### Phase 3: Status/warning pattern — ✅ done (as `large_icon_status_screen`)
 
-8. **`status_icon` / `status_headline`** — Large centered icon + headline mode
-9. **`warning_edges`** — Animated warning border pattern
+8. ✅ **`status_type` / `status_headline` / `text`** — Large centered icon + headline + body _(shipped as a dedicated `large_icon_status_screen`, not a `button_list_screen` mode)_
+9. ✅ **`warning_edges`** — Animated warning border pattern
 
 ### Phase 4: Structured body content
 
@@ -282,16 +287,16 @@ Add these features to `button_list_screen` to unlock ~20 screens:
 
 ### Phase 5: Dedicated screen types
 
-11. **`keyboard_screen`** — Text entry with configurable grid
-12. **`qr_display_screen`** — QR code rendering with controls
-13. **`camera_preview_screen`** — Live camera feed (hardware-specific)
+11. ◑ **`keyboard_screen`** — Text entry with configurable grid _(first instance done: `seed_add_passphrase_screen`; a general configurable keyboard_screen + the other text-entry screens remain)_
+12. ⬜ **`qr_display_screen`** — QR code rendering with controls
+13. ⬜ **`camera_preview_screen`** — Live camera feed (hardware-specific)
 
 
 ## Summary: Screen Count by Category
 
 | Category | Count | Implementation |
 |---|---|---|
-| Already implemented | 3 | main_menu, screensaver, basic button_list |
+| Already implemented | 5 | main_menu, screensaver, basic button_list (+`is_bottom_list`), large_icon_status, passphrase keyboard |
 | Phase 1 (body text + bottom list + icons) | ~17 | Enhanced button_list_screen |
 | Phase 2 (checkboxes + scroll restore) | ~3 | Enhanced button_list_screen |
 | Phase 3 (status/warning pattern) | ~5 | Enhanced button_list_screen (status mode) |
