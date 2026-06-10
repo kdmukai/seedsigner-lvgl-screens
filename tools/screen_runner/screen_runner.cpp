@@ -545,38 +545,40 @@ static void draw_title_bar(SDL_Renderer *renderer) {
     }
 }
 
-// Helper: draw a labeled badge and store its hit rect.
-// Returns the x position to the left of this badge group (for chaining).
-static int draw_badge(SDL_Renderer *renderer, int right_edge, int bar_y, int bar_h,
+// Helper: draw a labeled badge ("Prefix: [value]") starting at left_x and store
+// its hit rect. Left-anchored so the selectors stay put as the window resizes.
+// Returns the x just past this badge group (for chaining the next one rightward).
+static int draw_badge(SDL_Renderer *renderer, int left_x, int bar_y, int bar_h,
                       SDL_Texture *prefix_tex, int prefix_w,
                       SDL_Texture *label_tex, int label_w,
                       uint8_t fill_r, uint8_t fill_g, uint8_t fill_b,
                       SDL_Rect *out_rect) {
     const int PAD_X = 10, PAD_Y = 4;
-    if (!label_tex) return right_edge;
+    if (!label_tex) return left_x;
 
+    int cur_x = left_x;
+
+    // Prefix label ("Resolution:" / "Input mode:") on the left.
+    if (prefix_tex) {
+        int prefix_phys_h = 0;
+        { int tw = 0; SDL_QueryTexture(prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
+        int log_prefix_w = (int)(prefix_w / g_dpi_scale);
+        int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
+        int prefix_y = bar_y + (bar_h - log_prefix_h) / 2;
+        blit_text(renderer, prefix_tex, cur_x, prefix_y, prefix_w, prefix_phys_h);
+        cur_x += log_prefix_w + 6;
+    }
+
+    // Clickable colored value badge to the right of the prefix.
     int label_phys_h = 0;
     { int tw = 0; SDL_QueryTexture(label_tex, NULL, NULL, &tw, &label_phys_h); }
     int log_label_w = (int)(label_w / g_dpi_scale);
     int log_label_h = (int)(label_phys_h / g_dpi_scale);
     int badge_w = log_label_w + PAD_X * 2;
     int badge_h = log_label_h + PAD_Y * 2;
-    int badge_x = right_edge - badge_w;
+    int badge_x = cur_x;
     int badge_y = bar_y + (bar_h - badge_h) / 2;
     *out_rect = {badge_x, badge_y, badge_w, badge_h};
-
-    int next_edge = badge_x - 14;
-
-    if (prefix_tex) {
-        int prefix_phys_h = 0;
-        { int tw = 0; SDL_QueryTexture(prefix_tex, NULL, NULL, &tw, &prefix_phys_h); }
-        int log_prefix_w = (int)(prefix_w / g_dpi_scale);
-        int log_prefix_h = (int)(prefix_phys_h / g_dpi_scale);
-        int prefix_x = badge_x - log_prefix_w - 6;
-        int prefix_y = bar_y + (bar_h - log_prefix_h) / 2;
-        blit_text(renderer, prefix_tex, prefix_x, prefix_y, prefix_w, prefix_phys_h);
-        next_edge = prefix_x - 14;
-    }
 
     SDL_SetRenderDrawColor(renderer, fill_r, fill_g, fill_b, 0xFF);
     SDL_RenderFillRect(renderer, out_rect);
@@ -587,18 +589,27 @@ static int draw_badge(SDL_Renderer *renderer, int right_edge, int bar_y, int bar
               badge_x + PAD_X, badge_y + PAD_Y,
               label_w, label_phys_h);
 
-    return next_edge;
+    return badge_x + badge_w + 14;  // next badge group starts here
 }
 
 static void draw_toolbar(SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, 0x14, 0x14, 0x14, 0xFF);
     SDL_RenderFillRect(renderer, &g_toolbar_rect);
 
-    int right_edge = g_toolbar_rect.x + g_toolbar_rect.w - 8;
+    // Left-anchored so the selectors don't shift as the window is resized.
+    int left_x = g_toolbar_rect.x + 8;
 
-    // Mode badge (rightmost)
+    // Resolution badge (leftmost)
+    left_x = draw_badge(renderer, left_x,
+        g_toolbar_rect.y, g_toolbar_rect.h,
+        g_res_prefix_tex, g_res_prefix_w,
+        g_res_label_tex, g_res_label_w,
+        0x2c, 0x5a, 0x2c,
+        &g_res_badge_rect);
+
+    // Input mode badge (to the right of Resolution)
     bool is_touch = (input_profile_get_mode() == INPUT_MODE_TOUCH);
-    right_edge = draw_badge(renderer, right_edge,
+    draw_badge(renderer, left_x,
         g_toolbar_rect.y, g_toolbar_rect.h,
         g_mode_prefix_tex, g_mode_prefix_w,
         g_mode_label_tex, g_mode_label_w,
@@ -606,14 +617,6 @@ static void draw_toolbar(SDL_Renderer *renderer) {
         is_touch ? 0x6f : 0x6b,
         is_touch ? 0x00 : 0x8c,
         &g_mode_badge_rect);
-
-    // Resolution badge (to the left)
-    draw_badge(renderer, right_edge,
-        g_toolbar_rect.y, g_toolbar_rect.h,
-        g_res_prefix_tex, g_res_prefix_w,
-        g_res_label_tex, g_res_label_w,
-        0x2c, 0x5a, 0x2c,
-        &g_res_badge_rect);
 }
 
 static void draw_status_bar(SDL_Renderer *renderer) {
@@ -802,16 +805,14 @@ static uint32_t map_sdl_key(SDL_Keycode key) {
         case SDLK_LEFT:     return LV_KEY_LEFT;
         case SDLK_RIGHT:    return LV_KEY_RIGHT;
         case SDLK_RETURN:
-        case SDLK_KP_ENTER: return LV_KEY_ENTER;
-        case SDLK_1: case SDLK_KP_1: case SDLK_EXCLAIM: return LV_KEY_ENTER;
-        case SDLK_2: case SDLK_KP_2: case SDLK_AT:      return LV_KEY_ENTER;
-        case SDLK_3: case SDLK_KP_3: case SDLK_HASH:    return LV_KEY_ENTER;
-        // F1/F2/F3 emit the aux-key codes ('1'/'2'/'3', detected by is_aux_key /
-        // the passphrase keyboard) so screens with a KEY1/KEY2/KEY3 panel are
-        // testable. The number keys remain ENTER (the common center-click case).
-        case SDLK_F1: return (uint32_t)'1';
-        case SDLK_F2: return (uint32_t)'2';
-        case SDLK_F3: return (uint32_t)'3';
+        case SDLK_KP_ENTER: return LV_KEY_ENTER;  // center-click / select
+        // Number keys 1/2/3 emit the aux-key codes '1'/'2'/'3' (detected by
+        // is_aux_key / the passphrase KEY1/KEY2/KEY3 panel) — the intuitive
+        // binding (1 -> KEY1, etc.). F1/F2/F3 stay as aliases. RETURN remains the
+        // center-click, so nothing is lost by no longer mapping 1/2/3 to ENTER.
+        case SDLK_1: case SDLK_KP_1: case SDLK_EXCLAIM: case SDLK_F1: return (uint32_t)'1';
+        case SDLK_2: case SDLK_KP_2: case SDLK_AT:      case SDLK_F2: return (uint32_t)'2';
+        case SDLK_3: case SDLK_KP_3: case SDLK_HASH:    case SDLK_F3: return (uint32_t)'3';
         default: return 0;
     }
 }
