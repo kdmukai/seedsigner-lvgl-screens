@@ -37,7 +37,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_24_4bpp_200x,
             &seedsigner_icons_36_4bpp_200x,   // icon_large unchanged
             &seedsigner_icons_48_4bpp_200x,   // icon_primary_screen = 96px
-            &inconsolata_semibold_18_4bpp_200x,  // keyboard = 36px
+            &inconsolata_semibold_24_4bpp_200x,  // keyboard = 48px
         };
     }
 #endif
@@ -52,7 +52,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_24_4bpp_150x,
             &seedsigner_icons_36_4bpp_150x,   // icon_large unchanged
             &seedsigner_icons_48_4bpp_150x,   // icon_primary_screen = 72px
-            &inconsolata_semibold_18_4bpp_150x,  // keyboard = 27px
+            &inconsolata_semibold_24_4bpp_150x,  // keyboard = 33px (eased from 36 so glyphs clear the key edges at 320h)
         };
     }
 #endif
@@ -67,7 +67,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_24_4bpp,
             &seedsigner_icons_48_4bpp,         // icon_large = 48px
             &seedsigner_icons_48_4bpp,         // icon_primary_screen = 48px
-            &inconsolata_semibold_18_4bpp,     // keyboard = 18px
+            &inconsolata_semibold_24_4bpp,     // keyboard = 24px (matches Python passphrase keyboard)
         };
     }
 #endif

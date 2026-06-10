@@ -88,7 +88,7 @@ if(SUPPORT_DISPLAY_HEIGHT_240)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp.c"
-      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_18_4bpp.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp.c"
     )
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
@@ -100,7 +100,7 @@ if(SUPPORT_DISPLAY_HEIGHT_320)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_150x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_150x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_150x.c"
-      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_18_4bpp_150x.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_150x.c"
     )
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
@@ -112,7 +112,7 @@ if(SUPPORT_DISPLAY_HEIGHT_480)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_200x.c"
-      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_18_4bpp_200x.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_200x.c"
     )
 endif()
 

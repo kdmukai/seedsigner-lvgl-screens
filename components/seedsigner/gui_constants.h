@@ -50,7 +50,7 @@ LV_FONT_DECLARE(opensans_regular_17_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp);
-LV_FONT_DECLARE(inconsolata_semibold_18_4bpp);
+LV_FONT_DECLARE(inconsolata_semibold_24_4bpp);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
@@ -61,7 +61,7 @@ LV_FONT_DECLARE(opensans_regular_17_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_150x);
-LV_FONT_DECLARE(inconsolata_semibold_18_4bpp_150x);
+LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_150x);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
@@ -72,7 +72,7 @@ LV_FONT_DECLARE(opensans_regular_17_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_200x);
-LV_FONT_DECLARE(inconsolata_semibold_18_4bpp_200x);
+LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_200x);
 #endif
 
 // ---------------------------------------------------------------------------
