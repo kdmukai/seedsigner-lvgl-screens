@@ -1310,15 +1310,22 @@ static void passphrase_kb_draw_cb(lv_event_t *e) {
                   ((uint32_t)(txt[1] & 0x3F) << 6) |
                   ((uint32_t)(txt[2] & 0x3F));
 
-    // CHECK confirms (green); SPACE enters a real character (muted gray, like
-    // Python); the cursor + backspace keys are controls, kept SeedSigner-orange
-    // so they read as actions rather than enterable glyphs — important on the
-    // symbol page where every surrounding key IS enterable.
-    uint32_t icon_color;
-    if (cp == 0xE905)      icon_color = SUCCESS_COLOR;  // CHECK
-    else if (cp == 0xE923) icon_color = 0x999999u;      // SPACE
-    else                   icon_color = ACCENT_COLOR;   // CHEVRON_LEFT/RIGHT, DELETE
-    label_dsc->color = lv_color_hex(icon_color);
+    // Leave the highlighted key's color alone: when a control key is selected
+    // (joystick) or pressed (touch), the buttonmatrix has already applied the
+    // active text color (BUTTON_SELECTED_FONT_COLOR, black) so the glyph stays
+    // visible on the orange highlight — exactly like the letter keys. Only
+    // recolor the resting state:
+    //   CHECK confirms (green); SPACE enters a real character (muted gray, like
+    //   Python); the cursor + backspace keys are controls, kept SeedSigner-orange
+    //   so they read as actions, not enterable glyphs — clearest on the symbol
+    //   page where every surrounding key IS enterable.
+    if (!lv_color_eq(label_dsc->color, lv_color_hex(BUTTON_SELECTED_FONT_COLOR))) {
+        uint32_t icon_color;
+        if (cp == 0xE905)      icon_color = SUCCESS_COLOR;  // CHECK
+        else if (cp == 0xE923) icon_color = 0x999999u;      // SPACE
+        else                   icon_color = ACCENT_COLOR;   // CHEVRON_LEFT/RIGHT, DELETE
+        label_dsc->color = lv_color_hex(icon_color);
+    }
 
     lv_font_glyph_dsc_t g;
     const lv_font_t *font = label_dsc->font;
@@ -1522,6 +1529,21 @@ void seed_add_passphrase_screen(void *ctx_json) {
     // override and the cursor looks dark grey. Override on BOTH the base and the
     // focused selector with an opaque white border so it's clearly visible.
     const int32_t cur_w = 2 * active_profile().px_multiplier / 100;
+    // Box vertical-centering padding (computed up here because the cursor inset
+    // below is derived from it). The box height under LV_SIZE_CONTENT is
+    // line_height + 2*pad + 2*border, so size the padding (minus the border) to
+    // land near BUTTON_HEIGHT.
+    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2 - ta_border;
+    if (ta_pad_v < 0) ta_pad_v = 0;
+    // Keep a constant small gap (>=1px, scaled) between the cursor bar and the
+    // top/bottom of the text box at every size. refr_cursor_area makes the bar
+    // letter_h + 2*(pad + cur_w) tall while the box interior is letter_h +
+    // 2*ta_pad_v, so a top gap of cur_gap needs pad = ta_pad_v - cur_w - cur_gap.
+    // 2px at the base profile, widening as the display scales up (taller screens
+    // have the room): 100x -> 2, 150x -> 4, 200x -> 6.
+    int32_t cur_gap = 2 * (1 + (active_profile().px_multiplier - 100) / 50);
+    if (cur_gap < 2) cur_gap = 2;
+    int32_t cur_pad_v = ta_pad_v - cur_w - cur_gap;
     const lv_style_selector_t cur_sel[] = {
         LV_PART_CURSOR, (lv_style_selector_t)(LV_PART_CURSOR | LV_STATE_FOCUSED),
     };
@@ -1534,6 +1556,8 @@ void seed_add_passphrase_screen(void *ctx_json) {
         // The theme nudges the cursor left (pad_left = -1px) so it sits ON the
         // previous glyph; zero it so the bar sits in the gap after the character.
         lv_obj_set_style_pad_left(ta, 0, cs);
+        lv_obj_set_style_pad_top(ta, cur_pad_v, cs);
+        lv_obj_set_style_pad_bottom(ta, cur_pad_v, cs);
     }
     if (g_static_render) {
         lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
@@ -1541,11 +1565,8 @@ void seed_add_passphrase_screen(void *ctx_json) {
     // One-line entry: never show a (vertical) scrollbar. Horizontal overflow is
     // handled by the textarea scrolling its content to follow the cursor.
     lv_obj_set_scrollbar_mode(ta, LV_SCROLLBAR_MODE_OFF);
-    // Vertically center the text in the box via symmetric top/bottom padding. The
-    // box height under LV_SIZE_CONTENT is line_height + 2*pad + 2*border, so size
-    // the padding (minus the border) to land near BUTTON_HEIGHT.
-    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2 - ta_border;
-    if (ta_pad_v < 0) ta_pad_v = 0;
+    // Vertically center the text in the box via the symmetric top/bottom padding
+    // computed above.
     lv_obj_set_style_pad_top(ta, ta_pad_v, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(ta, ta_pad_v, LV_PART_MAIN);
 
