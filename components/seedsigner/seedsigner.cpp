@@ -799,8 +799,8 @@ static const char * const passphrase_kb_map_lower[] = {
     "1","2","3","4","5","6","7","8","9","0","\n",
     "q","w","e","r","t","y","u","i","o","p","\n",
     "a","s","d","f","g","h","j","k","l","\n",
-    UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
-    SYM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    UPPER_LABEL,"z","x","c","v","b","n","m",SeedSignerIconConstants::DELETE,"\n",
+    SYM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -815,8 +815,8 @@ static const char * const passphrase_kb_map_upper[] = {
     "1","2","3","4","5","6","7","8","9","0","\n",
     "Q","W","E","R","T","Y","U","I","O","P","\n",
     "A","S","D","F","G","H","J","K","L","\n",
-    ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
-    SYM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    ABC_LABEL,"Z","X","C","V","B","N","M",SeedSignerIconConstants::DELETE,"\n",
+    SYM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -833,7 +833,7 @@ static const char * const passphrase_kb_map_special[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    "abc",SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+    "abc",SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::DELETE,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_special[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -868,8 +868,8 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_special[] = {
 static const char * const passphrase_kb_map_lower_240[] = {
     "q","w","e","r","t","y","u","i","o","p","\n",
     "a","s","d","f","g","h","j","k","l","\n",
-    UPPER_LABEL,"z","x","c","v","b","n","m",LV_SYMBOL_BACKSPACE,"\n",
-    NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    UPPER_LABEL,"z","x","c","v","b","n","m",SeedSignerIconConstants::DELETE,"\n",
+    NUM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -881,8 +881,8 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240[] = {
 static const char * const passphrase_kb_map_upper_240[] = {
     "Q","W","E","R","T","Y","U","I","O","P","\n",
     "A","S","D","F","G","H","J","K","L","\n",
-    ABC_LABEL,"Z","X","C","V","B","N","M",LV_SYMBOL_BACKSPACE,"\n",
-    NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_OK,""
+    ABC_LABEL,"Z","X","C","V","B","N","M",SeedSignerIconConstants::DELETE,"\n",
+    NUM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -893,9 +893,9 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240[] = {
 
 static const char * const passphrase_kb_map_digits_240[] = {
     "1","2","3","4","5","6","\n",
-    "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
-    ABC_LABEL,SYM_LABEL,LV_SYMBOL_OK,"\n",
-    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    "7","8","9","0",SeedSignerIconConstants::DELETE,"\n",
+    ABC_LABEL,SYM_LABEL,SeedSignerIconConstants::CHECK,"\n",
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -909,7 +909,7 @@ static const char * const passphrase_kb_map_symbols_240[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    ABC_LABEL,NUM_LABEL,SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,LV_SYMBOL_OK,""
+    ABC_LABEL,NUM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::DELETE,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -924,8 +924,8 @@ static const char * const passphrase_kb_map_lower_240hw[] = {
     "a","b","c","d","e","f","g","\n",
     "h","i","j","k","l","m","n","\n",
     "o","p","q","r","s","t","u","\n",
-    "v","w","x","y","z",LV_SYMBOL_BACKSPACE,"\n",
-    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    "v","w","x","y","z",SeedSignerIconConstants::DELETE,"\n",
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_lower_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -939,8 +939,8 @@ static const char * const passphrase_kb_map_upper_240hw[] = {
     "A","B","C","D","E","F","G","\n",
     "H","I","J","K","L","M","N","\n",
     "O","P","Q","R","S","T","U","\n",
-    "V","W","X","Y","Z",LV_SYMBOL_BACKSPACE,"\n",
-    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,""
+    "V","W","X","Y","Z",SeedSignerIconConstants::DELETE,"\n",
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -952,8 +952,8 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
 
 static const char * const passphrase_kb_map_digits_240hw[] = {
     "1","2","3","4","5","6","\n",
-    "7","8","9","0",LV_SYMBOL_BACKSPACE,"\n",
-    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,"\n",
+    "7","8","9","0",SeedSignerIconConstants::DELETE,"\n",
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,"\n",
     " ",""  // hidden spacer row — keeps the digit keys from stretching tall
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240hw[] = {
@@ -968,7 +968,7 @@ static const char * const passphrase_kb_map_symbols_240hw[] = {
     ";",":",",",".","-","+","=","'","\n",
     "\"","?","^","*","[","]","{","}","\n",
     "_","\\","|","<",">","/","`","~","\n",
-    SeedSignerIconConstants::SPACE,LV_SYMBOL_LEFT,LV_SYMBOL_RIGHT,LV_SYMBOL_BACKSPACE,""
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::DELETE,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_symbols_240hw[] = {
     KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
@@ -1063,14 +1063,21 @@ static void passphrase_update_labels(passphrase_ctx_t *c) {
     }
 }
 
-// Switch the keyboard charset/page and reset the selection to the first key of
-// the new layout. lv_keyboard_set_mode leaves btn_id_sel unchanged, so switching
-// to a smaller page (e.g. from row 4 of letters to the digits page) can leave the
-// selection past the end of the new map — no visible active key, and the joystick
-// has to wander to find it again.
+// Switch the keyboard charset/page. lv_keyboard_set_mode leaves btn_id_sel
+// unchanged. Lowercase and uppercase share the same layout, so a case swap keeps
+// the active key (pressing shift on "g" lands on "G"). For any other page
+// (digits/symbols) the index could fall past the end of the shorter map — no
+// visible active key, and the joystick would have to wander to find it — so we
+// reset the selection to the first key.
 static void passphrase_switch_mode(passphrase_ctx_t *c, lv_keyboard_mode_t mode) {
+    lv_keyboard_mode_t old = lv_keyboard_get_mode(c->kb);
+    bool case_swap =
+        (old  == LV_KEYBOARD_MODE_TEXT_LOWER || old  == LV_KEYBOARD_MODE_TEXT_UPPER) &&
+        (mode == LV_KEYBOARD_MODE_TEXT_LOWER || mode == LV_KEYBOARD_MODE_TEXT_UPPER);
     lv_keyboard_set_mode(c->kb, mode);
-    lv_buttonmatrix_set_selected_button(c->kb, 0);
+    if (!case_swap) {
+        lv_buttonmatrix_set_selected_button(c->kb, 0);
+    }
 }
 
 // KEY1 — on a letters page, toggle case; on the digits/symbols page, return to
@@ -1187,8 +1194,25 @@ static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+
+    // A single SeedSigner icon glyph (the confirm check) is line-centered by the
+    // label box, but its ink can sit off-center within that box (glyph metrics
+    // vary — the back chevron happens to be centered, the check is not). Nudge it
+    // by the gap between the glyph's ink center and the line center.
+    int32_t dy = 0;
+    if ((unsigned char)text[0] == 0xEE && text[3] == '\0') {  // one 3-byte U+Exxx char
+        uint32_t cp = ((uint32_t)(text[0] & 0x0F) << 12) |
+                      ((uint32_t)(text[1] & 0x3F) << 6) |
+                      ((uint32_t)(text[2] & 0x3F));
+        lv_font_glyph_dsc_t g;
+        if (lv_font_get_glyph_dsc(font, &g, cp, 0)) {
+            int32_t line_center  = lv_font_get_line_height(font) / 2 - font->base_line;
+            int32_t glyph_center = g.ofs_y + (int32_t)g.box_h / 2;
+            dy = glyph_center - line_center;
+        }
+    }
     // Center within the on-screen portion: shift left by half the clipped strip.
-    lv_obj_align(label, LV_ALIGN_CENTER, -clipped_right / 2, 0);
+    lv_obj_align(label, LV_ALIGN_CENTER, -clipped_right / 2, dy);
 
     if (out_label) *out_label = label;
     return btn;
@@ -1234,7 +1258,7 @@ static void passphrase_kb_value_changed(lv_event_t *e) {
         passphrase_update_labels(c);
         return;
     }
-    if (std::strcmp(txt, LV_SYMBOL_OK) == 0) {
+    if (std::strcmp(txt, SeedSignerIconConstants::CHECK) == 0) {
         if (ta && lv_obj_is_valid(ta)) {
             seedsigner_lvgl_on_text_entered(lv_textarea_get_text(ta));
         }
@@ -1244,19 +1268,29 @@ static void passphrase_kb_value_changed(lv_event_t *e) {
     if (!ta || !lv_obj_is_valid(ta)) return;
 
     // Editing keys + character insertion (both modes).
-    if (std::strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) { lv_textarea_delete_char(ta); return; }
-    if (std::strcmp(txt, LV_SYMBOL_LEFT) == 0)  { lv_textarea_cursor_left(ta); return; }
-    if (std::strcmp(txt, LV_SYMBOL_RIGHT) == 0) { lv_textarea_cursor_right(ta); return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::DELETE) == 0) { lv_textarea_delete_char(ta); return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::CHEVRON_LEFT) == 0)  { lv_textarea_cursor_left(ta); return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::CHEVRON_RIGHT) == 0) { lv_textarea_cursor_right(ta); return; }
     // The space key displays the seedsigner space glyph; insert a real space.
     if (std::strcmp(txt, SeedSignerIconConstants::SPACE) == 0) { lv_textarea_add_text(ta, " "); return; }
     lv_textarea_add_text(ta, txt);
 }
 
-// Per-key recolor: the OK (confirm) key should be green, not the accent orange
-// used for the other control keys — matching the green check on the hardware
-// side panel. The keyboard uses one text color for all keys, so this is done at
-// draw time. (buttonmatrix tags each label draw task with the button index in
-// base.id1.)
+// Per-key restyling of the SeedSigner control-icon keys (CHECK, the two
+// CHEVRON cursors, DELETE, SPACE). These glyphs are merged into the keyboard
+// text font for layout, but they need two fixes the buttonmatrix can't do per
+// key, done here at draw time (it tags each label task with the button index in
+// base.id1):
+//
+//   - Color: the confirm CHECK is green; SPACE is muted gray (it enters a real
+//     character); the cursor + backspace controls are SeedSigner-orange so they
+//     read as actions, not enterable glyphs (clearest on the symbol page).
+//   - Vertical centering: lv_keyboard line-centers key text by the font line
+//     height, but these icons are bottom-anchored and as tall as the ascent
+//     (they were designed for a dedicated icon font, then merged onto the text
+//     baseline), so they would sit at the top of the key. Nudge each down by the
+//     gap between its ink center and the line-box center — computed from the
+//     font so it holds at any size, with no edits to the generated font data.
 static void passphrase_kb_draw_cb(lv_event_t *e) {
     lv_draw_task_t *task = lv_event_get_draw_task(e);
     lv_draw_label_dsc_t *label_dsc = lv_draw_task_get_label_dsc(task);
@@ -1267,8 +1301,31 @@ static void passphrase_kb_draw_cb(lv_event_t *e) {
 
     lv_obj_t *kb = lv_event_get_target_obj(e);
     const char *txt = lv_buttonmatrix_get_button_text(kb, base->id1);
-    if (txt && std::strcmp(txt, LV_SYMBOL_OK) == 0) {
-        label_dsc->color = lv_color_hex(SUCCESS_COLOR);
+    if (!txt) return;
+
+    // SeedSigner icon glyphs are the only U+Exxx keys (3-byte UTF-8, lead byte
+    // 0xEE); letter and mode-label keys are ASCII and fall through untouched.
+    if ((unsigned char)txt[0] != 0xEE) return;
+    uint32_t cp = ((uint32_t)(txt[0] & 0x0F) << 12) |
+                  ((uint32_t)(txt[1] & 0x3F) << 6) |
+                  ((uint32_t)(txt[2] & 0x3F));
+
+    // CHECK confirms (green); SPACE enters a real character (muted gray, like
+    // Python); the cursor + backspace keys are controls, kept SeedSigner-orange
+    // so they read as actions rather than enterable glyphs — important on the
+    // symbol page where every surrounding key IS enterable.
+    uint32_t icon_color;
+    if (cp == 0xE905)      icon_color = SUCCESS_COLOR;  // CHECK
+    else if (cp == 0xE923) icon_color = 0x999999u;      // SPACE
+    else                   icon_color = ACCENT_COLOR;   // CHEVRON_LEFT/RIGHT, DELETE
+    label_dsc->color = lv_color_hex(icon_color);
+
+    lv_font_glyph_dsc_t g;
+    const lv_font_t *font = label_dsc->font;
+    if (font && lv_font_get_glyph_dsc(font, &g, cp, 0)) {
+        int32_t line_center  = lv_font_get_line_height(font) / 2 - font->base_line;
+        int32_t glyph_center = g.ofs_y + (int32_t)g.box_h / 2;
+        label_dsc->ofs_y = glyph_center - line_center;
     }
 }
 
