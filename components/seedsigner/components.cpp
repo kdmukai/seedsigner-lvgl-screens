@@ -63,11 +63,20 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     reset_button_chrome(btn);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
+
+    // Glyph color follows the button state: light normally, black when the button
+    // is highlighted (focused / pressed) so it stays legible on the orange
+    // highlight. Set on the BUTTON (not the label) so the state selectors apply
+    // and the label inherits the color.
+    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
 
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, icon ? icon : "");
     lv_obj_set_style_text_font(lbl, &ICON_FONT__SEEDSIGNER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(BUTTON_FONT_COLOR), LV_PART_MAIN);
     lv_obj_center(lbl);
 
     lv_obj_add_event_cb(btn, top_nav_button_event_callback, LV_EVENT_CLICKED, (void*)event);

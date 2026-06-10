@@ -1017,6 +1017,9 @@ typedef struct {
     lv_obj_t          *back_btn;
     lv_obj_t          *key1_label;   // KEY1 (case toggle) label
     lv_obj_t          *key2_label;   // KEY2 (symbols toggle) label
+    lv_obj_t          *key1_btn;     // KEY1/2/3 side buttons, for the press flash
+    lv_obj_t          *key2_btn;
+    lv_obj_t          *key3_btn;
     lv_group_t        *group;
     lv_keyboard_mode_t letter_mode;  // LOWER/UPPER to restore when leaving symbols
 } passphrase_ctx_t;
@@ -1069,14 +1072,15 @@ static int passphrase_find_button(lv_obj_t *kb, char ch) {
 
 // Default joystick selection when arriving at a page fresh — a central key, so
 // the first move is short on average: 'k' on the alphabetical letter grid, '6'
-// on the digit pad. Other pages (symbols) start at the first key. Returns a
-// button index (0 if the chosen key isn't found in the current map).
+// on the digit pad, '.' on the symbol page. Returns a button index (0 if the
+// chosen key isn't found in the current map).
 static uint32_t passphrase_default_key(lv_obj_t *kb, lv_keyboard_mode_t mode) {
     char ch = 0;
     switch (mode) {
         case LV_KEYBOARD_MODE_TEXT_LOWER: ch = 'k'; break;
         case LV_KEYBOARD_MODE_TEXT_UPPER: ch = 'K'; break;
         case LV_KEYBOARD_MODE_NUMBER:     ch = '6'; break;
+        case LV_KEYBOARD_MODE_SPECIAL:    ch = '.'; break;
         default: break;
     }
     int idx = ch ? passphrase_find_button(kb, ch) : -1;
@@ -1144,6 +1148,22 @@ static void passphrase_key2_cycle(passphrase_ctx_t *c) {
     passphrase_update_labels(c);
 }
 
+// Momentary "pressed" flash on a side button when its physical key is hit. The
+// side buttons aren't clickable, so we drive the PRESSED state by hand: add it,
+// then clear it after a short beat via a one-shot timer (matches Python, which
+// shows the button react before its state updates).
+static void passphrase_flash_clear_cb(lv_timer_t *t) {
+    lv_obj_t *btn = (lv_obj_t *)lv_timer_get_user_data(t);
+    if (btn && lv_obj_is_valid(btn)) lv_obj_remove_state(btn, LV_STATE_PRESSED);
+    lv_timer_delete(t);
+}
+static void passphrase_flash_side_button(lv_obj_t *btn) {
+    if (!btn || !lv_obj_is_valid(btn)) return;
+    lv_obj_add_state(btn, LV_STATE_PRESSED);
+    lv_timer_t *t = lv_timer_create(passphrase_flash_clear_cb, 120, btn);
+    lv_timer_set_repeat_count(t, 1);
+}
+
 // Hardware-mode key filter on the keyboard. Handles the KEY1/KEY2/KEY3 aux keys
 // (case / symbols / confirm) and the top-nav handoff: when the selection is on
 // the top row and UP is pressed, focus the back button. The buttonmatrix does
@@ -1160,9 +1180,10 @@ static void passphrase_kb_key_cb(lv_event_t *e) {
     // act when the side panel is present (240 joystick). At >240 there is no
     // panel — switching/confirm is via the in-grid mode/OK keys.
     if (c->key2_label) {
-        if (key == (uint32_t)'1') { passphrase_key1_case(c); return; }
-        if (key == (uint32_t)'2') { passphrase_key2_cycle(c); return; }
+        if (key == (uint32_t)'1') { passphrase_flash_side_button(c->key1_btn); passphrase_key1_case(c); return; }
+        if (key == (uint32_t)'2') { passphrase_flash_side_button(c->key2_btn); passphrase_key2_cycle(c); return; }
         if (key == (uint32_t)'3') {
+            passphrase_flash_side_button(c->key3_btn);
             if (c->ta && lv_obj_is_valid(c->ta)) {
                 seedsigner_lvgl_on_text_entered(lv_textarea_get_text(c->ta));
             }
@@ -1243,10 +1264,17 @@ static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
     lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
     lv_obj_remove_flag(btn, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
+    // Pressed (flash) look: orange fill with a black glyph, matching the keyboard
+    // selection. The buttons aren't clickable; the flash is driven by hand from
+    // the KEY1/KEY2/KEY3 handlers. Glyph color is set on the button (not the
+    // label) so the PRESSED selector applies and the label inherits the color.
+    lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(btn, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
+
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
 
     // A single SeedSigner icon glyph (the confirm check) is line-centered by the
     // label box, but its ink can sit off-center within that box (glyph metrics
@@ -1614,6 +1642,13 @@ void seed_add_passphrase_screen(void *ctx_json) {
     }
     if (g_static_render) {
         lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
+    } else {
+        // The textarea is never the group's focused object (the keyboard is), so
+        // the cursor blink that normally kicks off on LV_EVENT_FOCUSED never
+        // fires. Trigger it manually so the cursor blinks while waiting for the
+        // first input, not just after text exists. The textarea's FOCUSED handler
+        // does nothing but start_cursor_blink, so this has no other side effects.
+        lv_obj_send_event(ta, LV_EVENT_FOCUSED, NULL);
     }
     // One-line entry: never show a (vertical) scrollbar. Horizontal overflow is
     // handled by the textarea scrolling its content to follow the cursor.
@@ -1693,11 +1728,11 @@ void seed_add_passphrase_screen(void *ctx_json) {
         // keys and the Python side panel (FIXED_WIDTH_EMPHASIS_FONT_NAME), not the
         // OpenSans body button font.
         const int32_t clipped = COMPONENT_PADDING;  // overshoot off the right edge
-        passphrase_side_button(body, px, center_y - spacing, panel_w, btn_h,
+        c->key1_btn = passphrase_side_button(body, px, center_y - spacing, panel_w, btn_h,
                                UPPER_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key1_label);
-        passphrase_side_button(body, px, center_y, panel_w, btn_h,
+        c->key2_btn = passphrase_side_button(body, px, center_y, panel_w, btn_h,
                                NUM_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key2_label);
-        passphrase_side_button(body, px, center_y + spacing, panel_w, btn_h,
+        c->key3_btn = passphrase_side_button(body, px, center_y + spacing, panel_w, btn_h,
                                SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, clipped, NULL);
         passphrase_update_labels(c);
     }
