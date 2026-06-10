@@ -892,16 +892,16 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240[] = {
 };
 
 static const char * const passphrase_kb_map_digits_240[] = {
-    "1","2","3","4","5","6","\n",
-    "7","8","9","0",SeedSignerIconConstants::DELETE,"\n",
-    ABC_LABEL,SYM_LABEL,SeedSignerIconConstants::CHECK,"\n",
-    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,""
+    "1","2","3","4","\n",
+    "5","6","7","8","\n",
+    "9","0",SeedSignerIconConstants::DELETE,"\n",
+    ABC_LABEL,SYM_LABEL,SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,SeedSignerIconConstants::CHECK,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240[] = {
-    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
-    KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
-    KBC(2),KBC(2),KBC(2),
-    KBW(4),KBC(1),KBC(1)
+    KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBC(2),
+    KBC(2),KBC(2),KBW(3),KBC(1),KBC(1),KBC(2)
 };
 
 static const char * const passphrase_kb_map_symbols_240[] = {
@@ -951,16 +951,16 @@ static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_upper_240hw[] = {
 };
 
 static const char * const passphrase_kb_map_digits_240hw[] = {
-    "1","2","3","4","5","6","\n",
-    "7","8","9","0",SeedSignerIconConstants::DELETE,"\n",
-    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,"\n",
-    " ",""  // hidden spacer row — keeps the digit keys from stretching tall
+    "1","2","3","4","\n",
+    "5","6","7","8","\n",
+    "9","0",SeedSignerIconConstants::DELETE,"\n",
+    SeedSignerIconConstants::SPACE,SeedSignerIconConstants::CHEVRON_LEFT,SeedSignerIconConstants::CHEVRON_RIGHT,""
 };
 static const lv_buttonmatrix_ctrl_t passphrase_kb_ctrl_digits_240hw[] = {
-    KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),KBW(1),
-    KBW(1),KBW(1),KBW(1),KBW(1),KBC(2),
-    KBW(4),KBC(1),KBC(1),
-    KBH(1)
+    KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBW(1),KBW(1),
+    KBW(1),KBW(1),KBC(2),
+    KBW(4),KBC(1),KBC(1)
 };
 
 static const char * const passphrase_kb_map_symbols_240hw[] = {
@@ -1033,6 +1033,27 @@ static size_t passphrase_top_row_count(lv_obj_t *kb) {
     return n;
 }
 
+// Find the [first, last] button indices of the map row that contains button
+// `sel`, so LEFT/RIGHT can wrap within the current row instead of spilling onto
+// the adjacent row (matches the Python keyboard's auto_wrap). Assumes the map
+// has no hidden buttons (the passphrase maps don't).
+static void passphrase_row_bounds(lv_obj_t *kb, uint32_t sel,
+                                  uint32_t *first, uint32_t *last) {
+    const char * const *map = lv_keyboard_get_map_array(kb);
+    uint32_t id = 0, row_first = 0;
+    for (size_t i = 0; map && map[i] && map[i][0] != '\0'; ++i) {
+        if (std::strcmp(map[i], "\n") == 0) {       // end of a row [row_first, id-1]
+            if (sel < id) { *first = row_first; *last = id - 1; return; }
+            row_first = id;
+            continue;
+        }
+        id++;
+    }
+    // Last row (terminated by "" rather than "\n").
+    *first = row_first;
+    *last  = (id > 0) ? id - 1 : 0;
+}
+
 // Button index of a single-character key in the current map (-1 if absent).
 // Used to pre-select the last-typed key for the joystick selection highlight.
 static int passphrase_find_button(lv_obj_t *kb, char ch) {
@@ -1044,6 +1065,22 @@ static int passphrase_find_button(lv_obj_t *kb, char ch) {
         id++;
     }
     return -1;
+}
+
+// Default joystick selection when arriving at a page fresh — a central key, so
+// the first move is short on average: 'k' on the alphabetical letter grid, '6'
+// on the digit pad. Other pages (symbols) start at the first key. Returns a
+// button index (0 if the chosen key isn't found in the current map).
+static uint32_t passphrase_default_key(lv_obj_t *kb, lv_keyboard_mode_t mode) {
+    char ch = 0;
+    switch (mode) {
+        case LV_KEYBOARD_MODE_TEXT_LOWER: ch = 'k'; break;
+        case LV_KEYBOARD_MODE_TEXT_UPPER: ch = 'K'; break;
+        case LV_KEYBOARD_MODE_NUMBER:     ch = '6'; break;
+        default: break;
+    }
+    int idx = ch ? passphrase_find_button(kb, ch) : -1;
+    return idx >= 0 ? (uint32_t)idx : 0;
 }
 
 // Refresh the KEY1/KEY2 side-panel labels to reflect what pressing them does
@@ -1076,7 +1113,7 @@ static void passphrase_switch_mode(passphrase_ctx_t *c, lv_keyboard_mode_t mode)
         (mode == LV_KEYBOARD_MODE_TEXT_LOWER || mode == LV_KEYBOARD_MODE_TEXT_UPPER);
     lv_keyboard_set_mode(c->kb, mode);
     if (!case_swap) {
-        lv_buttonmatrix_set_selected_button(c->kb, 0);
+        lv_buttonmatrix_set_selected_button(c->kb, passphrase_default_key(c->kb, mode));
     }
 }
 
@@ -1140,6 +1177,22 @@ static void passphrase_kb_key_cb(lv_event_t *e) {
         if (sel < passphrase_top_row_count(c->kb)) {
             lv_group_focus_obj(c->back_btn);
         }
+    }
+
+    // LEFT/RIGHT wrap within the current row rather than spilling onto the
+    // adjacent row (matches the Python keyboard's auto_wrap). As a PREPROCESS
+    // handler we see the selection before the buttonmatrix moves it, set the
+    // wrapped target ourselves, and stop the event so its default linear move
+    // (which would cross rows) does not run.
+    if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+        uint32_t sel = lv_keyboard_get_selected_button(c->kb);
+        if (sel == LV_BUTTONMATRIX_BUTTON_NONE) return;  // let the default enter the grid
+        uint32_t first, last;
+        passphrase_row_bounds(c->kb, sel, &first, &last);
+        uint32_t target = (key == LV_KEY_RIGHT) ? (sel >= last  ? first : sel + 1)
+                                                : (sel <= first ? last  : sel - 1);
+        lv_buttonmatrix_set_selected_button(c->kb, target);
+        lv_event_stop_processing(e);
     }
 }
 
@@ -1683,13 +1736,12 @@ void seed_add_passphrase_screen(void *ctx_json) {
         // Pre-select an initial key so the joystick selection is visible from the
         // start. Otherwise btn_id_sel is NONE and it takes an arrow press just to
         // "enter" the keyboard, with no visible cursor until then. Prefer the
-        // last-typed key (prefilled, e.g. the "i" of satoshi), else the first
-        // letter, else the first key. The highlight shows via the focused-key
+        // last-typed key (prefilled, e.g. the "i" of satoshi), else the page's
+        // central default key (k / 6). The highlight shows via the focused-key
         // style in live use; static-render (screenshots) has no indev to apply
         // that focus state, so add PRESSED to make the highlight show in the still.
         int sel = initial_text.empty() ? -1 : passphrase_find_button(kb, initial_text.back());
-        if (sel < 0) sel = passphrase_find_button(kb, 'a');
-        if (sel < 0) sel = 0;
+        if (sel < 0) sel = (int)passphrase_default_key(kb, start_mode);
         lv_buttonmatrix_set_selected_button(kb, (uint32_t)sel);
         if (g_static_render) {
             lv_obj_add_state(kb, LV_STATE_PRESSED);
