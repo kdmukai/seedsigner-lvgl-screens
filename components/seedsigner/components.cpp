@@ -8,6 +8,21 @@
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 
+// A zero-duration transition. The default theme attaches a bg-color fade to
+// buttons (transition_delayed/normal), so the top-nav buttons' highlight fades
+// in/out — unlike the keyboard keys and button-list items, which snap. Apply
+// this to make the top-nav highlight instantaneous to match. Initialized lazily.
+static const lv_style_transition_dsc_t *instant_transition() {
+    static lv_style_transition_dsc_t dsc;
+    static bool inited = false;
+    if (!inited) {
+        static const lv_style_prop_t props[] = { LV_STYLE_BG_COLOR, LV_STYLE_BG_OPA, LV_STYLE_PROP_INV };
+        lv_style_transition_dsc_init(&dsc, props, lv_anim_path_linear, 0, 0, NULL);
+        inited = true;
+    }
+    return &dsc;
+}
+
 // Reset LVGL's default button chrome (shadow, outline, border) so our
 // buttons render as flat colored rectangles with rounded corners.
 static void reset_button_chrome(lv_obj_t* btn) {
@@ -64,6 +79,11 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
+    // Snap the highlight instantly instead of the theme's fade (the keyboard keys
+    // and button-list items don't fade). The theme attaches its transition to the
+    // default state and to PRESSED, so override both.
+    lv_obj_set_style_transition(btn, instant_transition(), LV_PART_MAIN);
+    lv_obj_set_style_transition(btn, instant_transition(), LV_PART_MAIN | LV_STATE_PRESSED);
 
     // Glyph color follows the button state: light normally, black when the button
     // is highlighted (focused / pressed) so it stays legible on the orange

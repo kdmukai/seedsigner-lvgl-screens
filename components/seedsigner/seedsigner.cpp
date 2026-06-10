@@ -1076,9 +1076,15 @@ static int passphrase_find_button(lv_obj_t *kb, char ch) {
 // chosen key isn't found in the current map).
 static uint32_t passphrase_default_key(lv_obj_t *kb, lv_keyboard_mode_t mode) {
     char ch = 0;
+    // The letter layouts differ: the 240 joystick keyboard is alphabetical
+    // (a-g / h-n / ...), so 'k' is its center; the QWERTY keyboards (240 touch
+    // and the larger profiles) center on 'g' — the middle of the home row.
+    // Detect by whether 'a'/'A' is the first key.
+    bool alphabetical = (passphrase_find_button(kb, 'a') == 0) ||
+                        (passphrase_find_button(kb, 'A') == 0);
     switch (mode) {
-        case LV_KEYBOARD_MODE_TEXT_LOWER: ch = 'k'; break;
-        case LV_KEYBOARD_MODE_TEXT_UPPER: ch = 'K'; break;
+        case LV_KEYBOARD_MODE_TEXT_LOWER: ch = alphabetical ? 'k' : 'g'; break;
+        case LV_KEYBOARD_MODE_TEXT_UPPER: ch = alphabetical ? 'K' : 'G'; break;
         case LV_KEYBOARD_MODE_NUMBER:     ch = '6'; break;
         case LV_KEYBOARD_MODE_SPECIAL:    ch = '.'; break;
         default: break;
