@@ -79,6 +79,83 @@ case "$COMMAND" in
     ;;
 
   # ---------------------------------------------------------------------------
+  # Web runner (WASM)
+  # ---------------------------------------------------------------------------
+
+  build-web-runner)
+    # Build the browser (WASM) playground. Emscripten's emcmake/em++ must be on
+    # PATH (the CI workflow provides them via mymindstorm/setup-emsdk). Optional
+    # display dimensions can be passed through, e.g. -DDISPLAY_WIDTH=480 ...
+    #
+    # Guard: syntax-check the inline app script in shell.html first, so a broken
+    # edit can't ship a shell where Module/ssOnReady never get defined.
+    if command -v node >/dev/null 2>&1; then
+      python3 - tools/web_runner/shell.html > /tmp/web_runner_shell_app.js <<'PY'
+import re, sys
+html = open(sys.argv[1]).read()
+m = re.search(r'<script type="text/javascript">(.*?)</script>\s*\{\{\{ SCRIPT \}\}\}', html, re.S)
+sys.stdout.write(m.group(1) if m else 'throw new Error("app script block not found");')
+PY
+      node --check /tmp/web_runner_shell_app.js
+    fi
+    emcmake cmake -S tools/web_runner -B tools/web_runner/build-wasm \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 \
+      ${@+"$@"}
+    cmake --build tools/web_runner/build-wasm -j"$NPROC"
+    ;;
+
+  package-web-runner)
+    # Copy the single-file bundle into a self-contained directory for deploy.
+    # Usage: ci.sh package-web-runner [DIR]
+    WEB_DIR="${1:-web-site}"
+    mkdir -p "$WEB_DIR"
+    cp tools/web_runner/build-wasm/index.html "$WEB_DIR/"
+    ;;
+
+  # ---------------------------------------------------------------------------
+  # Combined GitHub Pages site (screenshot gallery + web runner)
+  # ---------------------------------------------------------------------------
+
+  assemble-site)
+    # Assemble the full Pages site from already-built outputs:
+    #   <site>/             screenshot gallery (manifest.json + img/)
+    #   <site>/play/        the web runner playground (index.html)
+    # Deployed atomically by the official Pages action. Usage: ci.sh assemble-site [DIR]
+    SITE_DIR="${1:-site}"
+    rm -rf "$SITE_DIR"
+    mkdir -p "$SITE_DIR/play"
+    if [ -d tools/screenshot_generator/screenshots ]; then
+      cp -r tools/screenshot_generator/screenshots/. "$SITE_DIR/"
+    fi
+    cp tools/web_runner/build-wasm/index.html "$SITE_DIR/play/"
+    echo "Assembled site at $SITE_DIR (gallery at /, web runner at /play/)"
+    ;;
+
+  screenshot-diff-summary)
+    # Print a Markdown summary of a screenshot comparison (for $GITHUB_STEP_SUMMARY).
+    # Usage: ci.sh screenshot-diff-summary RESULT_JSON
+    RESULT="${1:?Usage: screenshot-diff-summary RESULT_JSON}"
+    echo "### SeedSigner LVGL screenshot regression"
+    if [ -f "$RESULT" ]; then
+      python3 -c "
+import json, sys
+s = json.load(open(sys.argv[1])).get('summary', {})
+ch, nw, rm, un = s.get('changed',0), s.get('new',0), s.get('removed',0), s.get('unchanged',0)
+if ch == 0 and nw == 0 and rm == 0:
+    print(f'No screenshots affected by this PR ({un} unchanged).')
+else:
+    print(f'**{ch}** changed, **{nw}** new, **{rm}** removed, {un} unchanged.')
+" "$RESULT"
+    else
+      echo "No comparison result was produced."
+    fi
+    echo ""
+    echo "Download the **screenshot-diff** artifact (HTML report) and the **site** artifact (open \`index.html\` / \`play/index.html\` locally) to review."
+    ;;
+
+
+  # ---------------------------------------------------------------------------
   # Pages deployment
   # ---------------------------------------------------------------------------
 
@@ -172,6 +249,10 @@ case "$COMMAND" in
     echo "  install-screen-runner-deps       Install screen runner dependencies"
     echo "  build-screen-runner [CMAKE_ARGS] Build the screen runner"
     echo "  package-screen-runner [DIR]      Package build outputs into artifact dir"
+    echo ""
+    echo "Web runner (WASM) commands:"
+    echo "  build-web-runner [CMAKE_ARGS]    Build the browser playground (needs emcmake on PATH)"
+    echo "  package-web-runner [DIR]         Copy the single-file bundle into a deploy dir"
     echo ""
     echo "Pages commands:"
     echo "  deploy-pages SRC BRANCH [DEST]   Deploy directory to a git branch"

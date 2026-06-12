@@ -65,3 +65,31 @@ declared scope, which is a separate risk).
    files and fails identically. To get an existing PR onto the fixed workflows
    you must trigger a **fresh** run after the base is updated: close & reopen the
    PR (`reopened` event), or push a new commit to its head (`synchronize` event).
+
+## Update — write tokens removed from PR runs entirely
+
+The fork-guard above keeps fork PRs green, but it still leaves a *writable* token
+present during **same-repo** PR runs — a job executing PR-authored code (and
+third-party actions) alongside `contents: write` / `pull-requests: write`. That
+residual risk was eliminated by reworking the Pages/CI jobs so **no PR run holds
+any write token at all**:
+
+- The screenshot gallery and the WASM web runner are now built and published by a
+  single workflow, `pages.yml`, using the **official** GitHub Pages action
+  (`actions/upload-pages-artifact` + `actions/deploy-pages`) instead of pushing to
+  a `gh-pages` branch. This needs only `pages: write` + `id-token` (OIDC) — **no
+  `contents: write`** — and that scope is granted only to the `deploy` job, which
+  runs **only on push to `main` / dispatch** (post-merge, trusted).
+- `pull_request` runs are read-only: they build the site (uploaded as the `site`
+  artifact — the bundle is `file://`-runnable, so reviewers just download and
+  open it) and run a read-only screenshot diff (base vs PR) surfaced in the
+  **job summary** + a `screenshot-diff` artifact. No PR comment, no deploy.
+- `screen-runner.yml` likewise dropped its `pull-requests: write` and replaced the
+  PR-comment job with a read-only **job summary**.
+- All actions are pinned to commit SHAs; the `github-pages` environment can be
+  restricted to `main` for platform-enforced (not just `if:`-guarded) protection.
+
+Net effect: there is no longer a fork-vs-same-repo distinction to guard for these
+jobs — PR runs simply never have write access, so the original 403 class of
+failure can't occur and the same-repo write-token exposure is gone. One-time
+setup: Settings → Pages → Source = "GitHub Actions".

@@ -1,0 +1,145 @@
+name: Pages (screenshots + web runner)
+
+# Builds the screenshot gallery and the WASM web-runner playground into ONE site
+# and publishes it with the official GitHub Pages action.
+#
+# Security posture:
+#   - Top-level token is read-only. Only the deploy job opts into the minimal
+#     Pages-publish scopes (pages: write + id-token). NOTHING uses contents:write
+#     and nothing pushes to a branch, so a compromised build step or third-party
+#     action cannot tamper with the repo.
+#   - Deploys happen ONLY on push to main / manual dispatch (trusted, post-merge).
+#     pull_request runs are build + read-only checks; they never hold a write
+#     token, so there is no fork-vs-non-fork distinction to guard.
+#   - All actions are pinned to commit SHAs.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source = "GitHub
+# Actions". Optionally restrict the `github-pages` environment to the `main`
+# branch (Settings -> Environments) for enforced, platform-level protection.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Build the combined site on every event (incl. fork PRs). Read-only.
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install screenshot dependencies
+        run: scripts/ci/ci.sh install-screenshot-deps
+
+      - name: Build & generate screenshots
+        run: |
+          scripts/ci/ci.sh build-screenshots
+          scripts/ci/ci.sh generate-screenshots
+
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021  # v14
+        with:
+          version: 3.1.74
+          actions-cache-folder: emsdk-cache
+
+      - name: Build web runner (WASM)
+        run: scripts/ci/ci.sh build-web-runner
+
+      - name: Assemble combined site
+        run: scripts/ci/ci.sh assemble-site site
+
+      - name: Upload site artifact (download & open locally to review)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: site
+          path: site/
+
+      # Only needed for deployment; skipped on PRs (which never deploy).
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
+        with:
+          path: site
+
+  # Read-only screenshot regression diff for PRs: generate the BASE screenshots
+  # in-run and compare against the PR's gallery (reused from the `site` artifact).
+  # Results go to the job summary + an artifact — no PR comment, no write token.
+  screenshot-diff:
+    needs: build
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (head, for scripts)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout base ref with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          submodules: recursive
+          fetch-depth: 1
+          path: base
+
+      - name: Download PR site (the "after" gallery)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: site
+          path: after
+
+      - name: Install screenshot dependencies
+        run: scripts/ci/ci.sh install-screenshot-deps
+
+      - name: Generate BASE screenshots
+        run: |
+          base/scripts/ci/ci.sh build-screenshots
+          base/scripts/ci/ci.sh generate-screenshots
+
+      - name: Compare BASE vs PR
+        run: |
+          scripts/ci/ci.sh compare-screenshots \
+            --before-dir base/tools/screenshot_generator/screenshots \
+            --after-dir after \
+            --out-dir screenshot-diff \
+            --pr-number ${{ github.event.number }} || true
+          scripts/ci/ci.sh screenshot-diff-summary screenshot-diff/compare_result.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshot diff report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: screenshot-diff
+          path: screenshot-diff/
+
+  # Publish the combined site. Only on trusted, post-merge events.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4

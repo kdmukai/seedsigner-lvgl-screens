@@ -6,9 +6,11 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only: no job in this workflow needs a write token. PR artifact info is
+# surfaced via the job summary instead of a PR comment, so the untrusted PR code
+# in the build matrix never runs alongside a writable token.
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   build:
@@ -34,7 +36,7 @@ jobs:
     steps:
       - name: Setup MSYS2
         if: matrix.platform == 'windows'
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2
         with:
           msystem: MINGW64
           install: >-
@@ -46,7 +48,7 @@ jobs:
             mingw-w64-x86_64-imagemagick
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           submodules: recursive
           fetch-depth: 1
@@ -78,66 +80,33 @@ jobs:
               done
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: screen-runner-${{ matrix.platform }}
           path: artifact/
 
-  pr-comment:
-    # Skipped on fork PRs: posting a PR comment needs a writable token, which
-    # GitHub withholds for pull_request events from a fork (403). The build
-    # jobs above still run and upload artifacts normally.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+  pr-summary:
+    # Read-only: surface the artifact info in the run's job summary instead of a
+    # PR comment, so no pull_request run ever holds a write token. Runs for all
+    # PRs (fork or not) since it needs no special permissions.
+    if: github.event_name == 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - name: Post artifact links
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const marker = '<!-- screen-runner-artifacts -->';
-            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}#artifacts`;
-            const body = [
-              marker,
-              '### Screen Runner Artifacts',
-              '',
-              `Build artifacts for this PR are available at the [workflow run artifacts page](${runUrl}):`,
-              '',
-              '| Platform | Artifact |',
-              '|----------|----------|',
-              '| Linux | `screen-runner-linux` |',
-              '| macOS | `screen-runner-macos` |',
-              '| Windows | `screen-runner-windows` |',
-              '',
-              '_Artifacts require GitHub authentication to download and expire after 90 days._',
-              '',
-              '#### macOS: removing quarantine',
-              'macOS Gatekeeper blocks unsigned downloaded binaries. After extracting, run:',
-              '```',
-              'xattr -d com.apple.quarantine screen_runner',
-              '```',
-            ].join('\n');
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c => c.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
+      - name: Write artifact summary
+        run: |
+          {
+            echo "### Screen Runner artifacts"
+            echo ""
+            echo "Native desktop builds for this PR (Linux / macOS / Windows) are attached to"
+            echo "this run — see the **Artifacts** section at the top of the run's summary page."
+            echo "Artifacts require GitHub authentication to download and expire after 90 days."
+            echo ""
+            echo "#### macOS: removing quarantine"
+            echo "macOS Gatekeeper blocks unsigned downloaded binaries. After extracting, run:"
+            echo '```'
+            echo "xattr -d com.apple.quarantine screen_runner"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

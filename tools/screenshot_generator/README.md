@@ -108,12 +108,17 @@ for hash comparison. The `.gif` is displayed in the report for visual review.
 
 ### CI integration
 
-The `screenshots.yml` workflow runs this automatically on PRs:
+The unified `pages.yml` workflow runs this automatically on PRs (read-only — no
+write token, no PR comment):
 
-1. `build` job generates screenshots from the PR branch
-2. `compare-and-deploy-pr` job downloads the baseline from `gh-pages`, runs the
-   comparison, deploys the report to `previews/pr-{N}/`, and posts a summary comment
-3. `cleanup-pr-preview-pages` removes the preview when the PR closes
+1. `build` job generates screenshots from the PR branch and assembles the
+   combined site (gallery + web runner), uploaded as the `site` artifact.
+2. `screenshot-diff` job generates the **base** branch screenshots in the same
+   run, compares them against the PR's gallery, writes a summary to the job
+   summary, and uploads the HTML report as the `screenshot-diff` artifact.
+
+The gallery (at `/`) and web-runner playground (at `/play/`) are published via
+the official GitHub Pages action only on push to `main` / manual dispatch.
 
 ### Dependencies
 
