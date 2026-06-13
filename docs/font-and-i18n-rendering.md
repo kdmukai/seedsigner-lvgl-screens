@@ -1,96 +1,157 @@
 # Font & Multi-Language Rendering (Display Layer)
 
-_Status: design / planned. This documents how the LVGL display layer renders fonts and multi-language text, and the offline tooling that produces the font assets. It is the display-layer companion to the system-level vision in `seedsigner/docs/architecture/dual-platform-overview.md`. Most of what follows is not yet implemented; it records the agreed design and its rationale._
+_Status: Phase 1 implemented (CJK zh/ja/ko proven end-to-end via the desktop screenshot generator);
+Phase 2 (shaping-complex scripts) deferred. This documents how the LVGL display layer renders fonts
+and multi-language text and the offline tooling that produces the font assets. Display-layer companion
+to the system-level vision in `seedsigner/docs/architecture/dual-platform-overview.md`. For the
+debugging story behind the engine choice, see [knowledge/font-loading-binfont-vs-tiny-ttf.md](knowledge/font-loading-binfont-vs-tiny-ttf.md)._
 
 ## Scope & Principle
 
-This repo is the **render** layer: given a buffer of font bytes + a screen config + already-translated strings, it draws pixels. It is deliberately **ignorant of where assets come from and whether they are trusted** — it never touches the SD card and never runs cryptography. Acquisition (SD I/O) and trust (signature verification) live in the platform layers; policy (which language, which strings) lives in the Python C&C layer. See the four-verb model in the architecture overview.
+This repo is the **render** layer: given font bytes + a screen config + already-translated strings, it
+draws pixels. It is deliberately **ignorant of where assets come from and whether they are trusted** —
+it never touches the SD card and never runs cryptography. Acquisition (SD I/O) and trust (signature
+verification) live in the platform layers; locale *selection* lives in the Python C&C layer. But the
+render layer **owns the locale→{font, size, chain} mapping and the glyph-set extraction** — i.e. "what
+does this locale need, at what size, and how do the glyphs get drawn." (This sharpens the four-verb
+model: selection = Decide; resolution + rendering = Render.)
 
-The motivating problem: shipping pre-rasterized fonts compiled into the firmware does not scale to many languages × multiple resolution profiles. A single CJK TTF is ~8 MB; baking it as bitmaps at several sizes multiplies that and bloats every binary, even for languages a given user never selects. The design below moves fonts **out of the binary and onto the SD card**, loaded on demand, so binary size is independent of language count.
+The motivating problem: shipping pre-rasterized fonts compiled into the firmware does not scale to many
+languages × resolutions. A full CJK TTF is multiple MB; baking it as bitmaps at several sizes bloats
+every binary, even for languages a user never selects. So non-Latin fonts move **out of the binary and
+onto the SD card** as language packs, loaded on demand — binary size stays independent of language count.
+
+## Ownership: the canonical locale table
+
+`components/seedsigner/locale_fonts.{h,cpp}` is the **single source of truth** for which additional
+(non-baked) fonts a locale needs, at what per-role sizes, and how they chain with the baked-in floor.
+`supported_locales()` serializes it to a JSON manifest for the active display profile — the **only**
+outward interface. The host fetches this once at startup, reconciles it against the fonts present in its
+store (and the available `.mo` catalogs), and offers the satisfied locales. A locale absent from the
+manifest is fully covered by the baked floor (no pack needed).
+
+Python's `gui/components.py` font/size tables are slated to be removed once this owns it; the view layer
+will report only the active locale.
 
 ## The Registration Seam
 
-Fonts enter the display layer through one interface (planned):
+`components/seedsigner/font_registry.{h,cpp}`:
 
 ```c
-// Receives already-verified bytes. Never opens files, never verifies signatures.
-seedsigner_register_font(const char *logical_name, const uint8_t *buf, size_t len, /* size, fallback, ... */);
+void seedsigner_set_locale(const char *locale);                  // looks up the canonical table
+bool seedsigner_register_font(const char *logical_name,          // role: "body"/"button"/"top_nav_title"/...
+                              const uint8_t *buf, size_t len, int font_px_size);
+void seedsigner_clear_registered_fonts();                        // restore compiled-in fonts
 ```
 
-Screens and display profiles reference fonts by **logical name** (`"body"`, `"title"`, `"hero_icon"`), never by pointer or path. The platform layer loads + verifies a pack and registers each font under its logical name before rendering. This is what keeps the layer ignorant: it gets a buffer and a name, nothing else.
+The platform loads + verifies a pack and registers each font under its **role name** before rendering.
+The seam turns the bytes into an `lv_font_t` and repoints the active profile's text-font pointer (the
+profiles are non-const; `active_profile_mutable()` exists for this). **The font buffer must outlive the
+font** (Tiny TTF reads outlines lazily) — the host frees it only after `clear`.
 
 ## Storage & Engine Model
 
-Fonts live on the SD card as signed **language packs**, not in the binary. Two viable engines, both supported by LVGL v9.5.0:
+Fonts live on the SD card as signed **language packs**, not in the binary. The engine is **Tiny TTF**
+(`LV_USE_TINY_TTF`, `lv_tiny_ttf_create_data`): one subset `.ttf` per locale, loaded from a buffer,
+rasterized on demand. A single `.ttf` serves **every size and every resolution** (create at any px), so
+packs are resolution-independent and small (a CJK subset is ~100KB; the full source TTF is multiple MB).
 
-| | Pre-baked `.bin` (recommended) | Tiny TTF (`LV_USE_TINY_TTF`) |
-|---|---|---|
-| On-board code | none — pure load via `lv_binfont_create_from_buffer` | rasterizer compiled in |
-| Source file | one `.bin` per size | one `.ttf`, any size |
-| First-use cost | none (already bitmaps) | rasterize-then-cache |
-| Parser attack surface | small, simple format | full TTF rasterizer (stb) |
-| SD cost | larger (bitmaps × sizes) | smallest |
-
-**Recommendation: pre-baked `.bin`.** Because our corpus is *closed and known at build time* (see below), we can pre-rasterize exactly the needed glyphs at exactly the profile's sizes offline. That removes the need to carry a rasterizer at all (smaller, more auditable — important on a signing device), eliminates first-use latency, and gives pixel-tuned quality. Tiny TTF remains the fallback if resolution profiles proliferate enough that per-size bakes become unwieldy.
-
-Either way, fonts on SD keep the **binary size flat** regardless of how many languages exist, and a device carries only the packs for **its** resolution profile.
+> **Why not pre-baked `.bin`?** That was the original plan (no runtime rasterizer, smallest attack
+> surface). It does not work with our toolchain: `lv_font_conv` 1.5.3 output hangs LVGL 9.5.0's
+> `lv_binfont_loader` for any non-trivial CJK font, via both memfs and file loads. See the knowledge
+> doc. Tiny TTF is the design's documented fallback engine and is what ships. Trade-off: the stb
+> rasterizer is compiled in (attack surface) — contained by verify-before-parse + an offline
+> rasterize-all validation gate (below).
 
 ### Closed corpus
 
-All user *input* is ASCII (BIP-39 English wordlist + passphrase). Non-Latin scripts therefore appear **only** in UI labels sourced from the translation catalog. The complete set of glyphs that can legitimately render is thus enumerable at build time. (QR-scanned native-language labels are explicitly out of scope for correct rendering and must degrade gracefully — see Placeholder below.) This is what makes pre-baking viable: we never face an unanticipated glyph at runtime.
+All user *input* is ASCII (BIP-39 wordlist + passphrase). Non-Latin glyphs appear **only** in UI labels
+from the translation catalog, so the complete glyph set is enumerable at build time. (QR-scanned native
+labels are out of scope — they degrade to the placeholder.) This is what makes subsetting safe and the
+rasterize-all validation tractable: we never face an unanticipated glyph at runtime.
 
-The relevant unit is the **unique glyph set, not the literal strings** — dedupe to codepoints across the whole catalog. For Arabic/Persian the "unique glyph" is defined in presentation-form space, not logical codepoints (see Shaping).
+## Chain model: dominant script is PRIMARY
 
-## Fallback, Font Manager, Glyph Cache
+The baked floor (OpenSans + Inconsolata + SeedSigner icons, ASCII only) is always present. Per locale:
 
-- **Fallback chains** (`lv_font_t.fallback`, chainable; walked in `lv_font_get_glyph_dsc`): keep a crisp, hand-tuned **Latin + icon** font as primary and chain script fonts (Hebrew, Arabic, CJK, …) as fallbacks. English stays sharp and costs nothing; the script font engages only when its codepoints appear.
-- **Font Manager** (`LV_USE_FONT_MANAGER`): reference-counts fonts (no duplicate loads), concatenates fallbacks, and recycles recently-deleted fonts for fast language switching. This is the lifecycle layer for "load the active language, unload on switch."
-- **Glyph cache + PSRAM**: target hardware has 8–16 MB PSRAM. Load the whole font file into PSRAM and, on language switch, **pre-warm** the cache by rasterizing/loading every glyph in the active language's (closed) corpus once. Vector-engine first-use latency becomes a bounded one-time cost; with pre-baked `.bin` there's no rasterization at all. Note PSRAM is slower than internal SRAM — fine for a static wallet UI, but the active glyph working set is the first thing to look at if a redraw is ever sluggish.
+- **CJK (`ChainRole::Primary`)** — the script font is the **primary** for each text role at a per-role
+  legibility-bumped size (base 240: body 18 / button 20 / large-button & title 23 / main-menu 26;
+  scaled by the profile multiplier). The baked OpenSans is its `.fallback`. Line metrics come from the
+  (taller) script primary — this is *why* it's primary, so the bumped CJK isn't clipped by a smaller
+  primary's line box. Matches the production Python per-locale size bumps.
+- **Same-size scripts** (Greek/Cyrillic/Vietnamese; Phase 2+) would chain as a *fallback* under the
+  OpenSans primary (no size bump → no metric issue). Not yet in the table.
 
-## Multi-Script Shaping
+**Embedded English in a CJK screen** (technical terms that aren't catalog msgids) currently renders from
+the **CJK font's own Latin glyphs at the bumped size**. The cleaner "English at the English size via the
+OpenSans fallback" is blocked by a Tiny TTF bug (its no-cache path reports absent codepoints as *found*,
+so the fallback never engages — see knowledge doc); until that's patched upstream, the build tool
+**includes ASCII in primary-script subsets** so embedded English renders (in Noto Latin), matching Python.
 
-Shaping and bidi are **string-level transforms inside LVGL**, applied at set-text time and independent of which engine draws the glyph. Config (to be enabled): `LV_USE_BIDI = 1`, `LV_BIDI_BASE_DIR_DEF = LV_BASE_DIR_AUTO`, `LV_USE_ARABIC_PERSIAN_CHARS = 1`.
+### Glyph cache
 
-The four target scripts are three different problems:
+Tiny TTF has an LRU glyph cache. It currently spins on certain content at any cache size (LVGL bug — see
+knowledge doc), so fonts are created with `cache_size=0` (rasterize-direct) for now. That's correct for
+the static screenshot tool but slow for the interactive device; restoring a working cache (or patching
+the spin) is a production follow-up. Target hardware has 8–16 MB PSRAM, so caching/pre-warming the closed
+corpus is viable once the cache is usable.
 
-- **Hebrew** — RTL, **non-cursive** (no joining). Needs only `LV_USE_BIDI` + an Hebrew font + correct `base_dir`. Fully handled.
-- **Arabic / Persian** — RTL **+ cursive joining**. `LV_USE_ARABIC_PERSIAN_CHARS` substitutes each logical letter with its contextual **presentation form** before glyph lookup. Documented LVGL limitations: only *display* is shaped (Text Areas are **not** — irrelevant for us since input is ASCII); and **static text is not processed**, so shaped strings must use the allocating label setter, never `_static`.
-- **Thai** — **LTR**, but a complex Brahmic script LVGL does not shape: combining marks need mark-to-base positioning LVGL doesn't do, and there are no inter-word spaces for line breaking. Mitigations are **offline** (see tooling): inject U+200B at word boundaries via a segmenter, and use a font whose combining marks have **zero advance width** so they stack visually without GPOS.
+## Multi-Script Shaping (Phase 2)
 
-### The Arabic presentation-form gotcha (critical for subsetting)
+Shaping and bidi are **string-level transforms inside LVGL**, applied at set-text time, independent of the
+engine. Config to enable: `LV_USE_BIDI = 1`, `LV_BIDI_BASE_DIR_DEF = LV_BASE_DIR_AUTO`,
+`LV_USE_ARABIC_PERSIAN_CHARS = 1`.
 
-Because LVGL renders the *substituted presentation forms*, the font subset must contain those forms (U+FB50–FDFF, U+FE70–FEFF), not just the base U+06xx block — plus mandatory ligatures (lam-alef) that are single glyphs corresponding to no single input codepoint. **Deriving the glyph set from logical input codepoints is insufficient for Arabic/Persian.**
+- **Hebrew** — RTL, non-cursive. Needs only `LV_USE_BIDI` + correct `base_dir`.
+- **Arabic / Persian** — RTL + cursive joining. `LV_USE_ARABIC_PERSIAN_CHARS` substitutes each logical
+  letter with its **presentation form** (U+FB50–FDFF, U+FE70–FEFF) before glyph lookup. The vendored
+  `NotoSansAR-Regular.ttf` cmap already covers those forms (631 + 141 glyphs) and all Farsi letters, so
+  Tiny TTF resolves them by codepoint. stb ignores GSUB/GPOS, so anything beyond LVGL's substitution
+  (e.g. GPOS mark positioning) isn't rendered — same ceiling any engine has here.
+- **Thai** — LTR Brahmic; LVGL doesn't shape it. Offline mitigation: inject U+200B at word boundaries,
+  use a zero-advance-mark font.
 
-This directly affects the existing extraction tool (next section): it operates on logical codepoints and therefore does **not** cover the Arabic conjoining case on its own.
+### The Arabic presentation-form gotcha (subsetting)
+
+Because LVGL renders the *substituted presentation forms*, an Arabic/Persian subset must retain those
+forms (not just base U+06xx) plus lam-alef ligatures. So `pyftsubset` for Arabic locales must KEEP the
+presentation-form ranges and layout tables (unlike CJK, where we drop them).
 
 ## Pack-Generation Tooling (Produce)
 
-The offline pipeline that produces signed packs lives in this repo's `tools/` (alongside `scripts/png_to_lvgl.py`, which already generates LVGL image assets). It is platform-agnostic — the same `.bin` works on ESP and Pi at a given resolution — so it must **not** live in a platform-specific builder.
+Owned here, in `tools/fontpack/` (see its README). c-modules owns the corpus extraction too — it no
+longer depends on the main app's extractor. Pipeline per locale:
 
-Pipeline, per (language × profile):
+1. **Corpus** — `po_catalog.py` parses the locale's `.po` directly (no Babel) → unique non-ASCII glyphs
+   (ASCII added back for primary-script locales, per the chain note above).
+2. **Subset** — `build_lang_font.py` reads the render layer's `--dump-locales` manifest for the source
+   family, then `fontTools.subset` → one `.ttf` per locale (CJK: drop GSUB/GPOS/GDEF; Arabic: keep them).
+3. **Bundle & sign** — left to the platform layer (the tool emits a per-locale `manifest.json` with
+   sha256). Signing planned: Schnorr/secp256k1.
 
-1. **Corpus extraction.** Start from `seedsigner`'s `resources/seedsigner-translations/tools/extract_characters_from_babel_mo.py`, which already extracts the unique character set per locale from the compiled `.mo` (translation chars ∪ basic ASCII). **This gives logical codepoints only.**
-2. **Presentation-form expansion (Arabic/Persian).** For Arabic-script locales the logical codepoints from step 1 are **not** what LVGL renders — `LV_USE_ARABIC_PERSIAN_CHARS` substitutes contextual presentation forms (U+FB50–FDFF, U+FE70–FEFF) before glyph lookup, plus the lam-alef ligatures. Without expanding to those, the subset is missing the glyphs that actually draw. **This is the gap the existing extraction tool does not cover** (it collects logical codepoints only).
+Phase-2 follow-on: an LVGL-shaper-driven exact presentation-form extractor (`lv_text_ap.c`) instead of
+keeping the full Arabic presentation blocks.
 
-   **Chosen approach: over-render the superset** (decided 2026-06-08). For each Arabic/Persian base letter present in the corpus, include **all four** positional forms (isolated/initial/medial/final), plus the lam-alef ligature forms whenever both components are present. This is conservative — it bakes a few forms that never occur in context — but on hardware that is not storage/memory-constrained the cost is trivial, and a superset **cannot under-include**, so it can never produce a missing-glyph box. The form set can be derived with stdlib `unicodedata` alone (read the compatibility decompositions of the presentation-form blocks to map base → forms); no joining algorithm or external data is needed.
+## Trust Expectation
 
-   > **TODO:** Implement this expansion in `seedsigner/src/seedsigner/resources/seedsigner-translations/tools/extract_characters_from_babel_mo.py` (e.g. behind an Arabic/Persian-locale path or `--expand-arabic-forms` flag), so the tool emits the superset of presentation forms for those locales rather than bare logical codepoints. Until then, Arabic/Persian packs built from its output will render missing-glyph boxes.
-
-   _Deferred alternative — exact set:_ if minimizing baked glyphs ever matters, the only *provably* LVGL-exact route is to run the corpus through LVGL's own shaper (`src/misc/lv_text_ap.c`) via a small C harness and collect the output codepoints — not a Python reimplementation, since under-inclusion there means a blank glyph. Not worth the extra machinery while storage is plentiful.
-3. **Thai prep.** Inject U+200B at word boundaries (offline segmenter) into the catalog; select/validate a zero-advance-mark Thai font.
-4. **Subset & rasterize.** Subset the source TTF to the resulting glyph set; rasterize to `.bin` at each of the profile's font sizes (`lv_font_conv --format bin`, with the appropriate `--range`/`--symbols`).
-5. **Bundle & sign.** Bundle the `.bin` set with the resolution-independent `.mo` catalog into a language pack; sign it (planned: Schnorr/secp256k1).
-
-## Trust Expectation (what this layer assumes)
-
-The display layer assumes **it only ever receives verified bytes**. Verification is the platform layer's job and must happen *before* any byte reaches `lv_binfont_create_from_buffer` (verify-before-parse), and before gettext loads the `.mo`. The pre-baked `.bin` choice helps here too: a small, simple format behind the verification gate is far easier to audit than a full TTF rasterizer consuming attacker-influenceable input.
+The display layer assumes **it only ever receives verified bytes** — verification happens in the platform
+layer *before* any byte reaches `lv_tiny_ttf_create_data` (and before gettext loads the `.mo`). To contain
+the stb rasterizer's attack surface, the pack-signing process runs an offline **rasterize-all validation
+gate**: render every glyph in the (closed) corpus at every profile size through the same stb, under
+ASan/UBSan, and — because stb behavior can diverge per target — **compiled and run for each production
+architecture** (ESP32-S3, future ESP targets, Pi Zero), on-target or via QEMU where ASan isn't available.
+A pack isn't signable until it passes. Combined with verify-before-parse, the device only ever rasterizes
+a pre-proven, signed corpus.
 
 ### Placeholder for out-of-corpus glyphs
 
-Because QR-scanned native labels can contain codepoints outside the baked set, enable `LV_USE_FONT_PLACEHOLDER` so missing glyphs render a visible box rather than faulting. Graceful degradation, not a crash.
+`LV_USE_FONT_PLACEHOLDER` draws a box for out-of-corpus codepoints rather than faulting. (Note: the
+current Tiny TTF no-cache fallback bug means truly-absent glyphs render blank rather than reaching the
+placeholder; revisit when that's patched.)
 
 ## Cross-References
 
 - System vision & layer contracts: `seedsigner/docs/architecture/dual-platform-overview.md`
-- Corpus extractor: `seedsigner/src/seedsigner/resources/seedsigner-translations/tools/extract_characters_from_babel_mo.py`
-- LVGL font docs (vendored): `third_party/lvgl/docs/src/main-modules/fonts/` (`overview.rst`, `binfont_loader.rst`, `rtl.rst`, `font_manager.rst`, `../../libs/font_support/tiny_ttf.rst`)
+- As-built status & remaining work: [font-and-i18n-implementation-plan.md](font-and-i18n-implementation-plan.md)
+- Debugging story (engine choice, tiny_ttf bugs): [knowledge/font-loading-binfont-vs-tiny-ttf.md](knowledge/font-loading-binfont-vs-tiny-ttf.md)
+- Font-pack tooling: [../tools/fontpack/README.md](../tools/fontpack/README.md)
