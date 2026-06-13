@@ -1,3 +1,6 @@
 [submodule "third_party/lvgl"]
 	path = third_party/lvgl
 	url = https://github.com/lvgl/lvgl.git
+[submodule "tools/seedsigner-translations"]
+	path = tools/seedsigner-translations
+	url = https://github.com/SeedSigner/seedsigner-translations.git
