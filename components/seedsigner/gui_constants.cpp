@@ -117,17 +117,20 @@ static DisplayProfile make_profile(int width, int height) {
 // ---------------------------------------------------------------------------
 // Profile instances for each supported resolution
 // ---------------------------------------------------------------------------
+// Profiles are non-const so the font-registration seam (font_registry.cpp) can
+// repoint their text-font pointers to per-locale script fonts at runtime. All
+// other access is through active_profile()/the macros, which expose them as const.
 #ifdef SUPPORT_DISPLAY_HEIGHT_240
-static const DisplayProfile profile_240x240 = make_profile(240, 240);
-static const DisplayProfile profile_320x240 = make_profile(320, 240);
+static DisplayProfile profile_240x240 = make_profile(240, 240);
+static DisplayProfile profile_320x240 = make_profile(320, 240);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
-static const DisplayProfile profile_480x320 = make_profile(480, 320);
+static DisplayProfile profile_480x320 = make_profile(480, 320);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
-static const DisplayProfile profile_800x480 = make_profile(800, 480);
+static DisplayProfile profile_800x480 = make_profile(800, 480);
 #endif
 
 // ---------------------------------------------------------------------------
@@ -136,7 +139,7 @@ static const DisplayProfile profile_800x480 = make_profile(800, 480);
 struct ProfileEntry {
     int width;
     int height;
-    const DisplayProfile* profile;
+    DisplayProfile* profile;
 };
 
 static const ProfileEntry profile_table[] = {
@@ -154,7 +157,7 @@ static const ProfileEntry profile_table[] = {
 
 static const int profile_count = sizeof(profile_table) / sizeof(profile_table[0]);
 
-static const DisplayProfile* find_profile(int width, int height) {
+static DisplayProfile* find_profile(int width, int height) {
     for (int i = 0; i < profile_count; ++i) {
         if (profile_table[i].width == width && profile_table[i].height == height) {
             return profile_table[i].profile;
@@ -166,7 +169,7 @@ static const DisplayProfile* find_profile(int width, int height) {
 // ---------------------------------------------------------------------------
 // Active profile state
 // ---------------------------------------------------------------------------
-static const DisplayProfile* g_active_profile = nullptr;
+static DisplayProfile* g_active_profile = nullptr;
 
 const DisplayProfile& active_profile() {
     if (!g_active_profile) {
@@ -176,8 +179,16 @@ const DisplayProfile& active_profile() {
     return *g_active_profile;
 }
 
+DisplayProfile& active_profile_mutable() {
+    if (!g_active_profile) {
+        fprintf(stderr, "FATAL: active_profile_mutable() called before set_display()\n");
+        abort();
+    }
+    return *g_active_profile;
+}
+
 void set_display(int width, int height) {
-    const DisplayProfile* p = find_profile(width, height);
+    DisplayProfile* p = find_profile(width, height);
     if (!p) {
         fprintf(stderr, "FATAL: no display profile for %dx%d\n", width, height);
         abort();

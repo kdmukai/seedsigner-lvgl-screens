@@ -130,6 +130,13 @@ void set_display(int width, int height);
 int display_profile_count();
 const DisplayProfile& display_profile_at(int index);
 
+// Mutable access to the active profile, for the font-registration seam
+// (font_registry.cpp) which repoints text-font pointers to install per-locale
+// script fonts. Regular call sites use active_profile()/the macros (const).
+// The profile structs are process-global singletons, so a repoint persists
+// until seedsigner_clear_registered_fonts() restores the compiled-in fonts.
+DisplayProfile& active_profile_mutable();
+
 // ---------------------------------------------------------------------------
 // Macro accessors -- existing code uses these names unchanged
 // ---------------------------------------------------------------------------
