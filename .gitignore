@@ -81,3 +81,9 @@ tools/web_runner/.ccache/
 tools/web_runner/.emcache/
 CLAUDE.md
 .claude/
+
+# i18n generated artifacts (reproducible from tools/scenarios.json + catalogs + fonts)
+tools/fontpack/out/
+tools/scenarios/
+# Local multi-language screenshot review renders
+tools/screenshot_generator/screenshots/i18n/
