@@ -110,6 +110,8 @@ set(SEEDSIGNER_IMAGE_SOURCES
 
 set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/gui_constants.cpp"
+  "${SEEDSIGNER_DIR}/locale_fonts.cpp"
+  "${SEEDSIGNER_DIR}/font_registry.cpp"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
@@ -131,6 +133,9 @@ add_executable(screenshot_gen
 target_compile_definitions(screenshot_gen PRIVATE
   LV_CONF_SKIP
   LV_USE_DRAW_SW_ASM=LV_DRAW_SW_ASM_NONE
+  # Runtime font loading for the registration seam: per-locale subset TTFs are
+  # loaded from a buffer via lv_tiny_ttf_create_data() (no filesystem needed).
+  LV_USE_TINY_TTF=1
   DISPLAY_WIDTH=${DISPLAY_WIDTH}
   DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
   $<$<BOOL:${SUPPORT_DISPLAY_HEIGHT_240}>:SUPPORT_DISPLAY_HEIGHT_240>

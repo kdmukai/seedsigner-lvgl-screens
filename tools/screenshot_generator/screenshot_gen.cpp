@@ -23,6 +23,8 @@
 
 #include "lvgl.h"
 #include "gui_constants.h"
+#include "locale_fonts.h"
+#include "font_registry.h"
 #include "seedsigner.h"
 #include "input_profile.h"
 
@@ -448,9 +450,56 @@ static void usage(const char *argv0) {
     }
 }
 
+// Register the active locale's font pack for the ACTIVE profile, reading the
+// .bin files the render layer's own manifest says it needs. Buffers are copied
+// into LVGL's heap by the loader, so the local cache is freed on return.
+// Loaded font-pack buffers, kept alive while their fonts are registered:
+// tiny_ttf reads glyph outlines lazily, so the bytes must outlive the lv_font_t.
+// Cleared (after seedsigner_clear_registered_fonts) before re-registering.
+static std::unordered_map<std::string, std::vector<uint8_t>> g_locale_font_buffers;
+
+// Register the active locale's font pack for the ACTIVE profile, reading the
+// .ttf the render layer's own manifest says it needs (one .ttf per locale,
+// shared across the role sizes).
+static bool register_locale_fonts(const std::string &locale, const std::string &font_dir) {
+    json m = json::parse(supported_locales_json());
+    const json *loc = nullptr;
+    for (const auto &e : m["locales"]) {
+        if (e["locale"] == locale) { loc = &e; break; }
+    }
+    if (!loc) {
+        // Baked-floor locale (no additional fonts) — nothing to register.
+        return true;
+    }
+    for (const auto &f : (*loc)["fonts"]) {
+        std::string file = f["file"];
+        std::string role = f["role"];
+        int px = f["px"];
+        auto it = g_locale_font_buffers.find(file);
+        if (it == g_locale_font_buffers.end()) {
+            std::string path = font_dir + "/" + locale + "/" + file;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                fprintf(stderr, "missing font pack file: %s\n", path.c_str());
+                return false;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                       std::istreambuf_iterator<char>());
+            it = g_locale_font_buffers.emplace(file, std::move(bytes)).first;
+        }
+        if (!seedsigner_register_font(role.c_str(), it->second.data(), it->second.size(), px)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int main(int argc, char **argv) {
     const char *out_dir = DEFAULT_OUT_DIR;
     const char *scenarios_file = DEFAULT_SCENARIOS_FILE;
+    bool dump_locales = false;
+    std::string locale;     // --locale: register per-locale fonts + (caller picks scenarios file)
+    std::string font_dir = "tools/fontpack/out";  // --font-dir
 
     // Need an active profile before usage() can call display_profile_count()
     set_display(DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -460,6 +509,12 @@ int main(int argc, char **argv) {
             out_dir = argv[++i];
         } else if (strcmp(argv[i], "--scenarios-file") == 0 && i + 1 < argc) {
             scenarios_file = argv[++i];
+        } else if (strcmp(argv[i], "--dump-locales") == 0) {
+            dump_locales = true;
+        } else if (strcmp(argv[i], "--locale") == 0 && i + 1 < argc) {
+            locale = argv[++i];
+        } else if (strcmp(argv[i], "--font-dir") == 0 && i + 1 < argc) {
+            font_dir = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -467,6 +522,22 @@ int main(int argc, char **argv) {
             usage(argv[0]);
             return 1;
         }
+    }
+
+    // Emit the canonical per-profile font manifest (the render layer's sole
+    // outward interface) and exit. The offline font-pack tooling consumes this
+    // instead of duplicating the locale->{font,size,chain} table in Python.
+    if (dump_locales) {
+        json all = json::object();
+        for (int i = 0; i < display_profile_count(); ++i) {
+            const DisplayProfile &p = display_profile_at(i);
+            set_display(p.width, p.height);
+            char key[32];
+            snprintf(key, sizeof(key), "%dx%d", p.width, p.height);
+            all[key] = json::parse(supported_locales_json());
+        }
+        printf("%s\n", all.dump(2).c_str());
+        return 0;
     }
 
     if (mkdir_p(out_dir) != 0) {
@@ -531,6 +602,21 @@ int main(int argc, char **argv) {
         // mode (e.g. the passphrase keyboard) then show the right experience for
         // that device without per-scenario input overrides.
         input_profile_set_mode(profile.height == 240 ? INPUT_MODE_HARDWARE : INPUT_MODE_TOUCH);
+
+        // Per-locale fonts: restore the previous profile's fonts (destroying the
+        // tiny_ttf fonts that reference the old buffers), free those buffers, then
+        // register this profile's script font at its per-role sizes. English
+        // (empty locale) leaves the compiled-in fonts untouched.
+        if (!locale.empty()) {
+            seedsigner_clear_registered_fonts();
+            g_locale_font_buffers.clear();
+            seedsigner_set_locale(locale.c_str());
+            if (!register_locale_fonts(locale, font_dir)) {
+                fprintf(stderr, "Failed registering fonts for locale '%s' at %dx%d\n",
+                        locale.c_str(), g_width, g_height);
+                return 1;
+            }
+        }
 
         char res_label[32];
         snprintf(res_label, sizeof(res_label), "%dx%d", g_width, g_height);
