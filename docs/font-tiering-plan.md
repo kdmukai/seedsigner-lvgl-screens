@@ -94,7 +94,31 @@ and there the coupling is to a *pack*, never to firmware.
 - **No-rebuild proof:** a translation edit that introduces a new (already-in-block) glyph requires no
   firmware change and no new pack for the baked/script tiers.
 
-## Stage A implementation spec (in progress)
+## Stage A implementation spec — DONE (2026-06-14)
+
+**Landed:** the five translated text roles now render from the compiled-in OpenSans Western TTF
+(`opensans_western_{regular,semibold}.c`), rasterized at runtime via `lv_tiny_ttf`; keyboard
+(Inconsolata) + icons stay baked. `fonts_for_multiplier` leaves the five slots null; `gui_constants.cpp
+set_display()` installs the per-role baseline the first time it runs after `lv_init()` (per-profile lazy
+cache, never destroyed; sizes hardcoded incl. the large_button 20@240 / 18@320·480 quirk; body=Regular,
+other four=SemiBold). The baked `opensans_*` `.c` files are deleted and dropped from all 5 CMakeLists
+(4 apps + the ESP32 `components/seedsigner` component). The generator's `--baseline-ttf` spike is removed.
+
+**Two deviations from the "no per-consumer edits" assumption** (note for Stage B / device path):
+1. **`tools/apps/runner_core/runner_core.cpp init()`** had to reorder `lv_init()` *before* `set_display()`
+   — the shared runner core called `set_display` only pre-`lv_init`, so the install (gated on
+   `lv_is_initialized()`) never fired. One shared edit covers all three runner apps; the apps themselves
+   are unchanged.
+2. **`LV_USE_TINY_TTF=1` + `LV_USE_STDLIB_MALLOC=LV_STDLIB_CLIB`** added to screen_runner, web_runner, and
+   runner_core/test (previously only the generator had them) — the baseline now always rasterizes, so
+   every runner needs tiny_ttf and the real allocator.
+
+**Verified (generator @ 240/320/480):** es renders accented Latin (`Menú`) via the baseline; passphrase
+keyboard stays baked Inconsolata; el boxes correctly (no Greek pack yet — faithful); zh_Hans_CN still
+renders (CJK Primary chain intact, fallback is now the OpenSans TTF). `screen_runner` builds; the
+`runner_core` test passes incl. render-after-resize (proves per-profile install across resolution switch).
+
+### Original spec (for reference)
 
 **Foundation done (uncommitted):** `build_fontpacks`-style block subsets generated — Western (383
 glyphs), Greek (162), Cyrillic (303), Vietnamese (468), Regular+SemiBold each. The **Western baseline is
@@ -126,9 +150,8 @@ mode → script packs in `lang-packs/`; generator loads + chains them; el/ru/vi 
 
 ## TODOs / follow-ups
 
-- **Spike done (2026-06-14):** `screenshot_gen --baseline-ttf` repoints the 5 roles to OpenSans tiny_ttf
-  (Regular body / SemiBold buttons+titles), keyboard + icons stay baked. Spanish accents render; English
-  unchanged. Tool-local flag, loads full OpenSans from assets (subset/compile-in still to do).
+- **Spike (2026-06-14) — SUPERSEDED by Stage A.** `screenshot_gen --baseline-ttf` proved the direction;
+  it's now removed in favour of the always-on compiled-in Western subset install in `set_display()`.
 - **TTF-vs-baked metric parity (line-height/advance).** The TTF body font wraps/spaces a hair differently
   than the baked bitmaps — on `large_icon_status` at 240 it pushed the "OK" button below the fold.
   Reconcile tiny_ttf line metrics with the baked sizes so it's drop-in before replacing the baked floor.
