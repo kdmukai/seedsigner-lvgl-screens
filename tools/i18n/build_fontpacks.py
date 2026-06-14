@@ -2,19 +2,28 @@
 """
 Offline font-pack builder for SeedSigner i18n (Tiny TTF engine).
 
+Produces a production-ready per-locale font pack under the repo-root lang-packs/:
+  lang-packs/<locale>/<locale>.ttf  +  manifest.json (sha256)
+
 Per locale:
   1. Read the canonical font manifest straight from the render layer
      (`screenshot_gen --dump-locales`) -- the locale->{font,size,chain} table is
      owned in C; this tool never duplicates it. It only needs each locale's
-     source font family from there.
+     source font family from there, and the locale SET (the single source of
+     truth; --locale restricts it).
   2. Extract the locale's glyph corpus from its translation catalog (.po),
      EXCLUDING ASCII (the baked-in OpenSans floor / fallback covers it).
   3. Subset the source TTF to that corpus -> one small .ttf per locale. Fonts are
      loaded at runtime via lv_tiny_ttf_create_data(), which rasterizes on demand,
      so a single subset .ttf serves every size and every resolution profile.
 
-Self-contained: parses .po directly (no Babel), subsets via fontTools.
-Signing / pack bundling is intentionally left to the platform layer.
+This is the single entry point for font packs; it does NOT localize scenarios
+(that is a separate, test-only step: gen_localized_scenarios.py). Self-contained:
+parses .po directly (no Babel), subsets via fontTools. Signing / pack bundling is
+left to the platform layer.
+
+Prerequisites: a built screenshot_gen (for --dump-locales) and fontTools
+(`pip install fonttools`).
 """
 
 import argparse
@@ -26,8 +35,8 @@ import sys
 
 from po_catalog import corpus_chars
 
-# From tools/fontpack/steps/ up to the repo root.
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# This file lives at tools/i18n/; repo root is two levels up.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def source_ttf(source_family, assets_dir):
@@ -65,41 +74,44 @@ def sha256_file(path):
     return h.hexdigest()
 
 
+def manifest_locales(gen_bin, only):
+    """locale -> {source_family, chain} from the render layer's manifest,
+    restricted to `only` if given (else every locale the manifest declares)."""
+    dump = subprocess.run([gen_bin, "--dump-locales"],
+                          check=True, capture_output=True, text=True)
+    manifest = json.loads(dump.stdout)
+    locales = {}
+    for profile in manifest.values():
+        for loc in profile.get("locales", []):
+            name = loc["locale"]
+            if only and name not in only:
+                continue
+            # px sizes are irrelevant to subsetting; one .ttf serves every size.
+            locales.setdefault(name, {"source_family": loc["source_family"],
+                                      "chain": loc["chain"]})
+    return locales
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gen-bin",
-                    default=os.path.join(REPO_ROOT, "tools/screenshot_generator/build/screenshot_gen"),
+                    default=os.path.join(REPO_ROOT, "tools/apps/screenshot_generator/build/screenshot_gen"),
                     help="screenshot_gen binary (provides --dump-locales)")
     ap.add_argument("--translations-dir",
-                    default=os.path.join(REPO_ROOT, "tools/seedsigner-translations"),
+                    default=os.path.join(REPO_ROOT, "tools/i18n/seedsigner-translations"),
                     help="seedsigner-translations checkout (.po catalogs)")
     ap.add_argument("--assets-dir",
                     default=os.path.join(REPO_ROOT, "components/seedsigner/assets"),
                     help="vendored source TTFs (OpenSans + Noto), owned by this repo")
     ap.add_argument("--out-dir",
-                    default=os.path.join(REPO_ROOT, "tools/fontpack/out"),
-                    help="output root for <locale>/<locale>.ttf")
+                    default=os.path.join(REPO_ROOT, "lang-packs"),
+                    help="output root (repo-root lang-packs/) for <locale>/<locale>.ttf")
     ap.add_argument("--locale", action="append",
                     help="only build this locale (repeatable); default = all in manifest")
     args = ap.parse_args()
 
-    # Canonical manifest from the render layer -> which locales + source family.
-    dump = subprocess.run([args.gen_bin, "--dump-locales"],
-                          check=True, capture_output=True, text=True)
-    manifest = json.loads(dump.stdout)
-
-    # locale -> {source_family, chain}. (px sizes are irrelevant to subsetting;
-    # one .ttf serves every size at runtime.)
-    locales = {}
-    for profile in manifest.values():
-        for loc in profile.get("locales", []):
-            name = loc["locale"]
-            if args.locale and name not in args.locale:
-                continue
-            locales.setdefault(name, {"source_family": loc["source_family"],
-                                      "chain": loc["chain"]})
-
+    locales = manifest_locales(args.gen_bin, args.locale)
     if not locales:
         print("No matching locales in manifest.", file=sys.stderr)
         return 1

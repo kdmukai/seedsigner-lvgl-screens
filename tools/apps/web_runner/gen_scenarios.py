@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate an Emscripten --pre-js file embedding the scenario catalog.
 
-Reads tools/scenarios.json and expands each screen's base `context` plus its
+Reads tools/scenarios/scenarios.json and expands each screen's base `context` plus its
 `variations` (RFC 7396 merge-patch, the same semantics nlohmann::merge_patch and
 runner_core use) into concrete per-variation contexts, grouped by screen and in
 file order. The output sets `window.SS_SCENARIOS` so shell.html can populate the
@@ -85,7 +85,7 @@ def main(argv):
 
     body = json.dumps(catalog, indent=2)
     with open(argv[2], "w", encoding="utf-8") as f:
-        f.write("// AUTO-GENERATED from tools/scenarios.json by gen_scenarios.py — do not edit.\n")
+        f.write("// AUTO-GENERATED from tools/scenarios/scenarios.json by gen_scenarios.py — do not edit.\n")
         f.write("var SS_SCENARIOS = ")
         f.write(body)
         f.write(";\n")

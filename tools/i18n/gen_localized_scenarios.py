@@ -2,11 +2,11 @@
 """
 Shared scenario localizer for the SeedSigner desktop tools.
 
-Takes the English tools/scenarios.json and a locale's translation catalog and
-emits tools/scenarios/<locale>.json with the same shape but display-text leaves
-translated. Every tool (screenshot_gen, screen_runner, web_runner) consumes the
-generated per-locale files through its existing loader, so no tool reimplements
-localization.
+Takes the English tools/scenarios/scenarios.json and a locale's translation
+catalog and emits tools/scenarios/localized/<locale>.json with the same shape but
+display-text leaves translated. Every app (screenshot_gen, screen_runner,
+web_runner) consumes the generated per-locale files through its existing loader,
+so no tool reimplements localization. Test-only output, not part of a font pack.
 
 Localization is best-effort by design: a leaf whose English text is a catalog
 msgid is translated; anything else (synthetic stress strings, structural ids,
@@ -22,8 +22,8 @@ import sys
 
 from po_catalog import parse_catalog
 
-# From tools/fontpack/steps/ up to the repo root.
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# This file lives at tools/i18n/; repo root is two levels up.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Keys whose string value is display text. Everything else (status_type,
 # is_bottom_list, name, initial_text/initial_mode, show_* booleans) is left as-is.
@@ -73,10 +73,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--scenarios",
-                    default=os.path.join(REPO_ROOT, "tools/scenarios.json"))
+                    default=os.path.join(REPO_ROOT, "tools/scenarios/scenarios.json"))
     ap.add_argument("--translations-dir",
-                    default=os.path.join(REPO_ROOT, "tools/seedsigner-translations"))
-    ap.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "tools/scenarios"))
+                    default=os.path.join(REPO_ROOT, "tools/i18n/seedsigner-translations"))
+    ap.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "tools/scenarios/localized"))
     ap.add_argument("--locale", action="append",
                     help="only this locale (repeatable); default = en + all catalogs")
     args = ap.parse_args()

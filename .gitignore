@@ -45,11 +45,11 @@ __pycache__/
 *.pyc
 
 # Screenshot generator local build outputs
-tools/screenshot_generator/.build/
-tools/screenshot_generator/screenshot_gen
+tools/apps/screenshot_generator/.build/
+tools/apps/screenshot_generator/screenshot_gen
 
-tools/screenshot_generator/screenshots/manifest.json
-tools/screenshot_generator/screenshots/img/
+tools/apps/screenshot_generator/screenshots/manifest.json
+tools/apps/screenshot_generator/screenshots/img/
 
 # Secrets / credentials
 .env
@@ -67,23 +67,24 @@ Thumbs.db
 # Screenshot generator output
 
 # Screenshot generator build directories
-tools/screenshot_generator/build-*/
-tools/screenshot_generator/build/
-tools/screen_runner/build-asan/screen_runner
+tools/apps/screenshot_generator/build-*/
+tools/apps/screenshot_generator/build/
+tools/apps/screen_runner/build-asan/screen_runner
 
 # Web runner (WASM) build output
-tools/web_runner/build-wasm/
-tools/web_runner/build/
-# Generated at build time from tools/scenarios.json
-tools/web_runner/scenarios.js
+tools/apps/web_runner/build-wasm/
+tools/apps/web_runner/build/
+# Generated at build time from tools/scenarios/scenarios.json
+tools/apps/web_runner/scenarios.js
 # Persistent build caches (ccache + Emscripten port cache)
-tools/web_runner/.ccache/
-tools/web_runner/.emcache/
+tools/apps/web_runner/.ccache/
+tools/apps/web_runner/.emcache/
 CLAUDE.md
 .claude/
 
-# i18n generated artifacts (reproducible from tools/scenarios.json + catalogs + fonts)
-tools/fontpack/out/
-tools/scenarios/
+# Production font-pack output (reproducible from scenarios + catalogs + fonts)
+/lang-packs/
+# Localized scenarios (test-only output of tools/i18n/gen_localized_scenarios.py)
+tools/scenarios/localized/
 # Local multi-language screenshot review renders
-tools/screenshot_generator/screenshots/i18n/
+tools/apps/screenshot_generator/screenshots/i18n/

@@ -32,7 +32,7 @@ label draw task with the button index in `base->id1`.
 block the existing repo fonts have — so the generated `.c` falls back to
 `lvgl/lvgl.h` and won't compile. Re-add the `__has_include` block (copy from any
 existing `opensans_*_4bpp.c`). Font `.c` files are listed explicitly (NOT globbed)
-in `tools/screen_runner/CMakeLists.txt` and `tools/screenshot_generator/CMakeLists.txt`.
+in `tools/apps/screen_runner/CMakeLists.txt` and `tools/apps/screenshot_generator/CMakeLists.txt`.
 
 ## lv_keyboard_create sets a BOTTOM_MID anchor in its constructor
 
@@ -153,8 +153,8 @@ state isn't applied, so add `LV_STATE_PRESSED` to make the highlight show in the
 ## Build / tooling notes
 
 - A new screen must be registered in BOTH desktop tools' `k_screen_registry`
-  (`tools/screen_runner/screen_runner.cpp`, `tools/screenshot_generator/screenshot_gen.cpp`)
-  and have scenarios in `tools/scenarios.json`.
+  (`tools/apps/screen_runner/screen_runner.cpp`, `tools/apps/screenshot_generator/screenshot_gen.cpp`)
+  and have scenarios in `tools/scenarios/scenarios.json`.
 - Screen results return via weak callbacks (`seedsigner_lvgl_on_text_entered`,
   `seedsigner_lvgl_on_button_selected`, `seedsigner_lvgl_on_aux_key`) — desktop tools
   provide strong overrides.

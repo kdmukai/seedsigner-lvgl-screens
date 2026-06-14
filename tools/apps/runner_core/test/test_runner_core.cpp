@@ -27,7 +27,7 @@ static void check(bool cond, const char* msg) {
 }
 
 int main(int argc, char** argv) {
-    const char* scenarios_path = (argc > 1) ? argv[1] : "tools/scenarios.json";
+    const char* scenarios_path = (argc > 1) ? argv[1] : "tools/scenarios/scenarios.json";
 
     runner_core::init(240, 240);
     check(runner_core::width() == 240 && runner_core::height() == 240, "init 240x240");

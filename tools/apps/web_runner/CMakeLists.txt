@@ -6,8 +6,8 @@ project(web_runner LANGUAGES C CXX)
 if(NOT EMSCRIPTEN)
   message(FATAL_ERROR
     "web_runner must be configured with the Emscripten toolchain.\n"
-    "Use the wrapper:  bash tools/web_runner/build.sh\n"
-    "or:  emcmake cmake -S tools/web_runner -B tools/web_runner/build-wasm ...")
+    "Use the wrapper:  bash tools/apps/web_runner/build.sh\n"
+    "or:  emcmake cmake -S tools/apps/web_runner -B tools/apps/web_runner/build-wasm ...")
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -35,9 +35,9 @@ if(NOT DEFINED SUPPORT_DISPLAY_HEIGHT_480)
   set(SUPPORT_DISPLAY_HEIGHT_480 ON)
 endif()
 
-set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(SEEDSIGNER_DIR "${PROJECT_ROOT}/components/seedsigner")
-set(COMMON_DIR "${PROJECT_ROOT}/tools/common")
+set(COMMON_DIR "${PROJECT_ROOT}/tools/apps/runner_core")
 set(NLOHMANN_JSON_INCLUDE_DIR "${PROJECT_ROOT}/components/nlohmann_json/include")
 
 if(NOT DEFINED LVGL_ROOT OR LVGL_ROOT STREQUAL "")
@@ -52,7 +52,7 @@ endif()
 
 file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS "${LVGL_ROOT}/src/*.c")
 
-# Resolution-scaled fonts (mirrors tools/screen_runner/CMakeLists.txt).
+# Resolution-scaled fonts (mirrors tools/apps/screen_runner/CMakeLists.txt).
 set(SEEDSIGNER_FONT_SOURCES "")
 if(SUPPORT_DISPLAY_HEIGHT_240)
   list(APPEND SEEDSIGNER_FONT_SOURCES
@@ -101,9 +101,9 @@ set(RUNNER_COMMON_SOURCES
   "${COMMON_DIR}/runner_sdl.cpp")
 
 # ---------------------------------------------------------------------------
-# Generate the embedded scenario catalog (--pre-js) from tools/scenarios.json.
+# Generate the embedded scenario catalog (--pre-js) from tools/scenarios/scenarios.json.
 # ---------------------------------------------------------------------------
-set(SCENARIOS_JSON "${PROJECT_ROOT}/tools/scenarios.json")
+set(SCENARIOS_JSON "${PROJECT_ROOT}/tools/scenarios/scenarios.json")
 set(SCENARIOS_PREJS "${CMAKE_CURRENT_BINARY_DIR}/scenarios.gen.js")
 add_custom_command(
   OUTPUT "${SCENARIOS_PREJS}"

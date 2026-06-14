@@ -102,15 +102,15 @@ Screens accept a JSON dictionary that controls their content and behavior. Examp
 }
 ```
 
-The `tools/scenarios.json` file defines all screen configurations used by the screenshot generator and screen runner.
+The `tools/scenarios/scenarios.json` file defines all screen configurations used by the screenshot generator and screen runner.
 
 
 ## Desktop Tools
 
 Each tool has its own README with build instructions and usage details:
 
-- **[Screenshot generator](tools/screenshot_generator/README.md)** -- Renders every screen at every resolution to PNG. Used in CI to detect visual regressions via before/after comparison.
-- **[Screen runner](tools/screen_runner/README.md)** -- Interactive SDL2 desktop application for live screen testing with keyboard navigation, mouse/touch input, and runtime resolution switching.
+- **[Screenshot generator](tools/apps/screenshot_generator/README.md)** -- Renders every screen at every resolution to PNG. Used in CI to detect visual regressions via before/after comparison.
+- **[Screen runner](tools/apps/screen_runner/README.md)** -- Interactive SDL2 desktop application for live screen testing with keyboard navigation, mouse/touch input, and runtime resolution switching.
 
 
 ## CI/CD

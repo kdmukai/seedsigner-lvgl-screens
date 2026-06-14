@@ -7,28 +7,28 @@ Generates deterministic screenshots from real LVGL screen render paths using JSO
 From repo root:
 
 ```bash
-cmake -S tools/screenshot_generator \
-      -B tools/screenshot_generator/build
-cmake --build tools/screenshot_generator/build -j
+cmake -S tools/apps/screenshot_generator \
+      -B tools/apps/screenshot_generator/build
+cmake --build tools/apps/screenshot_generator/build -j
 ```
 
 Executable:
 
-- `tools/screenshot_generator/build/screenshot_gen`
+- `tools/apps/screenshot_generator/build/screenshot_gen`
 
 ## Usage
 
 ```bash
-tools/screenshot_generator/build/screenshot_gen [options]
+tools/apps/screenshot_generator/build/screenshot_gen [options]
 ```
 
 Options:
 
-- `--out-dir <path>` output root (default `tools/screenshot_generator/screenshots`)
+- `--out-dir <path>` output root (default `tools/apps/screenshot_generator/screenshots`)
 - `--width <px>` render width (default `480`)
 - `--height <px>` render height (default `320`)
 - `--scenarios-file <path>` scenario config file
-  - default from repo root: `tools/scenarios.json`
+  - default from repo root: `tools/scenarios/scenarios.json`
 
 ## Scenario configuration
 
@@ -70,7 +70,7 @@ an HTML diff report. Used in CI to show visual changes in pull requests.
 ### Usage
 
 ```bash
-python3 tools/screenshot_generator/compare_screenshots.py \
+python3 tools/apps/screenshot_generator/compare_screenshots.py \
   --before-dir baseline/ \
   --after-dir after/ \
   --out-dir report/ \

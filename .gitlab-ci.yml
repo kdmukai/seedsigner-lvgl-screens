@@ -21,7 +21,7 @@ build-screenshots:
     - scripts/ci/ci.sh generate-screenshots
   artifacts:
     paths:
-      - tools/screenshot_generator/screenshots/
+      - tools/apps/screenshot_generator/screenshots/
     expire_in: 7 days
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -50,7 +50,7 @@ pages:
     - build-screenshots
   script:
     - mkdir -p public
-    - cp -r tools/screenshot_generator/screenshots/* public/
+    - cp -r tools/apps/screenshot_generator/screenshots/* public/
   artifacts:
     paths:
       - public

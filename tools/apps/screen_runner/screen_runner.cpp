@@ -34,8 +34,8 @@
 using json = nlohmann::ordered_json;
 
 // The LVGL display, framebuffer, input devices, screen registry, and resolution
-// switching are shared with the WASM web_runner via tools/common/runner_core
-// (SDL-free) and tools/common/runner_sdl (the two SDL helpers). This file keeps
+// switching are shared with the WASM web_runner via tools/apps/runner_core/runner_core
+// (SDL-free) and tools/apps/runner_core/runner_sdl (the two SDL helpers). This file keeps
 // only the desktop chrome: the sidebar, title bar, badges, status strip, and the
 // SDL window/renderer plumbing around the device viewport.
 
@@ -722,7 +722,7 @@ static int load_scenarios_file(const char *path, std::vector<scenario_def_t> &sc
 }
 
 // (The LVGL flush, keypad/pointer read callbacks, SDL keycode mapping, and the
-// RGB565→texture blit now live in tools/common/runner_core + runner_sdl.)
+// RGB565→texture blit now live in tools/apps/runner_core/runner_core + runner_sdl.)
 
 
 // ---------------------------------------------------------------------------
@@ -741,7 +741,7 @@ int main(int argc, char **argv) {
             SDL_free(base);
         }
         if (scenarios_path.empty() || load_scenarios_file(scenarios_path.c_str(), g_scenarios) != 0) {
-            scenarios_path = "tools/scenarios.json";
+            scenarios_path = "tools/scenarios/scenarios.json";
         }
     }
 

@@ -2,5 +2,5 @@
 	path = third_party/lvgl
 	url = https://github.com/lvgl/lvgl.git
 [submodule "tools/seedsigner-translations"]
-	path = tools/seedsigner-translations
+	path = tools/i18n/seedsigner-translations
 	url = https://github.com/SeedSigner/seedsigner-translations.git

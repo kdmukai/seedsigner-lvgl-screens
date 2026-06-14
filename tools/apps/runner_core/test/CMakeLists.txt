@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(test_runner_core LANGUAGES C CXX)
 
-# Headless test for tools/common/runner_core — no SDL, no window. Builds LVGL +
+# Headless test for tools/apps/runner_core — no SDL, no window. Builds LVGL +
 # the seedsigner screens + runner_core and renders into the RGB565 framebuffer.
 #
-#   cmake -B build -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 tools/common/test
-#   cmake --build build && ./build/test_runner_core tools/scenarios.json
+#   cmake -B build -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 tools/apps/runner_core/test
+#   cmake --build build && ./build/test_runner_core tools/scenarios/scenarios.json
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -22,9 +22,9 @@ foreach(flag SUPPORT_DISPLAY_HEIGHT_240 SUPPORT_DISPLAY_HEIGHT_320 SUPPORT_DISPL
   endif()
 endforeach()
 
-set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
+set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../..")
 set(SEEDSIGNER_DIR "${PROJECT_ROOT}/components/seedsigner")
-set(COMMON_DIR "${PROJECT_ROOT}/tools/common")
+set(COMMON_DIR "${PROJECT_ROOT}/tools/apps/runner_core")
 set(NLOHMANN_JSON_INCLUDE_DIR "${PROJECT_ROOT}/components/nlohmann_json/include")
 set(LVGL_ROOT "${PROJECT_ROOT}/third_party/lvgl")
 

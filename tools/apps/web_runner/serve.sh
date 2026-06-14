@@ -5,8 +5,8 @@
 # intended remote-development loop (build on this machine, view from elsewhere).
 #
 # Usage:
-#   bash tools/web_runner/serve.sh           # port 8000
-#   bash tools/web_runner/serve.sh 9000       # custom port
+#   bash tools/apps/web_runner/serve.sh           # port 8000
+#   bash tools/apps/web_runner/serve.sh 9000       # custom port
 #
 # If a firewall is active, allow the port (e.g. `sudo ufw allow <port>/tcp`).
 # Tailnet access also requires the device to be on your tailnet.
@@ -17,7 +17,7 @@ SERVE_DIR="${SCRIPT_DIR}/build-wasm"
 PORT="${1:-8000}"
 
 if [ ! -f "${SERVE_DIR}/index.html" ]; then
-  echo "No build found at ${SERVE_DIR}/index.html — run 'bash tools/web_runner/build.sh' first." >&2
+  echo "No build found at ${SERVE_DIR}/index.html — run 'bash tools/apps/web_runner/build.sh' first." >&2
   exit 1
 fi
 

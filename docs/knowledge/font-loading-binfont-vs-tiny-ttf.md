@@ -55,7 +55,7 @@ buttons ("Persistent Settings", "Camera", "Network") were **blank**.
 **Fix (`third_party/patches/lv_tiny_ttf-fallback-chain.patch`):** the no-cache path now `return false`
 when `stbtt_FindGlyphIndex()` yields 0, matching what the *cached* path already does (its
 `tiny_ttf_glyph_cache_create_cb` returns `false` for an absent glyph). The fallback chain then advances
-correctly. With the fix applied, `build_lang_font.py` **no longer bakes ASCII into the CJK subsets**, so
+correctly. With the fix applied, `build_fontpacks.py` **no longer bakes ASCII into the CJK subsets**, so
 embedded English defers to OpenSans and renders at the **normal English size** (a deliberate divergence
 from single-font Python, which has no fallback and draws embedded English at the bumped CJK size).
 

@@ -39,8 +39,8 @@
 #error "DISPLAY_HEIGHT must be defined by the build system"
 #endif
 
-#define DEFAULT_OUT_DIR "tools/screenshot_generator/screenshots"
-#define DEFAULT_SCENARIOS_FILE "tools/scenarios.json"
+#define DEFAULT_OUT_DIR "tools/apps/screenshot_generator/screenshots"
+#define DEFAULT_SCENARIOS_FILE "tools/scenarios/scenarios.json"
 
 static int g_width = DISPLAY_WIDTH;
 static int g_height = DISPLAY_HEIGHT;
@@ -499,7 +499,7 @@ int main(int argc, char **argv) {
     const char *scenarios_file = DEFAULT_SCENARIOS_FILE;
     bool dump_locales = false;
     std::string locale;     // --locale: register per-locale fonts + (caller picks scenarios file)
-    std::string font_dir = "tools/fontpack/out";  // --font-dir
+    std::string font_dir = "lang-packs";  // --font-dir (repo-root production packs)
 
     // Need an active profile before usage() can call display_profile_count()
     set_display(DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -571,7 +571,7 @@ int main(int argc, char **argv) {
 
     std::vector<scenario_def_t> scenarios;
     if (load_scenarios_file(scenarios_file, scenarios) != 0) {
-        const char *fallback = "tools/scenarios.json";
+        const char *fallback = "tools/scenarios/scenarios.json";
         if (strcmp(scenarios_file, fallback) != 0 && load_scenarios_file(fallback, scenarios) == 0) {
             fprintf(stderr, "note: using fallback scenarios file: %s\n", fallback);
         } else {

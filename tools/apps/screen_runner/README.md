@@ -60,17 +60,17 @@ git checkout <LVGL_TARGET_TAG>
 ### Build
 
 ```bash
-cmake -S tools/screen_runner \
-      -B tools/screen_runner/build \
+cmake -S tools/apps/screen_runner \
+      -B tools/apps/screen_runner/build \
       -DLVGL_ROOT="$PWD/third_party/lvgl" \
       -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2):$(brew --prefix sdl2_ttf)"
-cmake --build tools/screen_runner/build -j
+cmake --build tools/apps/screen_runner/build -j
 ```
 
 ### Run
 
 ```bash
-tools/screen_runner/build/screen_runner [tools/scenarios.json]
+tools/apps/screen_runner/build/screen_runner [tools/scenarios/scenarios.json]
 ```
 
 ---
@@ -111,10 +111,10 @@ git checkout <LVGL_TARGET_TAG>
 ### Build
 
 ```bash
-cmake -S tools/screen_runner \
-      -B tools/screen_runner/build \
+cmake -S tools/apps/screen_runner \
+      -B tools/apps/screen_runner/build \
       -DLVGL_ROOT="$PWD/third_party/lvgl"
-cmake --build tools/screen_runner/build -j
+cmake --build tools/apps/screen_runner/build -j
 ```
 
 If CMake cannot auto-detect SDL2 or SDL2_ttf, add:
@@ -126,7 +126,7 @@ If CMake cannot auto-detect SDL2 or SDL2_ttf, add:
 ### Run
 
 ```bash
-tools/screen_runner/build/screen_runner [tools/scenarios.json]
+tools/apps/screen_runner/build/screen_runner [tools/scenarios/scenarios.json]
 ```
 
 ---
@@ -166,18 +166,18 @@ git checkout <LVGL_TARGET_TAG>
 Run from the repo root inside the MSYS2 MINGW64 shell:
 
 ```bash
-cmake -S tools/screen_runner \
-      -B tools/screen_runner/build \
+cmake -S tools/apps/screen_runner \
+      -B tools/apps/screen_runner/build \
       -G Ninja \
       -DLVGL_ROOT="$PWD/third_party/lvgl" \
       -DCMAKE_PREFIX_PATH="/mingw64"
-cmake --build tools/screen_runner/build -j
+cmake --build tools/apps/screen_runner/build -j
 ```
 
 ### Run
 
 ```bash
-tools/screen_runner/build/screen_runner.exe [tools/scenarios.json]
+tools/apps/screen_runner/build/screen_runner.exe [tools/scenarios/scenarios.json]
 ```
 
 > The SDL2 DLLs (`SDL2.dll`, `SDL2_ttf.dll`) must be on `PATH` or copied next to the binary. MSYS2 installs them to `/mingw64/bin`; the simplest fix is to run from the MSYS2 MINGW64 shell, which already includes that directory in `PATH`.
@@ -186,5 +186,5 @@ tools/screen_runner/build/screen_runner.exe [tools/scenarios.json]
 
 ## Notes
 
-- Scenario source of truth: `tools/scenarios.json` (relative to repo root)
+- Scenario source of truth: `tools/scenarios/scenarios.json` (relative to repo root)
 - OpenSans fonts and the SeedSigner logo are sourced from `components/seedsigner/assets/` and copied to the build directory at build time by CMake post-build steps.
