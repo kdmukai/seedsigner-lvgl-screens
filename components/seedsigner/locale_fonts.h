@@ -57,11 +57,25 @@ struct LocaleFontEntry {
     std::string source_family; // source TTF family for offline subsetting, e.g. "NotoSansSC"
     ChainRole chain_role;
     std::vector<LocaleRoleSize> roles;
+    // Non-empty ⇒ a same-size SCRIPT pack: subset OpenSans by this fixed Unicode
+    // block range (pyftsubset --unicodes form, e.g. "U+0400-04FF"), NOT by the
+    // translation corpus. The pack chains as a Fallback under the baked OpenSans
+    // Western baseline at the native role sizes. Empty ⇒ a corpus-subset pack
+    // (the Noto Primary/CJK locales), built from the .po glyph set.
+    std::string unicode_range;
 };
 
 // Canonical table accessors.
 const std::vector<LocaleFontEntry>& locale_font_table();
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale);
+
+// Render px for a role under a locale entry at the given PX_MULTIPLIER (0 if the
+// locale's font does not serve that role). Both the manifest (what px the host
+// rasterizes each role at) and the registration-seam size guard use this, so the
+// two always agree. For a same-size (Fallback) script pack it returns the baked
+// OpenSans baseline's px for the role — including the large_button quirk (20 base
+// at 240 height, 18 at 320/480) — so script glyphs match the Latin baseline.
+int locale_role_render_px(const LocaleFontEntry& entry, TextRole role, int px_multiplier);
 
 // Native (un-bumped) base px size for a text role, matching make_profile().
 int text_role_native_base_size(TextRole role);

@@ -51,6 +51,19 @@ def source_ttf(source_family, assets_dir):
 def subset_ttf(src_ttf, codepoints, out_ttf, drop_layout):
     """Subset src_ttf to `codepoints` -> out_ttf using fontTools."""
     unicodes = ",".join(f"U+{ord(c):04X}" for c in codepoints)
+    _run_subset(src_ttf, unicodes, out_ttf, drop_layout)
+
+
+def subset_range(src_ttf, unicode_range, out_ttf):
+    """Subset src_ttf to a fixed Unicode block range (pyftsubset --unicodes form,
+    e.g. "U+0400-04FF" or "U+0300-036F,U+1E00-1EFF") -> out_ttf. Used for the
+    same-size script packs: the repertoire is the block, NOT the .po corpus, so a
+    translation edit can never change the pack (or its signature). Layout tables
+    are kept (Vietnamese mark positioning may need GPOS, and the packs stay tiny)."""
+    _run_subset(src_ttf, unicode_range, out_ttf, drop_layout=False)
+
+
+def _run_subset(src_ttf, unicodes, out_ttf, drop_layout):
     cmd = [
         sys.executable, "-m", "fontTools.subset", src_ttf,
         f"--unicodes={unicodes}",
@@ -87,9 +100,51 @@ def manifest_locales(gen_bin, only):
             if only and name not in only:
                 continue
             # px sizes are irrelevant to subsetting; one .ttf serves every size.
+            # unicode_range (script packs) selects block-range vs corpus mode.
             locales.setdefault(name, {"source_family": loc["source_family"],
-                                      "chain": loc["chain"]})
+                                      "chain": loc["chain"],
+                                      "unicode_range": loc.get("unicode_range")})
     return locales
+
+
+def build_block_range_pack(name, entry, out_dir, assets_dir):
+    """Build a same-size SCRIPT pack: OpenSans subset to a fixed Unicode block
+    (NOT the .po corpus), two weights to match the baked Western baseline this
+    chains under -- Regular for body, SemiBold for the title/button roles.
+    Writes lang-packs/<name>/<name>_{regular,semibold}.ttf + manifest.json."""
+    unicode_range = entry["unicode_range"]
+    weights = [("regular", "Regular"), ("semibold", "SemiBold")]
+
+    loc_out = os.path.join(out_dir, name)
+    os.makedirs(loc_out, exist_ok=True)
+
+    fonts_meta = []
+    for tag, asset_weight in weights:
+        src = os.path.join(assets_dir, f"{entry['source_family']}-{asset_weight}.ttf")
+        if not os.path.exists(src):
+            print(f"[{name}] SKIP: source TTF not found: {src}", file=sys.stderr)
+            return
+        out_ttf = os.path.join(loc_out, f"{name}_{tag}.ttf")
+        subset_range(src, unicode_range, out_ttf)
+        fonts_meta.append({
+            "weight": tag,
+            "file": f"{name}_{tag}.ttf",
+            "source_ttf": os.path.relpath(src, REPO_ROOT),
+            "bytes": os.path.getsize(out_ttf),
+            "sha256": sha256_file(out_ttf),
+        })
+
+    manifest_out = {
+        "locale": name,
+        "source_family": entry["source_family"],
+        "chain": entry["chain"],
+        "unicode_range": unicode_range,
+        "fonts": fonts_meta,
+    }
+    with open(os.path.join(loc_out, "manifest.json"), "w") as f:
+        json.dump(manifest_out, f, indent=2)
+    total = sum(m["bytes"] for m in fonts_meta)
+    print(f"[{name}] block-range {unicode_range}  ({len(fonts_meta)} weights, {total} bytes)")
 
 
 def main():
@@ -117,6 +172,11 @@ def main():
         return 1
 
     for name, entry in locales.items():
+        # Script packs (Greek/Cyrillic/Vietnamese): block-range subset, no .po.
+        if entry.get("unicode_range"):
+            build_block_range_pack(name, entry, args.out_dir, args.assets_dir)
+            continue
+
         po = os.path.join(args.translations_dir, "l10n", name, "LC_MESSAGES", "messages.po")
         if not os.path.exists(po):
             print(f"[{name}] SKIP: no catalog at {po}", file=sys.stderr)

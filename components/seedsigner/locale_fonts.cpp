@@ -66,11 +66,33 @@ static std::vector<LocaleRoleSize> cjk_primary_roles() {
     };
 }
 
+// Same-size script packs (Greek/Cyrillic/Vietnamese): OpenSans subsets chained as
+// a Fallback under the baked Western baseline at the NATIVE role sizes (so the
+// script glyphs match the Latin baseline). Sizes mirror make_profile()/the
+// baseline install; the large_button quirk (18 vs 20 at 320/480) is applied in
+// locale_role_render_px(), keyed off the active multiplier.
+static std::vector<LocaleRoleSize> opensans_fallback_roles() {
+    return {
+        {TextRole::Body,          17},
+        {TextRole::Button,        18},
+        {TextRole::LargeButton,   20},
+        {TextRole::TopNavTitle,   20},
+        {TextRole::MainMenuTitle, 26},
+    };
+}
+
 const std::vector<LocaleFontEntry>& locale_font_table() {
     static const std::vector<LocaleFontEntry> table = {
+        // CJK: corpus-subset Noto, becomes the Primary (bumped sizes).
         {"zh_Hans_CN", "NotoSansSC", ChainRole::Primary, cjk_primary_roles()},
         {"ja",         "NotoSansJP", ChainRole::Primary, cjk_primary_roles()},
         {"ko",         "NotoSansKR", ChainRole::Primary, cjk_primary_roles()},
+        // Script packs: block-range OpenSans subsets, same-size Fallback over the
+        // baked Western baseline. One pack per script covers its language family
+        // (e.g. ru's Cyrillic block also serves uk/bg) with no corpus coupling.
+        {"el", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0370-03FF"},              // Greek
+        {"ru", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0400-04FF"},              // Cyrillic
+        {"vi", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0300-036F,U+1E00-1EFF"},  // Vietnamese / Latin Ext Additional
     };
     return table;
 }
@@ -80,6 +102,24 @@ const LocaleFontEntry* find_locale_font_entry(const std::string& locale) {
         if (e.locale == locale) return &e;
     }
     return nullptr;
+}
+
+int locale_role_render_px(const LocaleFontEntry& entry, TextRole role, int mult) {
+    int base = -1;
+    for (const LocaleRoleSize& r : entry.roles) {
+        if (r.role == role) { base = r.base_size; break; }
+    }
+    if (base < 0) return 0;  // locale's font does not serve this role
+
+    // Same-size script packs must match the compiled-in OpenSans baseline EXACTLY,
+    // including its large_button quirk: 20 px base at the 240-height profile
+    // (PX_MULTIPLIER_100) but 18 px at 320/480. (Primary/CJK packs set their own
+    // bumped sizes, so they take the table value unchanged.)
+    if (entry.chain_role == ChainRole::Fallback &&
+        role == TextRole::LargeButton && mult != PX_MULTIPLIER_100) {
+        base = 18;
+    }
+    return px_scale(base, mult);
 }
 
 // ---------------------------------------------------------------------------
@@ -98,17 +138,29 @@ std::string supported_locales_json() {
         locale_obj["locale"] = e.locale;
         locale_obj["source_family"] = e.source_family;
         locale_obj["chain"] = (e.chain_role == ChainRole::Primary) ? "primary" : "fallback";
+        // Script packs carry the block range the offline subsetter slices (no .po).
+        if (!e.unicode_range.empty()) {
+            locale_obj["unicode_range"] = e.unicode_range;
+        }
 
         json fonts = json::array();
-        // One subset .ttf per locale serves every size (tiny_ttf creates a font
-        // at any px from the same data); each role lists the px to create it at.
-        std::string file = e.locale + ".ttf";
+        const bool fallback = (e.chain_role == ChainRole::Fallback);
         for (const LocaleRoleSize& r : e.roles) {
-            int px = px_scale(r.base_size, mult);
+            int px = locale_role_render_px(e, r.role, mult);
+            // Weight: an OpenSans script pack matches the baseline — body=Regular,
+            // the other four roles=SemiBold. The Noto Primary packs ship a single
+            // Regular weight that serves every role.
+            const char* weight = (fallback && r.role != TextRole::Body) ? "semibold" : "regular";
+            // One subset .ttf per (locale, weight) serves every size (tiny_ttf
+            // creates a font at any px from the same data). A single-weight Noto
+            // pack stays "<locale>.ttf"; a two-weight script pack splits the file.
+            std::string file = fallback ? (e.locale + "_" + weight + ".ttf")
+                                        : (e.locale + ".ttf");
             fonts.push_back({
                 {"role", text_role_name(r.role)},
                 {"px", px},
                 {"file", file},
+                {"weight", weight},
             });
         }
         locale_obj["fonts"] = fonts;

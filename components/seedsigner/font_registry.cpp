@@ -8,11 +8,6 @@
 #include <string>
 #include <vector>
 
-// Match make_profile()/locale_fonts.cpp scaling.
-static int px_scale(int base, int multiplier) {
-    return static_cast<int>(base * multiplier / 100.0);
-}
-
 // The locale selected via seedsigner_set_locale(). Empty => baked floor only.
 static std::string g_current_locale;
 
@@ -38,15 +33,6 @@ static const lv_font_t* DisplayProfile::* role_field(TextRole role) {
         case TextRole::MainMenuTitle: return &DisplayProfile::main_menu_title_font;
     }
     return &DisplayProfile::body_font;
-}
-
-// Base (pre-multiplier) size the active locale assigns to a role, or -1 if the
-// locale's font does not serve that role.
-static int locale_role_base_size(const LocaleFontEntry* entry, TextRole role) {
-    for (const LocaleRoleSize& r : entry->roles) {
-        if (r.role == role) return r.base_size;
-    }
-    return -1;
 }
 
 void seedsigner_set_locale(const char* locale) {
@@ -75,14 +61,14 @@ bool seedsigner_register_font(const char* logical_name, const uint8_t* buf, size
     DisplayProfile& profile = active_profile_mutable();
 
     // Validate the supplied size against what the table expects for this role at
-    // the active profile — catches host/manifest drift early.
-    int base = locale_role_base_size(entry, role);
-    if (base < 0) {
+    // the active profile — catches host/manifest drift early. Same source of
+    // truth as the manifest (locale_role_render_px), so they always agree.
+    int expected_px = locale_role_render_px(*entry, role, profile.px_multiplier);
+    if (expected_px <= 0) {
         fprintf(stderr, "seedsigner_register_font: locale '%s' does not use role '%s'\n",
                 g_current_locale.c_str(), logical_name);
         return false;
     }
-    int expected_px = px_scale(base, profile.px_multiplier);
     if (font_px_size != expected_px) {
         fprintf(stderr, "seedsigner_register_font: size mismatch for '%s' (%s @ %dx%d): "
                 "got %d, expected %d\n",

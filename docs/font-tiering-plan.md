@@ -145,8 +145,25 @@ bin2c'd** into `components/seedsigner/fonts/opensans_western_{regular,semibold}.
 - **Verify:** generator renders en/es via the baseline; el/ru/vi correctly BOX (no packs yet — faithful);
   `screen_runner` builds (web_runner code updated, Docker build deferred).
 
-**Stage B:** Greek/Cyrillic/Vietnamese as `ChainRole::Fallback` (same-size) — `build_fontpacks` block-range
-mode → script packs in `lang-packs/`; generator loads + chains them; el/ru/vi then render.
+## Stage B — DONE (2026-06-14)
+
+Greek/Cyrillic/Vietnamese now render as same-size `ChainRole::Fallback` script packs over the baked
+Western baseline. Landed:
+
+- **`build_fontpacks.py` block-range mode** — when a manifest locale carries a `unicode_range`, subset
+  OpenSans by that fixed block (NOT the `.po` corpus), two weights (Regular for body, SemiBold for the
+  other four roles) → `lang-packs/<loc>/<loc>_{regular,semibold}.ttf` + manifest. Corpus mode (Noto/CJK)
+  is unchanged. Packs stay gitignored / regenerable (same as the CJK packs).
+- **`locale_fonts`** — `el`/`ru`/`vi` entries (`ChainRole::Fallback`, source OpenSans, ranges
+  `U+0370-03FF` / `U+0400-04FF` / `U+0300-036F,U+1E00-1EFF`). New `LocaleFontEntry.unicode_range`; the
+  manifest emits `unicode_range` + a per-role `weight` and weight-split file names.
+- **Size source of truth** — `locale_role_render_px()` (shared by the manifest and the registration
+  guard) returns the baseline's exact px per role, replicating the large_button quirk (20 at 240, 18 at
+  320/480) so the script glyphs match the Latin baseline. `font_registry` validates against it.
+- **Verified:** el/ru/vi render (Greek Αρχική/Σάρωση, etc.) via the fallback packs; the chain relies on
+  the bug-#2 tiny_ttf fallback patch (already applied). CJK Primary chain unchanged.
+
+Remaining tiers (Arabic/Persian/Thai/Hindi as Noto Primary/corpus packs) are Phase 2.
 
 ## TODOs / follow-ups
 
