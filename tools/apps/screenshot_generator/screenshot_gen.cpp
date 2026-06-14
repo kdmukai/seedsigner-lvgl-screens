@@ -494,12 +494,63 @@ static bool register_locale_fonts(const std::string &locale, const std::string &
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// SPIKE (font-tiering plan): OpenSans-TTF baseline for the 5 translated roles.
+// Proves accented Latin renders when body/button/title come from OpenSans TTF
+// instead of the ASCII-only baked bitmaps, while keyboard + icons stay baked.
+// Loads the full OpenSans Regular/SemiBold from assets (production will compile
+// in a Western-block subset). Enabled with --baseline-ttf. en/es only (no CJK
+// locale, which would also repoint these roles via the registration seam).
+// ---------------------------------------------------------------------------
+static std::vector<uint8_t> g_os_reg_buf, g_os_sb_buf;
+static std::vector<lv_font_t *> g_baseline_fonts;
+
+static bool slurp_file(const char *path, std::vector<uint8_t> &out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return !out.empty();
+}
+
+static void install_opensans_baseline() {
+    if (g_os_reg_buf.empty()) slurp_file("components/seedsigner/assets/OpenSans-Regular.ttf", g_os_reg_buf);
+    if (g_os_sb_buf.empty())  slurp_file("components/seedsigner/assets/OpenSans-SemiBold.ttf", g_os_sb_buf);
+    if (g_os_reg_buf.empty() || g_os_sb_buf.empty()) {
+        fprintf(stderr, "baseline-ttf: could not load OpenSans assets\n");
+        return;
+    }
+
+    // Recreate per resolution (px changes); destroy the previous resolution's set.
+    for (lv_font_t *f : g_baseline_fonts) lv_tiny_ttf_destroy(f);
+    g_baseline_fonts.clear();
+
+    DisplayProfile &p = active_profile_mutable();
+    const int mult = active_profile().px_multiplier;
+
+    struct Role { TextRole role; const lv_font_t *DisplayProfile::*field; bool semibold; };
+    static const Role roles[] = {
+        {TextRole::Body,          &DisplayProfile::body_font,            false},
+        {TextRole::Button,        &DisplayProfile::button_font,          true},
+        {TextRole::LargeButton,   &DisplayProfile::large_button_font,    true},
+        {TextRole::TopNavTitle,   &DisplayProfile::top_nav_title_font,   true},
+        {TextRole::MainMenuTitle, &DisplayProfile::main_menu_title_font, true},
+    };
+    for (const Role &r : roles) {
+        int px = text_role_native_base_size(r.role) * mult / 100;
+        std::vector<uint8_t> &buf = r.semibold ? g_os_sb_buf : g_os_reg_buf;
+        lv_font_t *f = lv_tiny_ttf_create_data_ex(buf.data(), buf.size(), px,
+                                                  LV_FONT_KERNING_NONE, 0);
+        if (f) { p.*(r.field) = f; g_baseline_fonts.push_back(f); }
+    }
+}
+
 int main(int argc, char **argv) {
     const char *out_dir = DEFAULT_OUT_DIR;
     const char *scenarios_file = DEFAULT_SCENARIOS_FILE;
     bool dump_locales = false;
     std::string locale;     // --locale: register per-locale fonts + (caller picks scenarios file)
     std::string font_dir = "lang-packs";  // --font-dir (repo-root production packs)
+    bool baseline_ttf = false;  // --baseline-ttf: SPIKE, OpenSans TTF for the 5 translated roles
 
     // Need an active profile before usage() can call display_profile_count()
     set_display(DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -511,6 +562,8 @@ int main(int argc, char **argv) {
             scenarios_file = argv[++i];
         } else if (strcmp(argv[i], "--dump-locales") == 0) {
             dump_locales = true;
+        } else if (strcmp(argv[i], "--baseline-ttf") == 0) {
+            baseline_ttf = true;
         } else if (strcmp(argv[i], "--locale") == 0 && i + 1 < argc) {
             locale = argv[++i];
         } else if (strcmp(argv[i], "--font-dir") == 0 && i + 1 < argc) {
@@ -596,6 +649,10 @@ int main(int argc, char **argv) {
         g_width  = profile.width;
         g_height = profile.height;
         g_fb.assign((size_t)g_width * (size_t)g_height, 0);
+
+        // SPIKE: repoint the 5 translated roles to OpenSans TTF (keyboard/icons
+        // stay baked). Must run after set_display (per-resolution px sizes).
+        if (baseline_ttf) install_opensans_baseline();
 
         // Render each resolution in its native input mode: the 240px Pi Zero is
         // joystick; larger ESP32 screens are touch. Screens that branch on input

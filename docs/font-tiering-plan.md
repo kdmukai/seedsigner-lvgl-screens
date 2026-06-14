@@ -94,6 +94,17 @@ and there the coupling is to a *pack*, never to firmware.
 - **No-rebuild proof:** a translation edit that introduces a new (already-in-block) glyph requires no
   firmware change and no new pack for the baked/script tiers.
 
+## TODOs / follow-ups
+
+- **Spike done (2026-06-14):** `screenshot_gen --baseline-ttf` repoints the 5 roles to OpenSans tiny_ttf
+  (Regular body / SemiBold buttons+titles), keyboard + icons stay baked. Spanish accents render; English
+  unchanged. Tool-local flag, loads full OpenSans from assets (subset/compile-in still to do).
+- **TTF-vs-baked metric parity (line-height/advance).** The TTF body font wraps/spaces a hair differently
+  than the baked bitmaps — on `large_icon_status` at 240 it pushed the "OK" button below the fold.
+  Reconcile tiny_ttf line metrics with the baked sizes so it's drop-in before replacing the baked floor.
+- **`large_icon_status` spacing (PRE-EXISTING, unrelated to fonts).** The status screen has its own
+  layout/spacing issues that predate this work and need to be sorted out separately.
+
 ## Dependencies / cross-refs
 
 - Builds on the `tools/` reorg (done) and the bug #2 fallback fix (done; `third_party/patches/`).
