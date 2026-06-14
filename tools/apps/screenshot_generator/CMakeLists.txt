@@ -66,13 +66,15 @@ file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS
 )
 
 # SeedSigner font sources — include fonts for all supported display heights
-set(SEEDSIGNER_FONT_SOURCES "")
+# The five translated text roles are rasterized at runtime from the compiled-in
+# OpenSans Western TTF (one Regular + one SemiBold subset, all sizes), so only the
+# baked icon + Inconsolata keyboard fonts are listed per height below.
+set(SEEDSIGNER_FONT_SOURCES
+  "${SEEDSIGNER_DIR}/fonts/opensans_western_regular.c"
+  "${SEEDSIGNER_DIR}/fonts/opensans_western_semibold.c"
+)
 if(SUPPORT_DISPLAY_HEIGHT_240)
     list(APPEND SEEDSIGNER_FONT_SOURCES
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp.c"
@@ -81,10 +83,6 @@ if(SUPPORT_DISPLAY_HEIGHT_240)
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
     list(APPEND SEEDSIGNER_FONT_SOURCES
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp_150x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp_150x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp_150x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp_150x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_150x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_150x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_150x.c"
@@ -93,10 +91,6 @@ if(SUPPORT_DISPLAY_HEIGHT_320)
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
     list(APPEND SEEDSIGNER_FONT_SOURCES
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp_200x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp_200x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp_200x.c"
-      "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_200x.c"

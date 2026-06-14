@@ -116,14 +116,18 @@ std::string slugify_token(const std::string& in) {
 }  // namespace
 
 void init(int w, int h) {
-    set_display(w, h);
-    g_width = w;
-    g_height = h;
-
+    // lv_init() must run before set_display(): set_display() installs the
+    // compiled-in OpenSans Western baseline for the translated text roles via
+    // lv_tiny_ttf, which needs LVGL's allocator initialized. (set_display() skips
+    // the install when LVGL is not yet initialized, so the order matters here.)
     if (!g_initialized) {
         lv_init();
         g_initialized = true;
     }
+
+    set_display(w, h);
+    g_width = w;
+    g_height = h;
 
     create_display();
 

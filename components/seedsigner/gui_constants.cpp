@@ -1,4 +1,5 @@
 #include "gui_constants.h"
+#include "fonts/opensans_western.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -25,15 +26,21 @@ struct FontSet {
     const lv_font_t* keyboard;             // fixed-width keyboard/text-entry font
 };
 
+// The five translated text-role fonts (main_menu_title, title, large_button,
+// button, body) are NOT baked here: they are rasterized at runtime from the
+// compiled-in OpenSans Western TTF and installed by set_display() (see
+// install_western_baseline() below). fonts_for_multiplier() leaves those five
+// slots null and supplies only the baked, never-translated fonts: the seedsigner
+// icons (PUA) and the fixed-width Inconsolata keyboard/text-entry font (ASCII).
 static FontSet fonts_for_multiplier(int px_mult) {
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
     if (px_mult == PX_MULTIPLIER_200) {
         return {
-            &opensans_semibold_26_4bpp_200x,
-            &opensans_semibold_20_4bpp_200x,
-            &opensans_semibold_18_4bpp_200x,  // large_button = button font (unchanged)
-            &opensans_semibold_18_4bpp_200x,
-            &opensans_regular_17_4bpp_200x,
+            nullptr,  // main_menu_title  } OpenSans Western TTF,
+            nullptr,  // title            } installed per-role by
+            nullptr,  // large_button     } set_display() once LVGL
+            nullptr,  // button           } is initialized.
+            nullptr,  // body             }
             &seedsigner_icons_24_4bpp_200x,
             &seedsigner_icons_36_4bpp_200x,   // icon_large unchanged
             &seedsigner_icons_48_4bpp_200x,   // icon_primary_screen = 96px
@@ -44,11 +51,11 @@ static FontSet fonts_for_multiplier(int px_mult) {
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
     if (px_mult == PX_MULTIPLIER_150) {
         return {
-            &opensans_semibold_26_4bpp_150x,  // main_menu_title = 39px
-            &opensans_semibold_20_4bpp_150x,
-            &opensans_semibold_18_4bpp_150x,  // large_button = button font (unchanged)
-            &opensans_semibold_18_4bpp_150x,
-            &opensans_regular_17_4bpp_150x,
+            nullptr,  // main_menu_title  } OpenSans Western TTF,
+            nullptr,  // title            } installed per-role by
+            nullptr,  // large_button     } set_display() once LVGL
+            nullptr,  // button           } is initialized.
+            nullptr,  // body             }
             &seedsigner_icons_24_4bpp_150x,
             &seedsigner_icons_36_4bpp_150x,   // icon_large unchanged
             &seedsigner_icons_48_4bpp_150x,   // icon_primary_screen = 72px
@@ -59,11 +66,11 @@ static FontSet fonts_for_multiplier(int px_mult) {
 #ifdef SUPPORT_DISPLAY_HEIGHT_240
     if (px_mult == PX_MULTIPLIER_100) {
         return {
-            &opensans_semibold_26_4bpp,        // main_menu_title = 26px
-            &opensans_semibold_20_4bpp,
-            &opensans_semibold_20_4bpp,        // large_button = title font (20px)
-            &opensans_semibold_18_4bpp,
-            &opensans_regular_17_4bpp,
+            nullptr,  // main_menu_title  } OpenSans Western TTF,
+            nullptr,  // title            } installed per-role by
+            nullptr,  // large_button     } set_display() once LVGL
+            nullptr,  // button           } is initialized.
+            nullptr,  // body             }
             &seedsigner_icons_24_4bpp,
             &seedsigner_icons_48_4bpp,         // icon_large = 48px
             &seedsigner_icons_48_4bpp,         // icon_primary_screen = 48px
@@ -187,6 +194,97 @@ DisplayProfile& active_profile_mutable() {
     return *g_active_profile;
 }
 
+// ---------------------------------------------------------------------------
+// Compiled-in OpenSans Western baseline for the five translated text roles
+// ---------------------------------------------------------------------------
+// The five role fonts (main_menu_title, top_nav_title, large_button, button,
+// body) render *translated* UI labels, so they are rasterized at runtime from
+// the compiled-in OpenSans Western-Latin TTF via lv_tiny_ttf — covering accented
+// Latin (á / ñ / ¿ / ¡) that the old ASCII-only baked bitmaps rendered as boxes.
+// The keyboard and icon fonts stay baked: they render only ASCII / PUA glyphs,
+// never translated text, and carry the security-sensitive / user-controlled
+// input, so they stay off the rasterizer.
+//
+// fonts_for_multiplier() leaves these five slots null at static-init time (when
+// LVGL is not yet initialized). The fonts are created the first time set_display()
+// runs after lv_init(), one tiny_ttf per role at that profile's per-role px. They
+// are cached per profile and NEVER destroyed: the locale font seam
+// (font_registry.cpp) captures these pointers as the "original" font to restore
+// on locale clear, so they must stay valid for the whole process lifetime.
+//
+// Per-role px replicates the old baked bitmap sizes EXACTLY for parity (modulo
+// bitmap -> rasterized anti-aliasing). The one quirk: large_button was 20 px base
+// at the 240-height profile but 18 px base at 320 / 480 — keyed off px_multiplier
+// below. Weights: body = Regular; the other four = SemiBold. The sizes are
+// hardcoded here (rather than pulled from locale_fonts) to keep gui_constants
+// free of any dependency on the locale layer, which itself includes this header.
+#if LV_USE_TINY_TTF
+
+// Profiles whose baseline fonts are already installed. The install is idempotent
+// and must never recreate a profile's fonts (stable pointers; never destroyed),
+// so re-entering set_display() for an already-installed profile is a no-op. At
+// most one entry per compiled-in profile.
+static const DisplayProfile* g_baseline_installed[8] = {nullptr};
+static int g_baseline_installed_count = 0;
+
+static bool baseline_installed(const DisplayProfile* p) {
+    for (int i = 0; i < g_baseline_installed_count; ++i) {
+        if (g_baseline_installed[i] == p) return true;
+    }
+    return false;
+}
+
+static void install_western_baseline(DisplayProfile& p) {
+    if (baseline_installed(&p)) return;
+
+    const int mult = p.px_multiplier;
+
+    // large_button: 20 px base at 240 height (PX_MULTIPLIER_100), 18 px at 320/480.
+    const int large_button_base = (mult == PX_MULTIPLIER_100) ? 20 : 18;
+
+    struct RoleSpec {
+        const lv_font_t* DisplayProfile::* field;
+        int  base_size;
+        bool semibold;
+    };
+    const RoleSpec roles[] = {
+        { &DisplayProfile::main_menu_title_font, 26,                true  },
+        { &DisplayProfile::top_nav_title_font,   20,                true  },
+        { &DisplayProfile::large_button_font,    large_button_base, true  },
+        { &DisplayProfile::button_font,          18,                true  },
+        { &DisplayProfile::body_font,            17,                false },
+    };
+
+    for (const RoleSpec& r : roles) {
+        const int px = px_scale(r.base_size, mult);
+
+        const uint8_t* data = r.semibold ? opensans_western_semibold_ttf
+                                         : opensans_western_regular_ttf;
+        const size_t   len  = r.semibold ? opensans_western_semibold_ttf_len
+                                         : opensans_western_regular_ttf_len;
+
+        // KERNING_NONE: our closed label corpus doesn't need pair kerning.
+        // cache_size=0: rasterize on each draw (no glyph cache). Fine for the
+        // static desktop tools; the interactive device wants a glyph cache for
+        // redraw speed — that's the later tiny_ttf cache work (bug #3).
+        lv_font_t* f = lv_tiny_ttf_create_data_ex(data, len, px,
+                                                  LV_FONT_KERNING_NONE, 0);
+        if (!f) {
+            fprintf(stderr, "FATAL: failed to rasterize OpenSans Western baseline "
+                            "(role px=%d)\n", px);
+            abort();
+        }
+        p.*(r.field) = f;
+    }
+
+    if (g_baseline_installed_count <
+        (int)(sizeof(g_baseline_installed) / sizeof(g_baseline_installed[0]))) {
+        g_baseline_installed[g_baseline_installed_count++] = &p;
+    }
+}
+
+#endif  // LV_USE_TINY_TTF
+
 void set_display(int width, int height) {
     DisplayProfile* p = find_profile(width, height);
     if (!p) {
@@ -194,6 +292,17 @@ void set_display(int width, int height) {
         abort();
     }
     g_active_profile = p;
+
+#if LV_USE_TINY_TTF
+    // Install the compiled-in OpenSans Western baseline for the five translated
+    // text roles, the first time we're called after lv_init(). Pre-lv_init
+    // callers (e.g. the generator's usage() / --dump-locales path) skip this —
+    // they never render, and the install runs on the next, post-lv_init
+    // set_display() before any screen is drawn.
+    if (lv_is_initialized()) {
+        install_western_baseline(*p);
+    }
+#endif
 }
 
 int display_profile_count() {

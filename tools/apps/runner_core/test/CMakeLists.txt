@@ -30,13 +30,14 @@ set(LVGL_ROOT "${PROJECT_ROOT}/third_party/lvgl")
 
 file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS "${LVGL_ROOT}/src/*.c")
 
-set(SEEDSIGNER_FONT_SOURCES "")
+# The five translated text roles are rasterized at runtime from the compiled-in
+# OpenSans Western TTF (one Regular + one SemiBold subset, all sizes); only the
+# baked icon + Inconsolata keyboard fonts are listed per height below.
+set(SEEDSIGNER_FONT_SOURCES
+  "${SEEDSIGNER_DIR}/fonts/opensans_western_regular.c"
+  "${SEEDSIGNER_DIR}/fonts/opensans_western_semibold.c")
 if(SUPPORT_DISPLAY_HEIGHT_240)
   list(APPEND SEEDSIGNER_FONT_SOURCES
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp.c"
@@ -44,10 +45,6 @@ if(SUPPORT_DISPLAY_HEIGHT_240)
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
   list(APPEND SEEDSIGNER_FONT_SOURCES
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp_150x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp_150x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp_150x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp_150x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_150x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_150x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_150x.c"
@@ -55,10 +52,6 @@ if(SUPPORT_DISPLAY_HEIGHT_320)
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
   list(APPEND SEEDSIGNER_FONT_SOURCES
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_26_4bpp_200x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_20_4bpp_200x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_semibold_18_4bpp_200x.c"
-    "${SEEDSIGNER_DIR}/fonts/opensans_regular_17_4bpp_200x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp_200x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_200x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_200x.c"
@@ -80,6 +73,11 @@ add_executable(test_runner_core
 target_compile_definitions(test_runner_core PRIVATE
   LV_CONF_SKIP
   LV_USE_DRAW_SW_ASM=LV_DRAW_SW_ASM_NONE
+  # set_display() installs the OpenSans Western TTF baseline via lv_tiny_ttf for
+  # the five translated text roles; enable it and use the C library allocator
+  # (the builtin 64KB pool can't hold the rasterizer's working set).
+  LV_USE_STDLIB_MALLOC=LV_STDLIB_CLIB
+  LV_USE_TINY_TTF=1
   DISPLAY_WIDTH=${DISPLAY_WIDTH}
   DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
   $<$<BOOL:${SUPPORT_DISPLAY_HEIGHT_240}>:SUPPORT_DISPLAY_HEIGHT_240>

@@ -42,11 +42,12 @@ const int PX_MULTIPLIER_200 = 200;   // 480px height (4.3" ESP32): matched physi
 // ---------------------------------------------------------------------------
 // Font declarations for supported display heights
 // ---------------------------------------------------------------------------
+// Only the baked, never-translated fonts are declared here: the seedsigner icon
+// fonts (PUA glyphs) and the fixed-width Inconsolata keyboard/text-entry font
+// (ASCII). The five translated text-role fonts come from the compiled-in OpenSans
+// Western TTF, rasterized at runtime and installed by set_display() — see
+// install_western_baseline() in gui_constants.cpp.
 #ifdef SUPPORT_DISPLAY_HEIGHT_240
-LV_FONT_DECLARE(opensans_semibold_26_4bpp);
-LV_FONT_DECLARE(opensans_semibold_20_4bpp);
-LV_FONT_DECLARE(opensans_semibold_18_4bpp);
-LV_FONT_DECLARE(opensans_regular_17_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp);
@@ -54,10 +55,6 @@ LV_FONT_DECLARE(inconsolata_semibold_24_4bpp);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
-LV_FONT_DECLARE(opensans_semibold_26_4bpp_150x);
-LV_FONT_DECLARE(opensans_semibold_20_4bpp_150x);
-LV_FONT_DECLARE(opensans_semibold_18_4bpp_150x);
-LV_FONT_DECLARE(opensans_regular_17_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_150x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_150x);
@@ -65,10 +62,6 @@ LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_150x);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
-LV_FONT_DECLARE(opensans_semibold_26_4bpp_200x);
-LV_FONT_DECLARE(opensans_semibold_20_4bpp_200x);
-LV_FONT_DECLARE(opensans_semibold_18_4bpp_200x);
-LV_FONT_DECLARE(opensans_regular_17_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_24_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_200x);
