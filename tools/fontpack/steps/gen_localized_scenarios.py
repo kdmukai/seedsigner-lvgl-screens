@@ -22,7 +22,8 @@ import sys
 
 from po_catalog import parse_catalog
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# From tools/fontpack/steps/ up to the repo root.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Keys whose string value is display text. Everything else (status_type,
 # is_bottom_list, name, initial_text/initial_mode, show_* booleans) is left as-is.

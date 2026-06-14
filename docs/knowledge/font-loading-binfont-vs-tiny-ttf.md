@@ -37,7 +37,7 @@ demand. Loads and renders correctly for all our sizes. (See `docs/font-and-i18n-
 engine trade-offs — chiefly the stb rasterizer's attack surface, contained by verify-before-parse + an
 offline rasterize-all validation gate.)
 
-## 2. Tiny TTF: no-cache path reports absent glyphs as "found" → breaks fallback chains
+## 2. Tiny TTF: no-cache path reports absent glyphs as "found" → breaks fallback chains *(FIXED via patch)*
 
 In `third_party/lvgl/src/libs/tiny_ttf/lv_tiny_ttf.c`, `ttf_get_glyph_dsc_cb()`'s no-cache path
 (`cache_size == 0`) calls `stbtt_FindGlyphIndex()` (which returns 0 for a codepoint absent from the
@@ -52,10 +52,16 @@ boxes instead of falling through to the baked OpenSans.
 **Symptom seen:** Chinese menu title + first (translated) button rendered, but the untranslated English
 buttons ("Persistent Settings", "Camera", "Network") were **blank**.
 
-**Workaround (in `tools/fontpack/build_lang_font.py`):** for `ChainRole::Primary` (CJK) locales,
-**include ASCII in the subset** so the script font itself carries Latin glyphs — embedded English then
-renders (in Noto Latin, at the bumped size, matching production Python). The OpenSans fallback becomes a
-safety net only. The cleaner "English at the English size via fallback" requires fixing this upstream.
+**Fix (`third_party/patches/lv_tiny_ttf-fallback-chain.patch`):** the no-cache path now `return false`
+when `stbtt_FindGlyphIndex()` yields 0, matching what the *cached* path already does (its
+`tiny_ttf_glyph_cache_create_cb` returns `false` for an absent glyph). The fallback chain then advances
+correctly. With the fix applied, `build_lang_font.py` **no longer bakes ASCII into the CJK subsets**, so
+embedded English defers to OpenSans and renders at the **normal English size** (a deliberate divergence
+from single-font Python, which has no fallback and draws embedded English at the bumped CJK size).
+
+The patch is carried against the pinned LVGL submodule (see `third_party/patches/README.md`); push it
+upstream so the patch can eventually be dropped. The earlier workaround — include ASCII in CJK subsets so
+the script font carries its own Latin glyphs (English then at the bumped size) — is no longer used.
 
 ## 3. Tiny TTF: cached path spins on certain content (any cache size)
 
@@ -71,7 +77,9 @@ speed. Restoring a working cache (patch or fork `lv_tiny_ttf`) is a production p
 ## Net effect on the design
 
 - Engine: **Tiny TTF**, `cache_size=0`, kerning off.
-- CJK subsets **include ASCII** (works around bug #2).
-- Two production follow-ups before on-device use: fix/patch bugs #2 and #3 (ideally upstream).
+- CJK subsets **exclude ASCII**; embedded English defers to the OpenSans fallback at the English size
+  (bug #2 fixed by `third_party/patches/lv_tiny_ttf-fallback-chain.patch`).
+- One production follow-up remains before on-device use: bug #3 (cache-path spin). Push the bug-#2 fix
+  upstream so the local patch can be dropped.
 - Both bugs are exactly what the planned **rasterize-all, per-architecture validation gate** would
   surface (render every corpus glyph at every size, under ASan, on each target build).

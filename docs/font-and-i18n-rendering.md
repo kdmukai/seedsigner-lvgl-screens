@@ -82,11 +82,13 @@ The baked floor (OpenSans + Inconsolata + SeedSigner icons, ASCII only) is alway
 - **Same-size scripts** (Greek/Cyrillic/Vietnamese; Phase 2+) would chain as a *fallback* under the
   OpenSans primary (no size bump → no metric issue). Not yet in the table.
 
-**Embedded English in a CJK screen** (technical terms that aren't catalog msgids) currently renders from
-the **CJK font's own Latin glyphs at the bumped size**. The cleaner "English at the English size via the
-OpenSans fallback" is blocked by a Tiny TTF bug (its no-cache path reports absent codepoints as *found*,
-so the fallback never engages — see knowledge doc); until that's patched upstream, the build tool
-**includes ASCII in primary-script subsets** so embedded English renders (in Noto Latin), matching Python.
+**Embedded English in a CJK screen** (technical terms that aren't catalog msgids) renders via the
+**OpenSans fallback at the normal English size** — the CJK subset excludes ASCII, so a Latin codepoint
+misses in the script primary and the chain defers to the baked OpenSans. This is a deliberate divergence
+from production Python, whose single-font PIL renderer has no fallback and draws embedded English at the
+bumped CJK size. It depends on the Tiny TTF fallback fix (`third_party/patches/lv_tiny_ttf-fallback-chain.patch`):
+the stock no-cache path reports absent codepoints as *found*, so without the patch the fallback never
+engages and embedded English renders as blank `.notdef` boxes (see knowledge doc, bug #2).
 
 ### Glyph cache
 
@@ -145,9 +147,9 @@ a pre-proven, signed corpus.
 
 ### Placeholder for out-of-corpus glyphs
 
-`LV_USE_FONT_PLACEHOLDER` draws a box for out-of-corpus codepoints rather than faulting. (Note: the
-current Tiny TTF no-cache fallback bug means truly-absent glyphs render blank rather than reaching the
-placeholder; revisit when that's patched.)
+`LV_USE_FONT_PLACEHOLDER` draws a box for out-of-corpus codepoints rather than faulting. With the Tiny TTF
+fallback fix applied (bug #2), an absent glyph now defers correctly down the chain and reaches the
+placeholder at the end instead of rendering blank.
 
 ## Cross-References
 

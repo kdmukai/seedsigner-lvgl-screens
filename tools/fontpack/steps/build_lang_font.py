@@ -26,7 +26,8 @@ import sys
 
 from po_catalog import corpus_chars
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# From tools/fontpack/steps/ up to the repo root.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 
 def source_ttf(source_family, assets_dir):
@@ -125,16 +126,20 @@ def main():
         # Primary-script (CJK) locales need no shaping -> drop layout tables.
         drop_layout = (entry["chain"] == "primary")
 
-        # For PRIMARY-chain (CJK) locales the script font is the primary for the
-        # whole text element, so it must also carry ASCII to render embedded
-        # English technical terms. (LVGL's fallback chain can't cover this here:
-        # tiny_ttf's no-cache path returns "found" even for absent codepoints, so
-        # the OpenSans fallback never engages — see TODO in font_registry.cpp.
-        # Embedded English therefore renders in Noto Latin at the bumped size,
-        # matching the production Python behavior.)
-        if entry["chain"] == "primary":
-            symbols = symbols + "".join(chr(c) for c in range(0x20, 0x7F))
-
+        # ASCII is deliberately EXCLUDED from every subset (CJK included): the
+        # baked-in OpenSans floor covers it. For a PRIMARY-chain (CJK) locale the
+        # script font is the primary for the whole text element, so when it lacks
+        # a codepoint LVGL's fallback chain must defer to OpenSans. That renders
+        # embedded English technical terms at the NORMAL English size (OpenSans)
+        # rather than the bumped CJK size — a deliberate divergence from the
+        # single-font Python renderer, which has no fallback and draws embedded
+        # English at the bumped size.
+        #
+        # This requires the lv_tiny_ttf fallback fix (third_party/patches/
+        # lv_tiny_ttf-fallback-chain.patch): the stock no-cache path reports
+        # absent glyphs as "found", which would render embedded English as blank
+        # .notdef boxes instead of falling through. With the patch applied the
+        # chain advances correctly and ASCII can stay out of the subset.
         subset_ttf(src, symbols, out_ttf, drop_layout)
 
         manifest_out = {

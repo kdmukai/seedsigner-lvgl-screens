@@ -1,0 +1,21 @@
+diff --git a/src/libs/tiny_ttf/lv_tiny_ttf.c b/src/libs/tiny_ttf/lv_tiny_ttf.c
+index 09f1e87..98f8ea7 100644
+--- a/src/libs/tiny_ttf/lv_tiny_ttf.c
++++ b/src/libs/tiny_ttf/lv_tiny_ttf.c
+@@ -303,6 +303,16 @@ static bool ttf_get_glyph_dsc_cb(const lv_font_t * font, lv_font_glyph_dsc_t * d
+     if(entry == NULL) {
+         if(!dsc->cache_size) {  /* no cache, do everything directly */
+             int g1 = stbtt_FindGlyphIndex(&dsc->info, (int)unicode_letter);
++            if(g1 == 0) {
++                /* SeedSigner patch: glyph absent from this font. Report
++                 * not-found (false) so lv_font_get_glyph_dsc advances to
++                 * font->fallback instead of drawing an empty .notdef box.
++                 * The upstream no-cache path ignored g1 and unconditionally
++                 * returned true, which silently broke fallback chains
++                 * (e.g. CJK-primary -> OpenSans for embedded ASCII). The
++                 * cached path already returns false here via the create_cb. */
++                return false;
++            }
+             tiny_ttf_glyph_cache_create_cb(&search_key, dsc);
+             *dsc_out = search_key.glyph_dsc;
+             adv_w = search_key.adv_w;

@@ -133,6 +133,14 @@ add_executable(screenshot_gen
 target_compile_definitions(screenshot_gen PRIVATE
   LV_CONF_SKIP
   LV_USE_DRAW_SW_ASM=LV_DRAW_SW_ASM_NONE
+  # Use the C library allocator instead of LVGL's built-in fixed pool. With
+  # LV_CONF_SKIP the default is LV_STDLIB_BUILTIN with a 64KB LV_MEM_SIZE, and
+  # tiny_ttf's stb rasterizer allocates from that same tiny pool. Rendering the
+  # whole scenario gallery in one process (many screens back-to-back, plus CJK
+  # glyph rasterization) fragments/exhausts 64KB and the allocation-failure path
+  # spins — locales that sit near the edge (e.g. ja/ko) hang mid-run. This is a
+  # desktop tool on a machine with gigabytes of RAM, so use real malloc/free.
+  LV_USE_STDLIB_MALLOC=LV_STDLIB_CLIB
   # Runtime font loading for the registration seam: per-locale subset TTFs are
   # loaded from a buffer via lv_tiny_ttf_create_data() (no filesystem needed).
   LV_USE_TINY_TTF=1

@@ -1796,13 +1796,54 @@ void seed_add_passphrase_screen(void *ctx_json) {
 }
 
 
-void main_menu_screen(void *ctx)
+void main_menu_screen(void *ctx_json)
 {
-    // `ctx` is unused for main_menu_screen, but kept to match the shared
-    // screen callback signature. Cast to void to silence unused-parameter warnings.
-    (void)ctx;
+    // The home menu's structure is fixed (a 2x2 grid of four icon buttons), but
+    // its DISPLAY TEXT — the top-nav title and the four button labels — must
+    // localize. So those come from the JSON context (translated upstream by the
+    // scenario localizer / Python view layer); the four icons never translate.
+    //
+    // Defaults below reproduce the original English home menu, so the screen
+    // still renders correctly when called with no context (ctx_json == NULL).
+    json cfg = {
+        {"top_nav", {{"title", "Home"}, {"show_back_button", false}, {"show_power_button", true}}},
+    };
 
-    json cfg = {{"top_nav", {{"title", "Home"}, {"show_back_button", false}, {"show_power_button", true}}}};
+    // Merge any provided context over the defaults (RFC 7396 merge-patch): a
+    // caller can override just the keys it cares about (e.g. only button_list).
+    const char *json_str = (const char *)ctx_json;
+    if (json_str) {
+        json incoming;
+        try {
+            incoming = json::parse(json_str);
+        } catch (...) {
+            throw std::runtime_error("invalid JSON syntax");
+        }
+        if (!incoming.is_object()) {
+            throw std::runtime_error("screen config must be a JSON object");
+        }
+        cfg.merge_patch(incoming);
+    }
+
+    // Button labels come from cfg["button_list"] when it supplies exactly the
+    // four the grid needs; otherwise fall back to the English defaults. (The
+    // grid is a fixed 2x2, so a mismatched count means an ill-formed context —
+    // defaulting keeps the screen legible rather than rendering blanks.)
+    static const char *default_labels[] = {"Scan", "Seeds", "Tools", "Settings"};
+    std::vector<std::string> labels(default_labels, default_labels + 4);
+    {
+        std::vector<std::string> from_cfg;
+        if (read_button_list_labels(cfg, from_cfg) && from_cfg.size() == 4) {
+            labels = std::move(from_cfg);
+        }
+    }
+
+    // Drop button_list before building the scaffold: this screen lays out its own
+    // 2x2 large-icon grid, so the scaffold must stay in its no-button_list mode.
+    // Leaving the key in would make the scaffold ALSO stack a hidden text-button
+    // list in the body, which bleeds through the gaps behind the grid.
+    cfg.erase("button_list");
+
     screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false, &MAIN_MENU_TITLE_FONT);
     lv_obj_t *scr = screen.screen;
     lv_obj_t *body_content = screen.body;
@@ -1813,7 +1854,6 @@ void main_menu_screen(void *ctx)
         SeedSignerIconConstants::TOOLS,
         SeedSignerIconConstants::SETTINGS,
     };
-    static const char *labels[] = {"Scan", "Seeds", "Tools", "Settings"};
 
     const int32_t available_w = lv_obj_get_content_width(body_content);
     const int32_t screen_h = lv_obj_get_height(scr);
@@ -1832,7 +1872,7 @@ void main_menu_screen(void *ctx)
 
     lv_obj_t *buttons[4] = {NULL, NULL, NULL, NULL};
     for (uint32_t i = 0; i < 4; ++i) {
-        lv_obj_t *btn = large_icon_button(body_content, icons[i], labels[i], NULL);
+        lv_obj_t *btn = large_icon_button(body_content, icons[i], labels[i].c_str(), NULL);
         lv_obj_set_size(btn, button_w, button_h);
         buttons[i] = btn;
     }

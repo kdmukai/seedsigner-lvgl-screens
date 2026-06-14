@@ -1,5 +1,10 @@
 {
-  "main_menu_screen": {},
+  "main_menu_screen": {
+    "context": {
+      "top_nav": {"title": "Home", "show_back_button": false, "show_power_button": true},
+      "button_list": ["Scan", "Seeds", "Tools", "Settings"]
+    }
+  },
   "button_list_screen": {
     "context": {
       "button_list": [
