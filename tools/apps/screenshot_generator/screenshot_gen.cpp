@@ -42,6 +42,16 @@
 #define DEFAULT_OUT_DIR "tools/apps/screenshot_generator/screenshots"
 #define DEFAULT_SCENARIOS_FILE "tools/scenarios/scenarios.json"
 
+// Animated-GIF capture/playback timing. The GIF format stores each frame's delay
+// as an integer number of CENTISECONDS, so a true 15 FPS (66.7ms) is not
+// representable; we snap to the nearest 10ms grid point, 70ms (~14.3 FPS), and
+// use it for BOTH the capture tick step and the GIF frame delay so playback runs
+// at real speed. Default length 2s, overridable per scenario via the
+// "animation_seconds" context key. (At 70ms/frame the 1.4s warning-edge pulse is
+// exactly 20 frames — one seamless loop.)
+static const int    GIF_FRAME_MS = 70;
+static const double GIF_DEFAULT_SECONDS = 2.0;
+
 static int g_width = DISPLAY_WIDTH;
 static int g_height = DISPLAY_HEIGHT;
 static std::vector<uint16_t> g_fb;
@@ -165,6 +175,11 @@ static std::string ctx_get_string(const json &ctx, const char *key, const char *
 static bool ctx_get_bool(const json &ctx, const char *key, bool defv) {
     if (!ctx.is_object() || !ctx.contains(key) || !ctx[key].is_boolean()) return defv;
     return ctx[key].get<bool>();
+}
+
+static double ctx_get_double(const json &ctx, const char *key, double defv) {
+    if (!ctx.is_object() || !ctx.contains(key) || !ctx[key].is_number()) return defv;
+    return ctx[key].get<double>();
 }
 
 static std::vector<std::string> ctx_get_string_array(const json &ctx, const char *key) {
@@ -354,7 +369,8 @@ static void cleanup_frames_dir(const char *frames_dir) {
 //
 // img_dir: directory for output images (e.g. "screenshots/img/480x320")
 // file_base: base filename without extension (e.g. "main_menu_screen_480x320")
-static int maybe_write_scroll_gif(const char *img_dir, const std::string &file_base, lv_display_t *disp, const char *im_bin) {
+static int maybe_write_scroll_gif(const char *img_dir, const std::string &file_base, lv_display_t *disp,
+                                  const char *im_bin, double anim_seconds) {
     if (!im_bin) {
         return 0;
     }
@@ -365,9 +381,14 @@ static int maybe_write_scroll_gif(const char *img_dir, const std::string &file_b
         return -1;
     }
 
-    // ~10 seconds at ~18 FPS (56ms tick step).
-    const int frame_count = 180;
-    const int frame_step_ms = 56;  // ~18 FPS over ~10s
+    // Capture and play back at a fixed 15 FPS. There is no "perfect" length: the
+    // scroll loop period depends on the title text and the resolution width, so a
+    // fixed count can't capture exactly one loop. Default to GIF_DEFAULT_SECONDS;
+    // a scenario can override via "animation_seconds" (e.g. a long title whose
+    // marquee needs longer than the default to scroll through once).
+    const int frame_step_ms = GIF_FRAME_MS;
+    int frame_count = (int)(anim_seconds * 1000.0 / GIF_FRAME_MS + 0.5);
+    if (frame_count < 1) frame_count = 1;
 
     for (int i = 0; i < frame_count; ++i) {
         lv_tick_inc(frame_step_ms);
@@ -388,7 +409,10 @@ static int maybe_write_scroll_gif(const char *img_dir, const std::string &file_b
     snprintf(out_gif, sizeof(out_gif), "%s/%s.gif", img_dir, file_base.c_str());
 
     char cmd[PATH_MAX * 3];
-    snprintf(cmd, sizeof(cmd), "%s -delay 8 -loop 0 '%s'/frame_*.png '%s'", im_bin, frames_dir, out_gif);
+    // GIF delay is in centiseconds; GIF_FRAME_MS is a multiple of 10 so it maps
+    // exactly, keeping playback in lockstep with the capture tick step above.
+    snprintf(cmd, sizeof(cmd), "%s -delay %d -loop 0 '%s'/frame_*.png '%s'",
+             im_bin, GIF_FRAME_MS / 10, frames_dir, out_gif);
     int rc = system(cmd);
     if (rc != 0) {
         cleanup_frames_dir(frames_dir);
@@ -680,7 +704,8 @@ int main(int argc, char **argv) {
                 printf("wrote %s\n", out_png);
 
                 bool want_gif = im_bin && ctx_get_bool(scenario.context, "animated", false);
-                if (maybe_write_scroll_gif(res_img_dir, file_base, disp, want_gif ? im_bin : NULL) != 0) {
+                double anim_seconds = ctx_get_double(scenario.context, "animation_seconds", GIF_DEFAULT_SECONDS);
+                if (maybe_write_scroll_gif(res_img_dir, file_base, disp, want_gif ? im_bin : NULL, anim_seconds) != 0) {
                     fprintf(stderr, "Failed writing animated GIF for scenario: %s\n", scenario.name.c_str());
                     return 1;
                 }

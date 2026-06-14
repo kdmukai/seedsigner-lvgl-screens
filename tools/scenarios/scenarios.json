@@ -114,7 +114,8 @@
           "button_list": ["I understand"],
           "is_bottom_list": true,
           "warning_edges": true,
-          "animated": true
+          "animated": true,
+          "animation_seconds": 1.4
         }
       }
     ]

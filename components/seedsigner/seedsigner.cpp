@@ -556,18 +556,22 @@ static void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
     lv_obj_set_style_border_width(edge, EDGE_PADDING, LV_PART_MAIN);
     lv_obj_set_style_border_side(edge, LV_BORDER_SIDE_FULL, LV_PART_MAIN);
 
-    // Pulse: opacity 64 -> 255 -> 64, then a brief hold at the trough before
-    // the next inhale. Python's algorithm holds 8 of 10 trough frames at
-    // ~10fps (~800 ms) — we mirror that with a 400 ms repeat delay.
+    // Pulse: opacity 255 -> 0 -> 255. The edges REST at full color and breathe
+    // OUT to fully off, then hold at full color before the next breath. This
+    // mirrors Python's WarningEdgesThread, which rests at inhale_factor=0 (full
+    // color), holds there for 8 frames, and ramps the brightness OUT toward black
+    // — so the resting/held state is bright, and the trough is (near) off. (The
+    // earlier 64->255 inverted this: it rested dim and never reached full off.)
     //
-    // LVGL v9 names: `set_duration` controls the forward leg, the matching
-    // `set_reverse_duration` controls the back-to-start leg, and
-    // `set_repeat_delay` is the pause inserted between iterations (i.e. at
-    // the trough, since our iteration ends back at `start`).
+    // LVGL v9 names: `set_duration` is the forward leg (full -> off),
+    // `set_reverse_duration` the back-to-start leg (off -> full), and
+    // `set_repeat_delay` the pause between iterations — held at `start` (full
+    // color), since each iteration ends back at `start`. Python's ~10fps hold of
+    // 8 trough frames (~800 ms) maps to a 400 ms repeat delay here.
     lv_anim_t pulse;
     lv_anim_init(&pulse);
     lv_anim_set_var(&pulse, edge);
-    lv_anim_set_values(&pulse, 64, 255);
+    lv_anim_set_values(&pulse, 255, 0);
     lv_anim_set_duration(&pulse, 500);
     lv_anim_set_reverse_duration(&pulse, 500);
     lv_anim_set_repeat_delay(&pulse, 400);
