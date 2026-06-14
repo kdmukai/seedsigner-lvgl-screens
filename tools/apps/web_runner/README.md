@@ -6,7 +6,7 @@ to WebAssembly via Emscripten and renders the real LVGL screens to an HTML
 `<canvas>`. You can:
 
 - pick a **screen** and a **scenario** (the prebuilt scenarios from
-  `tools/scenarios.json`),
+  `tools/scenarios/scenarios.json`),
 - **live-edit the JSON** that drives the screen and watch it re-render,
 - drive it with **keyboard nav + mouse/touch**, plus an **on-screen joystick**
   (D-pad, center-select, KEY1/2/3) so hardware-input mode works with no keyboard,
@@ -14,7 +14,7 @@ to WebAssembly via Emscripten and renders the real LVGL screens to an HTML
   **zoom**, and go **fullscreen**.
 
 It shares its LVGL/display/input plumbing with the native `screen_runner` via
-`tools/common/runner_core` (SDL-free) and `tools/common/runner_sdl`.
+`tools/apps/runner_core/runner_core` (SDL-free) and `tools/apps/runner_core/runner_sdl`.
 
 ## Build
 
@@ -22,15 +22,15 @@ Emscripten is provided by a Docker image (the official `emscripten/emsdk`
 extended with **ccache** — see `Dockerfile`), so no host toolchain is needed:
 
 ```bash
-bash tools/web_runner/build.sh
+bash tools/apps/web_runner/build.sh
 # or a different default resolution:
-DISPLAY_WIDTH=480 DISPLAY_HEIGHT=320 bash tools/web_runner/build.sh
+DISPLAY_WIDTH=480 DISPLAY_HEIGHT=320 bash tools/apps/web_runner/build.sh
 ```
 
 The first run pulls the base image and compiles the SDL2 port + LVGL; ccache and
-the Emscripten port cache are persisted under `tools/web_runner/.ccache` and
+the Emscripten port cache are persisted under `tools/apps/web_runner/.ccache` and
 `.emcache`, so subsequent builds are fast. Output is a single self-contained
-file: `tools/web_runner/build-wasm/index.html` (the `.wasm` is inlined, fonts are
+file: `tools/apps/web_runner/build-wasm/index.html` (the `.wasm` is inlined, fonts are
 compiled in, and the scenario catalog is embedded — no runtime fetches).
 
 ## Run
@@ -45,7 +45,7 @@ interfaces (`0.0.0.0`) so the page is reachable from external clients on the
 **LAN** and the **tailnet**, and prints the URLs:
 
 ```bash
-bash tools/web_runner/serve.sh          # port 8000 (or: serve.sh 9000)
+bash tools/apps/web_runner/serve.sh          # port 8000 (or: serve.sh 9000)
 #   Local:   http://localhost:8000/index.html
 #   LAN:     http://192.168.x.y:8000/index.html
 #   Tailnet: http://<machine>.<tailnet>.ts.net:8000/index.html
@@ -82,7 +82,7 @@ protection. See `docs/knowledge/fork-pr-ci-token-permissions.md`.
   (`window.ssOnResult`).
 - `shell.html` — the page chrome: screen/scenario selectors, JSON editor,
   on-screen joystick, results log, and the JS glue that calls the exported API.
-- `gen_scenarios.py` — expands `tools/scenarios.json` (base + variations,
+- `gen_scenarios.py` — expands `tools/scenarios/scenarios.json` (base + variations,
   RFC 7396 merge-patch) into the embedded `window.SS_SCENARIOS` catalog.
 - `CMakeLists.txt` — reuses the LVGL + seedsigner sources and the shared
   `runner_core`/`runner_sdl`, links with `-sUSE_SDL=2 -sSINGLE_FILE=1 -fexceptions`.

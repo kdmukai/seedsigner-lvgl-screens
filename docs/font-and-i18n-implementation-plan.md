@@ -21,40 +21,39 @@ debugging notes in [knowledge/font-loading-binfont-vs-tiny-ttf.md](knowledge/fon
   wires the CJK-primary → OpenSans-fallback chain, repoints the active profile.
 - **`gui_constants.{h,cpp}`** — profiles made non-const; added `active_profile_mutable()`.
 
-### Offline tooling (`tools/fontpack/`, see its README)
-- **`build_fontpacks.py`** — single entry point (only script at the top level): derives the locale set
-  from `--dump-locales` and runs the two steps below for it (keeping their locale sets in sync).
-  `--locale` restricts it.
-- **`steps/po_catalog.py`** — self-contained `.po` reader (no Babel): catalog + corpus extraction.
-- **`steps/build_lang_font.py`** — reads `screenshot_gen --dump-locales`, subsets each locale's source
-  TTF to its corpus via `fontTools` → one `.ttf` per locale (in gitignored `tools/fontpack/out/`).
-- **`steps/gen_localized_scenarios.py`** — translates `tools/scenarios.json` display-text leaves via the
-  catalog (English passthrough) → per-locale `tools/scenarios/<loc>.json` (gitignored).
+### Offline tooling (`tools/i18n/`, see its README)
+Two independent steps — fonts (production) and scenarios (test-only) are decoupled:
+- **`build_fontpacks.py`** — reads `screenshot_gen --dump-locales`, subsets each locale's source TTF to
+  its corpus via `fontTools` → one `.ttf` + `manifest.json` per locale in repo-root **`lang-packs/<loc>/`**
+  (gitignored, production-ready). `--locale` restricts the set.
+- **`gen_localized_scenarios.py`** — translates `tools/scenarios/scenarios.json` display-text leaves via
+  the catalog (English passthrough) → per-locale **`tools/scenarios/localized/<loc>.json`** (gitignored,
+  test-only).
+- **`po_catalog.py`** — self-contained `.po` reader (no Babel): catalog + corpus extraction; shared by both.
 
 ### Assets & data
 - Noto Sans TTFs (SC/JP/KR/AR/TH) vendored into `components/seedsigner/assets/` — **this repo owns all
   locale fonts**.
-- `seedsigner-translations` added as a submodule at `tools/seedsigner-translations/` — **`.po` catalogs
-  only** (translation content).
+- `seedsigner-translations` added as a submodule at `tools/i18n/seedsigner-translations/` — **`.po`
+  catalogs only** (translation content).
 
-### Screenshot generator (`tools/screenshot_generator/`)
+### Screenshot generator (`tools/apps/screenshot_generator/`)
 - `--dump-locales` (manifest for the build tooling), `--locale` / `--font-dir` (register a locale's
   subset `.ttf` and render its localized scenarios). Build uses `LV_USE_TINY_TTF`.
 
 ## How to run (Phase 1, desktop)
 
 ```bash
-git submodule update --init tools/seedsigner-translations
-cmake -S tools/screenshot_generator -B tools/screenshot_generator/build \
-      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 && cmake --build tools/screenshot_generator/build -j
-python3 tools/fontpack/build_fontpacks.py   # subset fonts + localize scenarios, all manifest locales + en
-./tools/screenshot_generator/build/screenshot_gen \
-      --locale zh_Hans_CN --scenarios-file tools/scenarios/zh_Hans_CN.json \
-      --font-dir tools/fontpack/out --out-dir tools/screenshot_generator/screenshots/i18n/zh_Hans_CN
+git submodule update --init tools/i18n/seedsigner-translations
+cmake -S tools/apps/screenshot_generator -B tools/apps/screenshot_generator/build \
+      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 && cmake --build tools/apps/screenshot_generator/build -j
+python3 tools/i18n/build_fontpacks.py              # font packs → lang-packs/
+python3 tools/i18n/gen_localized_scenarios.py      # localized scenarios → tools/scenarios/localized/
+./tools/apps/screenshot_generator/build/screenshot_gen \
+      --locale zh_Hans_CN --scenarios-file tools/scenarios/localized/zh_Hans_CN.json \
+      --font-dir lang-packs --out-dir tools/apps/screenshot_generator/screenshots/i18n/zh_Hans_CN
 ```
-`build_fontpacks.py` is the single entry point (orchestrates `build_lang_font.py` +
-`gen_localized_scenarios.py`, locale set derived from `--dump-locales`). Independent `(locale)` render
-runs parallelize cleanly (one process each).
+Independent `(locale)` render runs parallelize cleanly (one process each).
 
 ## Known issues / follow-ups
 

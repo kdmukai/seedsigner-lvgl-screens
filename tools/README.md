@@ -1,33 +1,37 @@
 # tools
 
-Utilities for desktop/local validation workflows around SeedSigner C-module screens.
+Desktop/local development tooling for the SeedSigner C-module screens, split into three groups by role.
 
-## Contents
+```
+tools/
+  apps/         screen-rendering apps (they consume scenarios + fonts and draw screens)
+    runner_core/        shared runner core (SDL-free runner_core + SDL glue), used by the two runners
+    screen_runner/      interactive SDL2 desktop runner — live input/navigation testing
+    web_runner/         WASM browser playground (Emscripten) — shared runner_core, single-file build
+    screenshot_generator/  batch PNG/GIF renderer — used by CI for visual-regression diffs
+  i18n/         internationalization machinery (produces the inputs the apps consume)
+    build_fontpacks.py          subset fonts → repo-root lang-packs/<loc>/ (production-ready)
+    gen_localized_scenarios.py  localize scenarios → scenarios/localized/<loc>.json (test-only)
+    po_catalog.py               shared .po reader
+    seedsigner-translations/    submodule (.po catalogs)
+  scenarios/    the screen catalog (data, not tools)
+    scenarios.json    source of truth: screen contexts + variations, shared by all apps
+    localized/        generated per-locale variants (gitignored)
+```
 
-- `scenarios.json`
-  - Shared scenario source of truth used by multiple tools.
-  - Defines screen contexts and optional variations.
+The production font packs land at the **repo-root `lang-packs/`** (a deliverable, not a tool), gitignored
+and reproducible from `scenarios/scenarios.json` + the catalogs + the vendored fonts.
 
-- `screenshot_generator/`
-  - Deterministic renderer for producing screenshots (and optional GIFs) from real LVGL screen paths.
-  - Primary docs: `screenshot_generator/README.md`
+## How the pieces relate
 
-- `screen_runner/`
-  - Interactive desktop runner (in progress) for live input/navigation testing.
-  - Primary docs: `screen_runner/README.md`
+All apps under `apps/` render from the **same** `scenarios/scenarios.json` (or its localized variants), so
+visual snapshot testing (`screenshot_generator`), interactive testing (`screen_runner`), and the browser
+playground (`web_runner`) stay aligned on identical screen definitions. The `i18n/` tools prepare the
+per-locale fonts and scenarios those apps consume; see `i18n/README.md`.
 
-## How these tools relate
+## Typical workflow
 
-Both tools consume the same `scenarios.json` so:
-- visual snapshot testing (`screenshot_generator`) and
-- live interaction testing (`screen_runner`)
-
-stay aligned on identical screen definitions/variations.
-
-## Workflow intent
-
-1. Edit or add scenarios in `scenarios.json`.
-2. Use `screenshot_generator` for fast visual/regression checks.
-3. Use `screen_runner` for interactive navigation/input behavior checks.
-
-Keeping one shared scenario file reduces drift and makes results reproducible across tools.
+1. Edit or add scenarios in `scenarios/scenarios.json`.
+2. (i18n) `python3 tools/i18n/build_fontpacks.py` and `python3 tools/i18n/gen_localized_scenarios.py`.
+3. Render/validate with `apps/screenshot_generator` (regression checks) or `apps/screen_runner`
+   (interactive). Each app's `README.md` has its build/run details.

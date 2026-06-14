@@ -38,7 +38,7 @@ jobs:
         run: scripts/ci/ci.sh generate-screenshots
 
       - name: Deploy to pages branch
-        run: scripts/ci/ci.sh deploy-pages tools/screenshot_generator/screenshots pages
+        run: scripts/ci/ci.sh deploy-pages tools/apps/screenshot_generator/screenshots pages
 
   build-and-compare-pr:
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
@@ -70,7 +70,7 @@ jobs:
         run: |
           scripts/ci/ci.sh compare-screenshots \
             --before-dir baseline \
-            --after-dir tools/screenshot_generator/screenshots \
+            --after-dir tools/apps/screenshot_generator/screenshots \
             --out-dir report \
             --pr-number ${{ github.event.pull_request.number }}
 

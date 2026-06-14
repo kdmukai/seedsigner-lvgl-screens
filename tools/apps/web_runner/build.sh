@@ -2,17 +2,17 @@
 # One-shot WASM build for the SeedSigner web_runner.
 #
 # Builds inside a ccache-enabled Emscripten image (the official emscripten/emsdk
-# extended via tools/web_runner/Dockerfile) — no host Emscripten install
+# extended via tools/apps/web_runner/Dockerfile) — no host Emscripten install
 # required. The repo is bind-mounted; output lands in
-# tools/web_runner/build-wasm/index.html (a single self-contained file).
+# tools/apps/web_runner/build-wasm/index.html (a single self-contained file).
 #
 # ccache (EM_COMPILER_WRAPPER) and the Emscripten port cache are persisted in
-# tools/web_runner/.ccache and .emcache so repeat builds are fast.
+# tools/apps/web_runner/.ccache and .emcache so repeat builds are fast.
 #
 # Usage:
-#   bash tools/web_runner/build.sh                 # 240x240 default
-#   DISPLAY_WIDTH=480 DISPLAY_HEIGHT=320 bash tools/web_runner/build.sh
-#   EMSDK_TAG=3.1.74 bash tools/web_runner/build.sh
+#   bash tools/apps/web_runner/build.sh                 # 240x240 default
+#   DISPLAY_WIDTH=480 DISPLAY_HEIGHT=320 bash tools/apps/web_runner/build.sh
+#   EMSDK_TAG=3.1.74 bash tools/apps/web_runner/build.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,13 +59,13 @@ docker run --rm \
   -e EM_COMPILER_WRAPPER=ccache \
   -e CCACHE_DIR=/ccache \
   "$IMAGE" \
-  bash -lc "emcmake cmake -S tools/web_runner -B tools/web_runner/build-wasm \
+  bash -lc "emcmake cmake -S tools/apps/web_runner -B tools/apps/web_runner/build-wasm \
               -DCMAKE_BUILD_TYPE=Release \
               -DDISPLAY_WIDTH=${WIDTH} -DDISPLAY_HEIGHT=${HEIGHT} \
-            && cmake --build tools/web_runner/build-wasm -j\"\$(nproc)\" \
+            && cmake --build tools/apps/web_runner/build-wasm -j\"\$(nproc)\" \
             && ccache --show-stats | grep -iE 'hits|misses' || true"
 
 echo ""
-echo "==> Done: ${REPO_ROOT}/tools/web_runner/build-wasm/index.html"
+echo "==> Done: ${REPO_ROOT}/tools/apps/web_runner/build-wasm/index.html"
 echo "    Open it directly (double-click), or serve it to LAN + tailnet clients:"
-echo "      bash tools/web_runner/serve.sh"
+echo "      bash tools/apps/web_runner/serve.sh"

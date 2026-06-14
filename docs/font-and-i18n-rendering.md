@@ -121,12 +121,12 @@ presentation-form ranges and layout tables (unlike CJK, where we drop them).
 
 ## Pack-Generation Tooling (Produce)
 
-Owned here, in `tools/fontpack/` (see its README). c-modules owns the corpus extraction too — it no
+Owned here, in `tools/i18n/` (see its README). c-modules owns the corpus extraction too — it no
 longer depends on the main app's extractor. Pipeline per locale:
 
 1. **Corpus** — `po_catalog.py` parses the locale's `.po` directly (no Babel) → unique non-ASCII glyphs
    (ASCII added back for primary-script locales, per the chain note above).
-2. **Subset** — `build_lang_font.py` reads the render layer's `--dump-locales` manifest for the source
+2. **Subset** — `build_fontpacks.py` reads the render layer's `--dump-locales` manifest for the source
    family, then `fontTools.subset` → one `.ttf` per locale (CJK: drop GSUB/GPOS/GDEF; Arabic: keep them).
 3. **Bundle & sign** — left to the platform layer (the tool emits a per-locale `manifest.json` with
    sha256). Signing planned: Schnorr/secp256k1.
@@ -156,4 +156,4 @@ placeholder at the end instead of rendering blank.
 - System vision & layer contracts: `seedsigner/docs/architecture/dual-platform-overview.md`
 - As-built status & remaining work: [font-and-i18n-implementation-plan.md](font-and-i18n-implementation-plan.md)
 - Debugging story (engine choice, tiny_ttf bugs): [knowledge/font-loading-binfont-vs-tiny-ttf.md](knowledge/font-loading-binfont-vs-tiny-ttf.md)
-- Font-pack tooling: [../tools/fontpack/README.md](../tools/fontpack/README.md)
+- Font-pack tooling: [../tools/i18n/README.md](../tools/i18n/README.md)

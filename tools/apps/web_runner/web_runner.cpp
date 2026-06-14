@@ -5,7 +5,7 @@
 // lives in shell.html and drives this module through the exported C API below.
 //
 // Display + input + screen plumbing is shared with the native screen_runner via
-// tools/common/runner_core (SDL-free) and tools/common/runner_sdl (the two SDL
+// tools/apps/runner_core/runner_core (SDL-free) and tools/apps/runner_core/runner_sdl (the two SDL
 // helpers). Emscripten provides SDL2 (-sUSE_SDL=2), so the SDL window is the
 // browser canvas and keyboard/mouse/touch events arrive as ordinary SDL events.
 

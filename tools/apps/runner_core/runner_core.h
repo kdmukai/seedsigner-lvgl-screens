@@ -8,7 +8,7 @@
 //   - the LVGL display + RGB565 framebuffer (and resolution switching),
 //   - the keypad / pointer input devices and their read callbacks,
 //   - the screen-function registry and JSON-driven screen invocation,
-//   - parsing tools/scenarios.json into per-screen, pre-merged scenarios.
+//   - parsing tools/scenarios/scenarios.json into per-screen, pre-merged scenarios.
 //
 // It deliberately has NO SDL dependency so it stays portable and headlessly
 // testable. The two genuinely SDL-specific helpers (SDL keycode mapping and
@@ -89,7 +89,7 @@ bool has_screen(const std::string& fn_name);
 bool load_screen(const std::string& fn_name, const std::string& json_ctx);
 
 // ---------------------------------------------------------------------------
-// Scenarios (tools/scenarios.json)
+// Scenarios (tools/scenarios/scenarios.json)
 // ---------------------------------------------------------------------------
 
 struct Scenario {

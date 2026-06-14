@@ -116,7 +116,7 @@ jobs:
       - name: Compare BASE vs PR
         run: |
           scripts/ci/ci.sh compare-screenshots \
-            --before-dir base/tools/screenshot_generator/screenshots \
+            --before-dir base/tools/apps/screenshot_generator/screenshots \
             --after-dir after \
             --out-dir screenshot-diff \
             --pr-number ${{ github.event.number }} || true

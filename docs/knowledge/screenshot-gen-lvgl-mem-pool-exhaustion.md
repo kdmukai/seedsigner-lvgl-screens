@@ -40,7 +40,7 @@ it — i.e. the whole tool was running at the ragged edge of 64KB, and the i18n 
 ## Fix
 
 Build the desktop tool with the **C library allocator** instead of the embedded fixed pool
-(`tools/screenshot_generator/CMakeLists.txt`):
+(`tools/apps/screenshot_generator/CMakeLists.txt`):
 
 ```cmake
 LV_USE_STDLIB_MALLOC=LV_STDLIB_CLIB

@@ -3,7 +3,7 @@ Self-contained gettext .po reader for the SeedSigner i18n build tooling.
 
 Just enough of the .po grammar for our needs (no Babel dependency): singular
 msgid/msgstr pairs with multi-line quoted continuations, plus msgstr[0] for
-plural entries (mapped onto the singular msgid). Shared by build_lang_font.py
+plural entries (mapped onto the singular msgid). Shared by build_fontpacks.py
 (glyph corpus) and gen_localized_scenarios.py (msgid->msgstr lookup).
 """
 

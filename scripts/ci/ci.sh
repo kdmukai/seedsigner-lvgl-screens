@@ -31,18 +31,18 @@ case "$COMMAND" in
     ;;
 
   build-screenshots)
-    cmake -S tools/screenshot_generator -B tools/screenshot_generator/build \
+    cmake -S tools/apps/screenshot_generator -B tools/apps/screenshot_generator/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320
-    cmake --build tools/screenshot_generator/build -j"$NPROC"
+    cmake --build tools/apps/screenshot_generator/build -j"$NPROC"
     ;;
 
   generate-screenshots)
-    tools/screenshot_generator/build/screenshot_gen ${1:+--out-dir "$1"}
+    tools/apps/screenshot_generator/build/screenshot_gen ${1:+--out-dir "$1"}
     ;;
 
   compare-screenshots)
-    python3 tools/screenshot_generator/compare_screenshots.py "$@"
+    python3 tools/apps/screenshot_generator/compare_screenshots.py "$@"
     ;;
 
   # ---------------------------------------------------------------------------
@@ -55,11 +55,11 @@ case "$COMMAND" in
     ;;
 
   build-screen-runner)
-    cmake -S tools/screen_runner -B tools/screen_runner/build \
+    cmake -S tools/apps/screen_runner -B tools/apps/screen_runner/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
       ${@+"$@"}
-    cmake --build tools/screen_runner/build -j"$NPROC"
+    cmake --build tools/apps/screen_runner/build -j"$NPROC"
     ;;
 
   package-screen-runner)
@@ -67,15 +67,15 @@ case "$COMMAND" in
     # Usage: ci.sh package-screen-runner [ARTIFACT_DIR]
     ARTIFACT_DIR="${1:-artifact}"
     mkdir -p "$ARTIFACT_DIR"
-    if [ -f tools/screen_runner/build/screen_runner.exe ]; then
-      cp tools/screen_runner/build/screen_runner.exe "$ARTIFACT_DIR/"
+    if [ -f tools/apps/screen_runner/build/screen_runner.exe ]; then
+      cp tools/apps/screen_runner/build/screen_runner.exe "$ARTIFACT_DIR/"
     else
-      cp tools/screen_runner/build/screen_runner "$ARTIFACT_DIR/"
+      cp tools/apps/screen_runner/build/screen_runner "$ARTIFACT_DIR/"
     fi
-    cp tools/screen_runner/build/screen_runner_font_regular.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
-    cp tools/screen_runner/build/screen_runner_font_semibold.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
-    cp tools/screen_runner/build/screen_runner_logo.bmp "$ARTIFACT_DIR/" 2>/dev/null || true
-    cp tools/scenarios.json "$ARTIFACT_DIR/"
+    cp tools/apps/screen_runner/build/screen_runner_font_regular.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/apps/screen_runner/build/screen_runner_font_semibold.ttf "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/apps/screen_runner/build/screen_runner_logo.bmp "$ARTIFACT_DIR/" 2>/dev/null || true
+    cp tools/scenarios/scenarios.json "$ARTIFACT_DIR/"
     ;;
 
   # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ case "$COMMAND" in
     # Guard: syntax-check the inline app script in shell.html first, so a broken
     # edit can't ship a shell where Module/ssOnReady never get defined.
     if command -v node >/dev/null 2>&1; then
-      python3 - tools/web_runner/shell.html > /tmp/web_runner_shell_app.js <<'PY'
+      python3 - tools/apps/web_runner/shell.html > /tmp/web_runner_shell_app.js <<'PY'
 import re, sys
 html = open(sys.argv[1]).read()
 m = re.search(r'<script type="text/javascript">(.*?)</script>\s*\{\{\{ SCRIPT \}\}\}', html, re.S)
@@ -98,11 +98,11 @@ sys.stdout.write(m.group(1) if m else 'throw new Error("app script block not fou
 PY
       node --check /tmp/web_runner_shell_app.js
     fi
-    emcmake cmake -S tools/web_runner -B tools/web_runner/build-wasm \
+    emcmake cmake -S tools/apps/web_runner -B tools/apps/web_runner/build-wasm \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 \
       ${@+"$@"}
-    cmake --build tools/web_runner/build-wasm -j"$NPROC"
+    cmake --build tools/apps/web_runner/build-wasm -j"$NPROC"
     ;;
 
   package-web-runner)
@@ -110,7 +110,7 @@ PY
     # Usage: ci.sh package-web-runner [DIR]
     WEB_DIR="${1:-web-site}"
     mkdir -p "$WEB_DIR"
-    cp tools/web_runner/build-wasm/index.html "$WEB_DIR/"
+    cp tools/apps/web_runner/build-wasm/index.html "$WEB_DIR/"
     ;;
 
   # ---------------------------------------------------------------------------
@@ -125,10 +125,10 @@ PY
     SITE_DIR="${1:-site}"
     rm -rf "$SITE_DIR"
     mkdir -p "$SITE_DIR/play"
-    if [ -d tools/screenshot_generator/screenshots ]; then
-      cp -r tools/screenshot_generator/screenshots/. "$SITE_DIR/"
+    if [ -d tools/apps/screenshot_generator/screenshots ]; then
+      cp -r tools/apps/screenshot_generator/screenshots/. "$SITE_DIR/"
     fi
-    cp tools/web_runner/build-wasm/index.html "$SITE_DIR/play/"
+    cp tools/apps/web_runner/build-wasm/index.html "$SITE_DIR/play/"
     echo "Assembled site at $SITE_DIR (gallery at /, web runner at /play/)"
     ;;
 
