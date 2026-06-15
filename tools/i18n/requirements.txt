@@ -1,0 +1,18 @@
+# Offline i18n shaping/subsetting tooling for the LVGL screens.
+#
+# Pinned for reproducibility: the offline HarfBuzz pre-shaping step bakes glyph
+# IDs and GPOS offsets into signed packs, so a shaper bump is a *reviewed
+# re-shaping event* (see docs/complex-script-shaping-spike-plan.md). The
+# uharfbuzz wheel bundles its own libharfbuzz, which pins the shaping engine
+# independent of any system HarfBuzz.
+#
+#   uharfbuzz 0.55.0  ->  bundled libharfbuzz 14.2.1
+#
+# fontTools provides pyftsubset (subset-then-shape) and TTFont introspection.
+# Pillow (with the libraqm layout engine) renders the reference oracle PNGs the
+# spike's on-device glyph-run render is diffed against; it is typically already
+# present from the screenshot tooling, so it is listed but version-loose.
+
+uharfbuzz==0.55.0
+fonttools==4.57.0
+Pillow>=10

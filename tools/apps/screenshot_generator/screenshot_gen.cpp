@@ -27,6 +27,7 @@
 #include "font_registry.h"
 #include "seedsigner.h"
 #include "input_profile.h"
+#include "shape_spike.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -522,6 +523,7 @@ int main(int argc, char **argv) {
     const char *out_dir = DEFAULT_OUT_DIR;
     const char *scenarios_file = DEFAULT_SCENARIOS_FILE;
     bool dump_locales = false;
+    const char *shape_spike_dir = NULL;  // --shape-spike: run the throwaway shaping spike and exit
     std::string locale;     // --locale: register per-locale fonts + (caller picks scenarios file)
     std::string font_dir = "lang-packs";  // --font-dir (repo-root production packs)
 
@@ -535,6 +537,8 @@ int main(int argc, char **argv) {
             scenarios_file = argv[++i];
         } else if (strcmp(argv[i], "--dump-locales") == 0) {
             dump_locales = true;
+        } else if (strcmp(argv[i], "--shape-spike") == 0 && i + 1 < argc) {
+            shape_spike_dir = argv[++i];
         } else if (strcmp(argv[i], "--locale") == 0 && i + 1 < argc) {
             locale = argv[++i];
         } else if (strcmp(argv[i], "--font-dir") == 0 && i + 1 < argc) {
@@ -562,6 +566,14 @@ int main(int argc, char **argv) {
         }
         printf("%s\n", all.dump(2).c_str());
         return 0;
+    }
+
+    // THROWAWAY de-risking spike: load pre-shaped glyph runs + subset fonts from
+    // <dir> and render them by glyph-id through the existing tiny_ttf engine.
+    // Bypasses the whole scenario/display-profile pipeline.
+    if (shape_spike_dir) {
+        lv_init();
+        return run_shape_spike(shape_spike_dir);
     }
 
     if (mkdir_p(out_dir) != 0) {

@@ -1,9 +1,11 @@
 # Complex-script text shaping for the LVGL screens — direction + open questions
 
-_Status: **NOTES / agreed direction, NOT a finalized plan.** This captures an
-architecture conversation so a fresh session can turn it into a concrete plan +
-spike. Nothing here is built yet. Companion to `docs/font-farsi-rtl-plan.md`,
-`docs/font-tiering-plan.md`, `docs/font-and-i18n-rendering.md`._
+_Status: **NOTES / agreed direction.** This captures the architecture conversation.
+**The finalized, approved plan is now `docs/complex-script-shaping-spike-plan.md`**
+(spike-first: Devanagari + Nastaliq-Urdu + Thai, migrate `fa` to HarfBuzz runs) — read
+that to execute; this doc remains as the rationale/background. Nothing is built yet.
+Companion to `docs/font-farsi-rtl-plan.md`, `docs/font-tiering-plan.md`,
+`docs/font-and-i18n-rendering.md`._
 
 ## The goal driving this
 
