@@ -34,6 +34,17 @@
 #error "At least one SUPPORT_DISPLAY_HEIGHT_* flag must be defined"
 #endif
 
+// SEEDSIGNER_TTF_CACHE_SIZE: glyph/draw cache entries per runtime tiny_ttf font.
+// Enabled by default for redraw/scroll speed; every target (desktop, browser,
+// and device) is expected to back LVGL with adequate RAM/PSRAM. The cache retains
+// rasterized bitmaps — the only hazard is running it against a too-small fixed
+// pool, where OOM turns into a CPU spin via LVGL's default assert handler (see
+// docs/knowledge/tiny-ttf-cache-spin-root-cause.md). A build that genuinely runs
+// on a tiny fixed pool can override this to 0 (rasterize each draw, no cache).
+#ifndef SEEDSIGNER_TTF_CACHE_SIZE
+#define SEEDSIGNER_TTF_CACHE_SIZE 256
+#endif
+
 // Named PX_MULTIPLIER values — one per supported display height.
 const int PX_MULTIPLIER_100 = 100;   // 240px height (Pi Zero): no scaling
 const int PX_MULTIPLIER_150 = 150;   // 320px height (3.5" ESP32): aesthetic upscale

@@ -27,6 +27,12 @@
 // any locale absent from the table) is valid and registers nothing.
 void seedsigner_set_locale(const char* locale);
 
+// True if the active locale (per seedsigner_set_locale) is a right-to-left
+// script. The screen layer uses this to apply RTL text direction to labels in
+// one global post-pass — see load_screen_and_cleanup_previous(). False for "en",
+// any LTR locale, or no locale set.
+bool seedsigner_locale_is_rtl();
+
 // Register one already-verified subset font for a text role at the active
 // profile. `logical_name` is the role id ("body", "button", "large_button",
 // "top_nav_title", "main_menu_title"). `buf`/`len` are the subset .ttf bytes.

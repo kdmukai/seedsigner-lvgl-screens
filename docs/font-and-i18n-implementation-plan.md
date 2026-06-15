@@ -22,7 +22,8 @@ and the debugging notes in [knowledge/font-loading-binfont-vs-tiny-ttf.md](knowl
   the baseline's large_button quirk: 20 px base at 240 height, 18 at 320/480). `supported_locales()`
   emits the per-profile JSON manifest (the only outward interface).
 - **`font_registry.{h,cpp}`** — the I/O-agnostic seam: `seedsigner_set_locale` / `register_font` /
-  `clear_registered_fonts`. Creates `lv_tiny_ttf` fonts from buffers (kerning off, `cache_size=0`),
+  `clear_registered_fonts`. Creates `lv_tiny_ttf` fonts from buffers (kerning off, glyph cache on via
+  `SEEDSIGNER_TTF_CACHE_SIZE`),
   wires the chain (CJK-primary → OpenSans-baseline fallback; or a same-size script pack as a fallback
   under a heap copy of the baseline primary), validates the supplied px against `locale_role_render_px()`,
   and repoints the active profile.
@@ -71,9 +72,11 @@ Independent `(locale)` render runs parallelize cleanly (one process each).
 
 ## Known issues / follow-ups
 
-- **Tiny TTF cache-path spins** on certain content at any cache size → `cache_size=0` for now (fine for
-  the static tool, slow for the device). Needs an upstream patch/fork before the device relies on the
-  cache. See the knowledge doc (bug #3).
+- **The glyph cache is on by default (`SEEDSIGNER_TTF_CACHE_SIZE=256`); each host must back it with
+  memory.** The cache holds rasterized bitmaps; against a too-small fixed pool it OOMs and LVGL's default
+  assert handler turns that into a CPU spin (the former "bug #3" — not a cache/`lv_tiny_ttf` defect). So
+  every target provisions memory: Pi Zero `LV_STDLIB_CLIB`, ESP32-S3 glyph bitmaps in PSRAM; a genuinely
+  tiny-pool build overrides the size to 0. See `docs/knowledge/tiny-ttf-cache-spin-root-cause.md`.
 - **Tiny TTF no-cache fallback bug FIXED** (`third_party/patches/lv_tiny_ttf-fallback-chain.patch`):
   absent codepoints now report as *not found*, so the OpenSans fallback engages and embedded English
   renders at the normal English size. CJK subsets no longer bake in ASCII. Push the fix upstream so the

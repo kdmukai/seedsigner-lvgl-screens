@@ -264,11 +264,13 @@ static void install_western_baseline(DisplayProfile& p) {
                                          : opensans_western_regular_ttf_len;
 
         // KERNING_NONE: our closed label corpus doesn't need pair kerning.
-        // cache_size=0: rasterize on each draw (no glyph cache). Fine for the
-        // static desktop tools; the interactive device wants a glyph cache for
-        // redraw speed — that's the later tiny_ttf cache work (bug #3).
+        // Cache size = SEEDSIGNER_TTF_CACHE_SIZE (gui_constants.h): enabled by
+        // default. The cache retains bitmaps, so every target must back LVGL with
+        // adequate RAM/PSRAM; against a too-small fixed pool it OOMs (→ assert-
+        // handler spin). See docs/knowledge/tiny-ttf-cache-spin-root-cause.md.
         lv_font_t* f = lv_tiny_ttf_create_data_ex(data, len, px,
-                                                  LV_FONT_KERNING_NONE, 0);
+                                                  LV_FONT_KERNING_NONE,
+                                                  SEEDSIGNER_TTF_CACHE_SIZE);
         if (!f) {
             fprintf(stderr, "FATAL: failed to rasterize OpenSans Western baseline "
                             "(role px=%d)\n", px);

@@ -63,23 +63,29 @@ The patch is carried against the pinned LVGL submodule (see `third_party/patches
 upstream so the patch can eventually be dropped. The earlier workaround — include ASCII in CJK subsets so
 the script font carries its own Latin glyphs (English then at the bumped size) — is no longer used.
 
-## 3. Tiny TTF: cached path spins on certain content (any cache size)
+## 3. Tiny TTF: the glyph cache holds bitmaps — give it memory; it is not a cache bug
 
-With a glyph cache enabled (the default `LV_TINY_TTF_CACHE_GLYPH_CNT = 128`, **and** a large 4096), the
-generator **spins** on a specific screen's content (a status screen with longer CJK body text),
-CPU-bound. `cache_size=0` (the rasterize-direct path) renders the same content fine. So it is the
-cache code path (`lru_rb` glyph/draw caches), not eviction-when-full (4096 wouldn't evict at that point).
+Enabling the tiny_ttf glyph/draw cache (`cache_size > 0`) is correct and effective **when LVGL has enough
+memory**. The cache holds rasterized glyph bitmaps; on a constrained fixed pool (the embedded default is
+`LV_MEM_SIZE = 64 KB`, `LV_STDLIB_BUILTIN`) large CJK bitmaps exhaust the heap, the next `lv_malloc`
+returns NULL, and LVGL's default `LV_ASSERT_MALLOC` handler (`while(1);`) busy-loops — that is the "spin."
+It is **out-of-memory, not a cache / red-black-tree defect**, and unrelated to upstream #9765. Full
+analysis, evidence and a standalone repro: [`tiny-ttf-cache-spin-root-cause.md`](tiny-ttf-cache-spin-root-cause.md).
 
-**Workaround:** create fonts with `cache_size=0`. Correct for the static screenshot tool (each screen
-rendered once); **not** acceptable for the interactive device, which needs a cache for redraw/scroll
-speed. Restoring a working cache (patch or fork `lv_tiny_ttf`) is a production prerequisite.
+**Current state:** the cache is **enabled by default** (`SEEDSIGNER_TTF_CACHE_SIZE = 256` in
+`gui_constants.h`). Every host must therefore back LVGL with adequate memory, not patch `lv_tiny_ttf`:
+Pi Zero uses `LV_USE_STDLIB_MALLOC=LV_STDLIB_CLIB` (otherwise boxed into a 64 KB pool regardless of its
+512 MB); ESP32-S3 routes glyph bitmaps to PSRAM. A build on a genuinely tiny fixed pool can override the
+size to 0 (rasterize-direct).
 
 ## Net effect on the design
 
-- Engine: **Tiny TTF**, `cache_size=0`, kerning off.
+- Engine: **Tiny TTF**, glyph cache on by default (`SEEDSIGNER_TTF_CACHE_SIZE=256`; each host provisions
+  the memory to back it — see §3), kerning off.
 - CJK subsets **exclude ASCII**; embedded English defers to the OpenSans fallback at the English size
   (bug #2 fixed by `third_party/patches/lv_tiny_ttf-fallback-chain.patch`).
-- One production follow-up remains before on-device use: bug #3 (cache-path spin). Push the bug-#2 fix
-  upstream so the local patch can be dropped.
-- Both bugs are exactly what the planned **rasterize-all, per-architecture validation gate** would
-  surface (render every corpus glyph at every size, under ASan, on each target build).
+- The remaining bug-#2 follow-up is to push that fix upstream so the local patch can be dropped. (The
+  former "bug #3" is not a bug — see §3.)
+- The bin/loader hang (§1) and the fallback bug (§2) are exactly what the planned **rasterize-all,
+  per-architecture validation gate** would surface (render every corpus glyph at every size, under ASan,
+  on each target build).

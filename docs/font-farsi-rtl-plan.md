@@ -27,26 +27,30 @@ and renders shaped, right-to-left across all profiles. Companion to
   pixel-unchanged.)
 - **Table:** `fa` is `ChainRole::Primary` (NotoSansAR primary at the CJK bump,
   baked OpenSans fallback for embedded Latin/digits) with a `bool rtl` field;
-  `supported_locales_json()` emits `"rtl": true` as metadata for consumers (the
-  outward interface) for when RTL UX guidance arrives. No in-process layout code
-  consumes it today.
-- **RTL is TEXT-ONLY (deliberate scope, not the plan's full mirroring).** The
-  screen root sets `LV_BASE_DIR_AUTO`, so each label resolves its own direction
-  from its content: Arabic/Persian text runs right-to-left (bidi reorders runs,
-  punctuation lands at the logical end) and Latin stays LTR. Crucially `AUTO` is
-  NOT `RTL`: LVGL's flex/containers mirror only on an explicit `LV_BASE_DIR_RTL`
-  (`lv_flex.c` checks `== LV_BASE_DIR_RTL`), so element **layout keeps its
-  left-to-right order** — the Scan tile stays top-left, the back chevron stays on
-  the left pointing left, and the passphrase action keys stay on the right where
-  they map to the physical hardware buttons. `AUTO` is set unconditionally
-  (harmless for LTR locales: English auto-detects LTR; verified pixel-unchanged).
+  `supported_locales_json()` emits `"rtl": true` and `seedsigner_locale_is_rtl()`
+  exposes it to the screen layer.
+- **RTL is TEXT-ONLY, applied in ONE global place (not per-builder, not full
+  mirroring).** `load_screen_and_cleanup_previous()` — the single screen-load path
+  every builder already calls — runs `apply_rtl_text_to_labels()` on the finished
+  screen tree for RTL locales: a recursive walk that sets `LV_BASE_DIR_RTL` on
+  every `lv_label` and nothing else. So builders/components stay direction-agnostic
+  (zero per-label maintenance), and because only labels are touched, element
+  **layout keeps its left-to-right order**: LVGL's `base_dir` is one inherited
+  property driving BOTH text bidi AND layout (flex order + the coordinate origin
+  for `lv_obj_set_pos`/`lv_obj_align`), so a root-level RTL would also mirror the
+  Scan tile, the nav buttons, and the passphrase cursor — scoping it to labels
+  avoids all of that. The walk **skips `lv_textarea` subtrees**, so the ASCII
+  passphrase entry box + cursor stay LTR; the keyboard is a buttonmatrix (no child
+  labels) and is unaffected. Forcing `RTL` (vs `AUTO`) also fixes the strings that
+  *start* with a Latin term (e.g. `"SeedQR …"`), which AUTO's first-strong-char
+  detection would otherwise mis-base to LTR.
 - **Why text-only:** the original plan (step 4 below) called for mirroring the UI
   (swapping nav button sides, flipping alignment) as conventional RTL practice,
   but flagged "how much screen mirroring is enough?" as an open question. Per
   product guidance we are NOT mirroring on-screen elements until we have actual
-  Farsi-user UX input — back stays left, hardware-mapped buttons stay put, etc.
-  When that guidance lands, selective mirroring can key off the `rtl` manifest
-  flag (or a re-introduced `seedsigner_locale_is_rtl()` accessor).
+  Farsi-user UX input — back stays left/pointing-left, hardware-mapped buttons
+  stay put, the Scan tile stays top-left. The single `apply_rtl_text_to_labels()`
+  pass is also where any future selective mirroring would hook in.
 
 **Known refinements (not blockers):** at the 240px icon-grid main menu, long Farsi
 labels (e.g. "عبارات بازیابی") clip to the cell width — a general long-label
@@ -163,8 +167,9 @@ switch feeding alignment + base_dir, rather than per-call flips.
 - **tiny_ttf × bidi × shaper end-to-end** — confirm the pipeline order (bidi reorders
   → AP shaper substitutes presentation forms → tiny_ttf rasterizes by code point)
   actually holds in LVGL v9.5 with `cache_size=0`. Smoke-test early.
-- **Bug #3 (tiny_ttf cache spin)** still applies on-device; desktop `cache_size=0` is
-  fine for verification.
+- **On-device glyph cache** needs memory provisioning before it can be enabled (it OOMs on a small
+  fixed pool — the former "bug #3", not a cache defect); desktop `cache_size=0` is fine for verification.
+  See `docs/knowledge/tiny-ttf-cache-spin-root-cause.md`.
 - Same `fa` work template applies to the other Phase-2 corpus scripts: **Thai** (`th`,
   no shaping but needs Noto Thai + the combining marks) and **Hindi/Devanagari**
   (`hi`, needs real GSUB shaping → likely HarfBuzz, a bigger lift than Arabic).

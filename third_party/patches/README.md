@@ -43,7 +43,9 @@ embedded English would render at the bumped size. With it applied,
 See `docs/knowledge/font-loading-binfont-vs-tiny-ttf.md` (bug #2) and
 `docs/font-and-i18n-rendering.md` (chain model) for the full story.
 
-> Still open: Tiny TTF bug #3 (the **cached** path spins on some content at any
-> cache size) is unfixed; fonts are created with `cache_size=0` for now. A
-> production follow-up needs both the cache spin fixed and this fallback fix —
-> ideally pushed upstream so the patch can be dropped.
+> Note: this patch (bug #2) is the only carried `lv_tiny_ttf` change; pushing it
+> upstream lets it be dropped. The former "bug #3" (cache `cache_size>0` "spin")
+> is **not** an `lv_tiny_ttf` bug and needs no patch — it is out-of-memory on a
+> constrained pool surfaced by LVGL's halt-on-assert handler. The cache is now on
+> by default (`SEEDSIGNER_TTF_CACHE_SIZE=256`); each host backs it with adequate
+> RAM/PSRAM (see `docs/knowledge/tiny-ttf-cache-spin-root-cause.md`).

@@ -49,11 +49,13 @@ and there the coupling is to a *pack*, never to firmware.
   the Noto language packs.
 - **Unused block glyphs cost ~nothing.** tiny_ttf rasterizes lazily, so unused glyphs are never
   rasterized, never cached, never pre-warmed — only a few KB of outline bytes on the SD card. Cache
-  pre-warm (post bug #3) warms only the **active locale's used corpus** (derived at runtime), not the
-  block. The rasterize-all **validation/signing gate runs once per font *version***, not per translation.
-- **Bug #3 (tiny_ttf cache spin) graduates from CJK-only to a *general* production prerequisite** — every
-  screen now rasterizes body/title. `cache_size=0` is fine for the static desktop tools but the **device
-  needs a working glyph cache** for redraw/scroll. (See the upstream bug #2/#3 plan.)
+  pre-warm (once the on-device cache is enabled) warms only the **active locale's used corpus** (derived
+  at runtime), not the block. The rasterize-all **validation/signing gate runs once per font *version***,
+  not per translation.
+- **The glyph cache is on by default; backing it with memory is a host task, not a code fix** — every
+  screen rasterizes body/title and the cache holds those bitmaps (`SEEDSIGNER_TTF_CACHE_SIZE=256`). Each
+  target must give LVGL adequate memory (Pi Zero: CLIB malloc; ESP32-S3: glyph bitmaps in PSRAM),
+  otherwise it OOMs and halts. See `docs/knowledge/tiny-ttf-cache-spin-root-cause.md`.
 
 ## Implementation order
 
@@ -70,9 +72,11 @@ and there the coupling is to a *pack*, never to firmware.
 3. **Floor-vs-pack routing (optional automation).** `build_fontpacks` already reads each `.po` and has
    OpenSans's cmap — it can compute "is this locale's corpus ⊆ OpenSans?" to route floor vs pack and
    *validate* the hand-written `locale_fonts` table.
-4. **Device path (later, gated on bug #3).** Compile-in the OpenSans Western TTF for the `raspi-lvgl` and
+4. **Device path (later).** Compile-in the OpenSans Western TTF for the `raspi-lvgl` and
    `micropython-builder` firmware builds; wire pack delivery (SD load + verify) for script + language
-   packs; fix/patch the tiny_ttf cache (bug #3) before relying on the device cache.
+   packs. Before enabling the on-device glyph cache, provision LVGL memory (Pi Zero: CLIB malloc;
+   ESP32-S3: glyph bitmaps in PSRAM) per `docs/knowledge/tiny-ttf-cache-spin-root-cause.md` — no
+   `lv_tiny_ttf` patch is required.
 
 ## Files (anticipated)
 
@@ -180,5 +184,6 @@ Remaining tiers (Arabic/Persian/Thai/Hindi as Noto Primary/corpus packs) are Pha
 ## Dependencies / cross-refs
 
 - Builds on the `tools/` reorg (done) and the bug #2 fallback fix (done; `third_party/patches/`).
-- **Bug #3 is now a general prerequisite** for the device — see `~/.claude/plans/` upstream bug #2/#3 plan.
+- **Enabling the on-device glyph cache requires memory provisioning** (Pi Zero CLIB malloc / ESP32 PSRAM),
+  not a code fix — see `docs/knowledge/tiny-ttf-cache-spin-root-cause.md`.
 - Design rationale: `docs/font-and-i18n-rendering.md`.

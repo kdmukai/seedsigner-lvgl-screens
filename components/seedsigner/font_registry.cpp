@@ -39,6 +39,11 @@ void seedsigner_set_locale(const char* locale) {
     g_current_locale = locale ? locale : "";
 }
 
+bool seedsigner_locale_is_rtl() {
+    const LocaleFontEntry* entry = find_locale_font_entry(g_current_locale);
+    return entry && entry->rtl;
+}
+
 bool seedsigner_register_font(const char* logical_name, const uint8_t* buf, size_t len, int font_px_size) {
     if (!logical_name || !buf || len == 0) {
         fprintf(stderr, "seedsigner_register_font: invalid arguments\n");
@@ -82,14 +87,14 @@ bool seedsigner_register_font(const char* logical_name, const uint8_t* buf, size
     // NOTE: tiny_ttf keeps a reference to `buf` (lazy glyph reads), so the caller
     // must keep the buffer alive until seedsigner_clear_registered_fonts().
     // KERNING_NONE: our scripts don't need pair kerning.
-    // cache_size=0 (no glyph cache; rasterize on each draw). tiny_ttf's cached
-    // path (lru_rb glyph/draw caches) spins on certain content regardless of
-    // cache size (reproduced at 128 AND 4096); cache_size=0 takes the direct
-    // path and renders correctly. Fine for the static screenshot/render use.
-    // TODO(production): the interactive device wants a glyph cache for redraw
-    // speed — investigate/patch the tiny_ttf cache-path hang before relying on it.
+    // Cache size = SEEDSIGNER_TTF_CACHE_SIZE (gui_constants.h): enabled by default
+    // for redraw/scroll speed. The cache retains rasterized bitmaps, so every
+    // target must back LVGL with adequate RAM/PSRAM (Pi Zero: LV_STDLIB_CLIB;
+    // ESP32-S3: bitmaps in PSRAM); against a too-small fixed pool it OOMs and
+    // LVGL's default assert handler spins. See docs/knowledge/tiny-ttf-cache-spin-root-cause.md.
     lv_font_t* script = lv_tiny_ttf_create_data_ex(buf, len, font_px_size,
-                                                   LV_FONT_KERNING_NONE, 0);
+                                                   LV_FONT_KERNING_NONE,
+                                                   SEEDSIGNER_TTF_CACHE_SIZE);
 #else
     fprintf(stderr, "seedsigner_register_font: built without LV_USE_TINY_TTF\n");
     lv_font_t* script = nullptr;

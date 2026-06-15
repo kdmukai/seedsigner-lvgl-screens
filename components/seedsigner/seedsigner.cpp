@@ -3,6 +3,7 @@
 #include "gui_constants.h"
 #include "navigation.h"
 #include "input_profile.h"
+#include "font_registry.h"
 
 #include "lvgl.h"
 
@@ -84,7 +85,38 @@ static void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
 // - We only delete after `lv_scr_load(new_screen)` so LVGL has already switched the
 //   active screen; this avoids deleting the currently active screen too early.
 // - The `old_screen != new_screen` guard is a safety check for accidental reuse.
+// Recursively force RTL text direction on every text LABEL in a finished screen
+// tree (for RTL locales). This is the ONE global place direction is applied, so
+// the screen/component builders stay direction-agnostic — no per-label or
+// per-builder maintenance.
+//
+// Why labels only (not the screen root): LVGL's base_dir is a single inherited
+// property that drives BOTH bidi text direction AND element layout (flex order,
+// and the coordinate origin for lv_obj_set_pos / lv_obj_align). Setting it RTL at
+// the root would mirror the layout too — the Scan tile, the nav buttons, the
+// passphrase cursor all flip. Scoping it to lv_label objects gives correct RTL
+// text while every container keeps its physical left-to-right arrangement.
+//
+// lv_textarea subtrees are skipped: the passphrase entry is always ASCII/LTR, so
+// its box and cursor must stay left-to-right. The on-screen keyboard is a
+// buttonmatrix (no child labels), so it is unaffected.
+static void apply_rtl_text_to_labels(lv_obj_t *obj) {
+    if (lv_obj_check_type(obj, &lv_textarea_class)) return;  // user input stays LTR
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        lv_obj_set_style_base_dir(obj, LV_BASE_DIR_RTL, 0);
+    }
+    uint32_t child_count = lv_obj_get_child_count(obj);
+    for (uint32_t i = 0; i < child_count; ++i) {
+        apply_rtl_text_to_labels(lv_obj_get_child(obj, i));
+    }
+}
+
 static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
+    // Global RTL hook: flip text direction on the finished screen's labels for
+    // RTL locales (layout stays physical; user-input widgets stay LTR).
+    if (seedsigner_locale_is_rtl()) {
+        apply_rtl_text_to_labels(new_screen);
+    }
     lv_obj_t *old_screen = lv_scr_act();
     lv_scr_load(new_screen);
     if (old_screen && old_screen != new_screen) {
@@ -249,16 +281,11 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
     lv_obj_set_style_text_line_space(out.screen, BODY_LINE_SPACING, LV_PART_MAIN);
     lv_obj_set_style_pad_all(out.screen, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(out.screen, 0, LV_PART_MAIN);
-
-    // Let every label resolve its OWN text direction from its content: Arabic /
-    // Persian text runs right-to-left (bidi + shaping), Latin stays left-to-right.
-    // AUTO — not RTL — is deliberate: LVGL's flex/containers only mirror on an
-    // explicit LV_BASE_DIR_RTL, so element LAYOUT keeps its left-to-right order
-    // (e.g. the Scan tile stays top-left, the passphrase action keys stay on the
-    // right where they map to the physical hardware buttons). Only the TEXT flips.
-    // Full UI mirroring for RTL locales is intentionally deferred pending Farsi UX
-    // guidance. Harmless for LTR locales (their text auto-detects LTR).
-    lv_obj_set_style_base_dir(out.screen, LV_BASE_DIR_AUTO, 0);
+    // NB: base direction is NOT set on the screen root. A root-level RTL base_dir
+    // would also mirror element LAYOUT (flex order + lv_obj_set_pos / align honor
+    // base_dir), flipping the Scan tile, the nav buttons, and the passphrase
+    // textarea cursor. Instead, RTL text direction is applied to text LABELS only,
+    // in one global post-pass — see load_screen_and_cleanup_previous().
 
     bool show_back = true;
     bool show_power = false;

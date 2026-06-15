@@ -102,11 +102,13 @@ engages and embedded English renders as blank `.notdef` boxes (see knowledge doc
 
 ### Glyph cache
 
-Tiny TTF has an LRU glyph cache. It currently spins on certain content at any cache size (LVGL bug — see
-knowledge doc), so fonts are created with `cache_size=0` (rasterize-direct) for now. That's correct for
-the static screenshot tool but slow for the interactive device; restoring a working cache (or patching
-the spin) is a production follow-up. Target hardware has 8–16 MB PSRAM, so caching/pre-warming the closed
-corpus is viable once the cache is usable.
+Tiny TTF has an LRU glyph cache that holds rasterized bitmaps. It is **enabled by default**
+(`SEEDSIGNER_TTF_CACHE_SIZE=256` in `gui_constants.h`) for redraw/scroll speed. The cache is correct and
+effective **when LVGL has enough memory**; on a too-small fixed pool it OOMs and LVGL's default assert
+handler busy-loops (the former "bug #3" — out-of-memory, not a cache bug; see
+[knowledge doc](knowledge/tiny-ttf-cache-spin-root-cause.md)). So each host must back LVGL with adequate
+memory (Pi Zero: CLIB malloc; ESP32-S3: glyph bitmaps in PSRAM), not patch `lv_tiny_ttf`. Target hardware
+has 8–16 MB PSRAM, so caching/pre-warming the closed corpus is viable.
 
 ## Multi-Script Shaping (Phase 2)
 

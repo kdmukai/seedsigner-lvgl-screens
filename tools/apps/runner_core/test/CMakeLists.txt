@@ -62,6 +62,8 @@ add_executable(test_runner_core
   ${LVGL_SOURCES}
   ${SEEDSIGNER_FONT_SOURCES}
   "${SEEDSIGNER_DIR}/gui_constants.cpp"
+  "${SEEDSIGNER_DIR}/locale_fonts.cpp"
+  "${SEEDSIGNER_DIR}/font_registry.cpp"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
