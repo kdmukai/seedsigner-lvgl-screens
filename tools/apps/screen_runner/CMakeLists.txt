@@ -47,7 +47,7 @@ if(NOT DEFINED SUPPORT_DISPLAY_HEIGHT_480)
 endif()
 
 # Repo layout assumptions:
-# - this file lives at seedsigner-c-modules/tools/apps/screen_runner
+# - this file lives at seedsigner-lvgl-screens/tools/apps/screen_runner
 # - LVGL headers are provided via -DLVGL_ROOT=<path> (preferred), or auto-detected below.
 set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(SEEDSIGNER_DIR "${PROJECT_ROOT}/components/seedsigner")

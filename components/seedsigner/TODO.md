@@ -1,4 +1,4 @@
-# TODO (seedsigner C modules)
+# TODO (seedsigner LVGL screens)
 
 ## Screen behavior / parity
 

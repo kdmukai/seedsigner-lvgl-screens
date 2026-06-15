@@ -7,7 +7,7 @@ Platform-agnostic LVGL screen implementations for [SeedSigner](https://github.co
 SeedSigner is evolving from a Pi Zero-only Python application into a dual-platform system. The same Python business logic and the same LVGL screens run on both hardware targets. This repo is the shared piece in the middle:
 
 ```
-seedsigner-c-modules  (this repo: LVGL screens in C/C++)
+seedsigner-lvgl-screens  (this repo: LVGL screens in C/C++)
        |                          |
        v                          v
 seedsigner-raspi-lvgl       seedsigner-micropython-builder

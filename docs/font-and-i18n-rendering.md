@@ -134,7 +134,7 @@ presentation-form ranges and layout tables (unlike CJK, where we drop them).
 
 ## Pack-Generation Tooling (Produce)
 
-Owned here, in `tools/i18n/` (see its README). c-modules owns the corpus extraction too — it no
+Owned here, in `tools/i18n/` (see its README). lvgl-screens owns the corpus extraction too — it no
 longer depends on the main app's extractor. Pipeline per locale:
 
 1. **Corpus** — `po_catalog.py` parses the locale's `.po` directly (no Babel) → unique non-ASCII glyphs
