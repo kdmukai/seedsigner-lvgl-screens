@@ -24,7 +24,7 @@
 #include "lvgl.h"
 #include "gui_constants.h"
 #include "locale_fonts.h"
-#include "font_registry.h"
+#include "locale_loader.h"
 #include "seedsigner.h"
 #include "input_profile.h"
 #include "shape_spike.h"
@@ -475,47 +475,29 @@ static void usage(const char *argv0) {
     }
 }
 
-// Register the active locale's font pack for the ACTIVE profile, reading the
-// .bin files the render layer's own manifest says it needs. Buffers are copied
-// into LVGL's heap by the loader, so the local cache is freed on return.
-// Loaded font-pack buffers, kept alive while their fonts are registered:
-// tiny_ttf reads glyph outlines lazily, so the bytes must outlive the lv_font_t.
-// Cleared (after seedsigner_clear_registered_fonts) before re-registering.
-static std::unordered_map<std::string, std::vector<uint8_t>> g_locale_font_buffers;
+// Filesystem byte provider for the shared locale loader (ss_load_locale). Reads
+// pack file <font_dir>/<locale>/<file> into a reusable scratch buffer; the loader
+// copies whatever it must keep before the next call, so one scratch is safe to
+// reuse across a locale's files. (The "how to get bytes" seam — see
+// locale_loader.h; the device equivalent reads + verifies a flash partition.)
+struct FsPackCtx {
+    std::string font_dir;
+    std::vector<uint8_t> scratch;
+};
 
-// Register the active locale's font pack for the ACTIVE profile, reading the
-// .ttf the render layer's own manifest says it needs (one .ttf per locale,
-// shared across the role sizes).
-static bool register_locale_fonts(const std::string &locale, const std::string &font_dir) {
-    json m = json::parse(supported_locales_json());
-    const json *loc = nullptr;
-    for (const auto &e : m["locales"]) {
-        if (e["locale"] == locale) { loc = &e; break; }
+static bool fs_pack_provider(const char *locale, const char *file,
+                             const uint8_t **bytes, size_t *len, void *user) {
+    FsPackCtx *ctx = static_cast<FsPackCtx *>(user);
+    std::string path = ctx->font_dir + "/" + locale + "/" + file;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        fprintf(stderr, "missing pack file: %s\n", path.c_str());
+        return false;
     }
-    if (!loc) {
-        // Baked-floor locale (no additional fonts) — nothing to register.
-        return true;
-    }
-    for (const auto &f : (*loc)["fonts"]) {
-        std::string file = f["file"];
-        std::string role = f["role"];
-        int px = f["px"];
-        auto it = g_locale_font_buffers.find(file);
-        if (it == g_locale_font_buffers.end()) {
-            std::string path = font_dir + "/" + locale + "/" + file;
-            std::ifstream in(path, std::ios::binary);
-            if (!in) {
-                fprintf(stderr, "missing font pack file: %s\n", path.c_str());
-                return false;
-            }
-            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
-                                       std::istreambuf_iterator<char>());
-            it = g_locale_font_buffers.emplace(file, std::move(bytes)).first;
-        }
-        if (!seedsigner_register_font(role.c_str(), it->second.data(), it->second.size(), px)) {
-            return false;
-        }
-    }
+    ctx->scratch.assign((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    *bytes = ctx->scratch.data();
+    *len = ctx->scratch.size();
     return true;
 }
 
@@ -648,11 +630,12 @@ int main(int argc, char **argv) {
         // register this profile's script font at its per-role sizes. English
         // (empty locale) leaves the compiled-in fonts untouched.
         if (!locale.empty()) {
-            seedsigner_clear_registered_fonts();
-            g_locale_font_buffers.clear();
-            seedsigner_set_locale(locale.c_str());
-            if (!register_locale_fonts(locale, font_dir)) {
-                fprintf(stderr, "Failed registering fonts for locale '%s' at %dx%d\n",
+            // The shared loader clears the previous profile's fonts + glyph runs,
+            // then registers this profile's pack (and runs.json, for shaping
+            // locales) via the filesystem provider — one call, all hosts identical.
+            FsPackCtx fs_ctx{font_dir, {}};
+            if (!ss_load_locale(locale.c_str(), fs_pack_provider, &fs_ctx)) {
+                fprintf(stderr, "Failed loading locale '%s' at %dx%d\n",
                         locale.c_str(), g_width, g_height);
                 return 1;
             }

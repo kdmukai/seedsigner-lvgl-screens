@@ -1,10 +1,13 @@
 /*
- * stb_glyph_metrics — THROWAWAY spike helper (see stb_glyph_metrics.h).
+ * stb_glyph_metrics — glyph-id bounding boxes for the glyph-run render path.
+ * See stb_glyph_metrics.h.
  *
  * Hosts a SECOND, file-local stb_truetype instance (STBTT_STATIC keeps every
  * symbol internal to this translation unit, so it never clashes with the copy
  * compiled inside the LVGL submodule's lv_tiny_ttf.c). We mirror that file's stb
- * setup exactly — same headers, same macros — so the math is byte-identical.
+ * setup exactly — same headers, same macros — so the math is byte-identical and
+ * a box recovered here lines up with the bitmap tiny_ttf rasterized for the same
+ * glyph-id at the same px.
  */
 
 #include "stb_glyph_metrics.h"

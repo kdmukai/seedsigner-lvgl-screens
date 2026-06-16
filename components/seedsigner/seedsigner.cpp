@@ -4,6 +4,7 @@
 #include "navigation.h"
 #include "input_profile.h"
 #include "font_registry.h"
+#include "glyph_runs.h"
 
 #include "lvgl.h"
 
@@ -117,6 +118,12 @@ static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     if (seedsigner_locale_is_rtl()) {
         apply_rtl_text_to_labels(new_screen);
     }
+    // Complex-script hook: for shaping locales (Devanagari/Thai/Nastaliq), replace
+    // matched labels' codepoint text with their pre-shaped glyph runs. Runs after
+    // RTL: a matched label's codepoint text is suppressed (text_opa TRANSP), so the
+    // base_dir set above is moot for it and the visual-order run is never re-reordered.
+    apply_glyph_runs_to_labels(new_screen);
+
     lv_obj_t *old_screen = lv_scr_act();
     lv_scr_load(new_screen);
     if (old_screen && old_screen != new_screen) {

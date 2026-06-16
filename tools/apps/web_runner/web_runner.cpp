@@ -21,8 +21,7 @@
 #include "lvgl.h"
 #include "seedsigner.h"
 #include "input_profile.h"
-#include "font_registry.h"
-#include "locale_fonts.h"
+#include "locale_loader.h"
 
 #include "runner_core.h"
 #include "runner_sdl.h"
@@ -30,6 +29,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -53,11 +53,13 @@ static uint32_t      g_last_tick_ms = 0;
 static std::string g_cur_screen;
 static std::string g_cur_json;
 
-// Per-locale font bytes handed in from JavaScript (fetched .ttf files). tiny_ttf
-// reads glyph outlines lazily, so each buffer must outlive its registered font;
-// we keep owned copies here and free them only after the fonts are cleared (next
-// ss_begin_locale). Empty when the active locale is covered by the baked floor.
-static std::vector<std::vector<uint8_t>> g_locale_font_buffers;
+// Option B for the browser's async I/O: JavaScript fetches every pack blob a
+// locale needs (ss_pack_files), stages each here keyed by filename (ss_stage_blob),
+// then calls ss_load_staged once. The shared loader (ss_load_locale) reads blobs
+// back through staged_pack_provider — so the browser runs the EXACT same
+// orchestration as every other host. Cleared after each load (the loader keeps its
+// own copies of the buffers it registers).
+static std::map<std::string, std::vector<uint8_t>> g_staged_blobs;
 
 // ---------------------------------------------------------------------------
 // Result callbacks → JavaScript
@@ -179,53 +181,51 @@ EMSCRIPTEN_KEEPALIVE void ss_scroll(int dy) {
 EMSCRIPTEN_KEEPALIVE int ss_get_width()  { return runner_core::width(); }
 EMSCRIPTEN_KEEPALIVE int ss_get_height() { return runner_core::height(); }
 
-// ---- Locale fonts ---------------------------------------------------------
-// Fonts are NOT baked into the bundle: JavaScript fetches the per-locale .ttf
-// packs at runtime and feeds the bytes back through ss_register_font, so a font
-// or translation change is just a file swap (no WASM rebuild). The render layer
-// (locale_fonts.cpp) stays the single source of truth for which files/sizes a
-// locale needs — exposed here as a JSON plan for the active resolution.
+// ---- Locale packs (option B: JS pre-fetches, the shared loader orchestrates) --
+// Packs are NOT baked into the bundle: JavaScript fetches each per-locale file
+// (.ttf packs + runs.json for complex scripts) at runtime, so a font/translation
+// change is just a file swap (no WASM rebuild). Browser I/O is async but the shared
+// loader is synchronous, so JS stages every blob first, then drives the loader once
+// — which keeps the clear-old + register-new burst atomic (no frame redraws with a
+// freed font or the baked baseline mid-switch).
 
-// JSON array of the per-role fonts `locale` needs at the CURRENT resolution:
-//   [{"role":"body","px":17,"file":"vi_regular.ttf"}, ...]
-// Empty array ([]) when the locale is covered by the baked OpenSans floor (no
-// pack). The returned pointer is owned by a static buffer (valid until the next
-// call). JS fetches each unique file from assets/lang-packs/<locale>/<file> and
-// registers it via ss_register_font.
-EMSCRIPTEN_KEEPALIVE const char* ss_locale_font_plan(const char* locale) {
-    static std::string out;
-    nlohmann::json plan = nlohmann::json::array();
-    try {
-        nlohmann::json manifest = nlohmann::json::parse(supported_locales_json());
-        const std::string want = locale ? locale : "";
-        for (const auto& loc : manifest["locales"]) {
-            if (loc.value("locale", "") == want) { plan = loc["fonts"]; break; }
-        }
-    } catch (...) {
-        plan = nlohmann::json::array();
-    }
-    out = plan.dump();
-    return out.c_str();
+// The list of files JS must fetch + stage for `locale` ("["ur.ttf","runs.json"]",
+// or "[]" for a baked-floor locale). Comes from the render layer's manifest via
+// the shared loader, so the web host never duplicates that policy.
+EMSCRIPTEN_KEEPALIVE const char* ss_pack_files(const char* locale) {
+    return ss_locale_pack_files(locale);
 }
 
-// Begin switching to `locale`: drop the previous locale's registered fonts and
-// their byte buffers, then set the active locale so subsequent ss_register_font
-// calls validate against its table entry. An empty/unknown locale leaves only
-// the baked floor (English / Latin-baseline locales need nothing more).
-EMSCRIPTEN_KEEPALIVE void ss_begin_locale(const char* locale) {
-    seedsigner_clear_registered_fonts();  // restores baked fonts; must run first
-    g_locale_font_buffers.clear();         // then it's safe to free the buffers
-    seedsigner_set_locale(locale ? locale : "");
+// Stage one fetched pack blob under its filename ("ur.ttf", "runs.json", ...). The
+// bytes are COPIED into a buffer this module owns, so the caller may free its
+// WASM-heap copy immediately. Call once per file from ss_pack_files, THEN
+// ss_load_staged.
+EMSCRIPTEN_KEEPALIVE void ss_stage_blob(const char* file, const uint8_t* data, int len) {
+    if (!file || !data || len <= 0) return;
+    g_staged_blobs[file] = std::vector<uint8_t>(data, data + len);
 }
 
-// Register one fetched .ttf for `role` at `px`. The bytes are COPIED into a
-// buffer this module owns (kept alive until the next ss_begin_locale), so the
-// caller may free its WASM-heap copy immediately. Returns 1 on success, else 0.
-EMSCRIPTEN_KEEPALIVE int ss_register_font(const char* role, const uint8_t* data, int len, int px) {
-    if (!role || !data || len <= 0) return 0;
-    g_locale_font_buffers.emplace_back(data, data + len);
-    const std::vector<uint8_t>& buf = g_locale_font_buffers.back();
-    return seedsigner_register_font(role, buf.data(), buf.size(), px) ? 1 : 0;
+// Provider that feeds the shared loader from the staged blobs, keyed by filename
+// (the loader requests exactly the files ss_pack_files listed).
+static bool staged_pack_provider(const char* /*locale*/, const char* file,
+                                 const uint8_t** bytes, size_t* len, void* user) {
+    auto* staged = static_cast<std::map<std::string, std::vector<uint8_t>>*>(user);
+    auto it = staged->find(file ? file : "");
+    if (it == staged->end()) return false;
+    *bytes = it->second.data();
+    *len   = it->second.size();
+    return true;
+}
+
+// Switch to `locale` using the staged blobs: runs the shared loader (clears the
+// previous locale's fonts + glyph runs, then registers this locale's fonts and
+// installs its glyph-run table), then drops the staging area (the loader kept its
+// own copies of what it registered). Returns 1 on success, else 0. An empty /
+// baked-floor locale needs no staged blobs.
+EMSCRIPTEN_KEEPALIVE int ss_load_staged(const char* locale) {
+    bool ok = ss_load_locale(locale ? locale : "", staged_pack_provider, &g_staged_blobs);
+    g_staged_blobs.clear();
+    return ok ? 1 : 0;
 }
 
 // Re-render the current screen with context `json` (the locale's translated

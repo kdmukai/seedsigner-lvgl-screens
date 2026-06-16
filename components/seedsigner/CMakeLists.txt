@@ -22,6 +22,18 @@ list(APPEND srcs
     "fonts/inconsolata_semibold_24_4bpp_150x.c"
     "fonts/inconsolata_semibold_24_4bpp_200x.c"
     "gui_constants.cpp"
+    "locale_fonts.cpp"
+    "font_registry.cpp"
+    # Host-agnostic locale-pack loader (manifest walk -> register fonts + glyph
+    # runs, via a per-host byte provider). Shared by every host.
+    "locale_loader.cpp"
+    # Complex-script glyph-run render layer (Devanagari/Thai/Nastaliq): draws
+    # offline-shaped runs by glyph-id. stb_glyph_metrics.c re-inits a metrics-only
+    # stb_truetype over the resident subset to recover glyph boxes; it includes
+    # LVGL's bundled stb headers (src/libs/tiny_ttf/...), so the lvgl component's
+    # root must be on the include path on this target (ESP32 footprint pass).
+    "glyph_runs.cpp"
+    "stb_glyph_metrics.c"
     "seedsigner.cpp"
     "components.cpp"
     "input_profile.cpp"

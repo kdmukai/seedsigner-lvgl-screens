@@ -88,7 +88,10 @@ def main():
         out = os.path.join(packs_dir, code)
         os.makedirs(out, exist_ok=True)
         for fn in sorted(os.listdir(src)):
-            if fn.endswith(".ttf"):
+            # The browser fetches exactly the files ss_pack_files lists: the role
+            # .ttf(s) plus runs.json for complex-script (shaping) packs. (manifest.json
+            # stays repo-side; the WASM build reads the manifest from the render layer.)
+            if fn.endswith(".ttf") or fn == "runs.json":
                 shutil.copyfile(os.path.join(src, fn), os.path.join(out, fn))
 
     # Locale index the picker is built from.

@@ -338,11 +338,12 @@
     app.setInputMode  = Module.cwrap('ss_set_input_mode', null, ['number']);
     app.sendKey       = Module.cwrap('ss_send_key', null, ['number']);
     app.scroll        = Module.cwrap('ss_scroll', null, ['number']);
-    // Locale fonts: the render layer's per-resolution plan, plus the clear/set and
-    // register entry points. JS fetches each .ttf and hands the bytes to register.
-    app.beginLocale    = Module.cwrap('ss_begin_locale', null, ['string']);
-    app.localeFontPlan = Module.cwrap('ss_locale_font_plan', 'string', ['string']);
-    app.registerFont   = Module.cwrap('ss_register_font', 'number', ['string', 'number', 'number', 'number']);
+    // Locale packs (option B): the shared loader tells us which files to fetch
+    // (ss_pack_files); JS stages each fetched blob (ss_stage_blob) then calls
+    // ss_load_staged once to drive the same loader every host uses.
+    app.packFiles  = Module.cwrap('ss_pack_files', 'string', ['string']);
+    app.stageBlob  = Module.cwrap('ss_stage_blob', null, ['string', 'number', 'number']);
+    app.loadStaged = Module.cwrap('ss_load_staged', 'number', ['string']);
     app.ready = true;
     relayout();
     initUI();
@@ -527,42 +528,41 @@
     }
 
     // ---- Locales ----
-    // Register the active locale's font packs for the CURRENT resolution: ask the
-    // render layer which {role, px, file} it needs, fetch each .ttf once, and hand
-    // the bytes to WASM (which copies them). Latin-baseline locales get an empty
-    // plan and just fall back to the compiled-in OpenSans floor.
+    // Load the active locale's pack via the shared loader (option B): ask which
+    // files it needs (ss_pack_files — .ttf packs + runs.json for complex scripts),
+    // fetch each ONCE, stage them all, then call ss_load_staged. Latin-baseline
+    // locales get an empty list and just fall back to the compiled-in OpenSans floor.
     async function applyLocaleFonts(locale) {
-      // ss_locale_font_plan is a pure query (doesn't touch live fonts), so read the
-      // plan and fetch EVERY needed .ttf up front, caching the bytes across calls.
-      // Only once all bytes are in hand do we destroy the old fonts and register
-      // the new ones — with no await in between. Two payoffs:
-      //  - no use-after-free: freeing the outgoing font then awaiting a fetch would
-      //    let an animation frame redraw the old screen with a dangling pointer
-      //    (this hung the page when switching between two scrolling-title locales);
-      //  - no box flash on resize: a re-register for an already-loaded locale hits
-      //    the cache (no await), so destroy→register→reload all land in one
-      //    microtask flush before the next frame, instead of drawing one frame in
-      //    the baked baseline (which shows pack glyphs — Greek/Cyrillic/CJK — as
-      //    .notdef boxes).
-      var plan;
-      try { plan = JSON.parse(app.localeFontPlan(locale)); } catch (e) { plan = []; }
-      for (var i = 0; i < plan.length; i++) {
-        var key = locale + '/' + plan[i].file;
+      // ss_pack_files is a pure query (doesn't touch live fonts), so fetch EVERY
+      // needed blob up front, caching across calls. Only once all bytes are in hand
+      // do we stage + load — with no await in between. Two payoffs:
+      //  - no use-after-free: the loader's clear-old + register-new happens inside
+      //    ss_load_staged with no JS await around it, so no animation frame redraws
+      //    the old screen with a freed font (this hung the page when switching
+      //    between two scrolling-title locales);
+      //  - no box flash on resize: a reload for an already-fetched locale hits the
+      //    cache (no await), so stage→load→reload land in one microtask flush before
+      //    the next frame, instead of drawing one frame in the baked baseline (which
+      //    shows pack glyphs — Greek/Cyrillic/CJK/Devanagari — as .notdef boxes).
+      var files;
+      try { files = JSON.parse(app.packFiles(locale)); } catch (e) { files = []; }
+      for (var i = 0; i < files.length; i++) {
+        var key = locale + '/' + files[i];
         if (!fontCache[key]) {
-          var resp = await fetch('assets/lang-packs/' + locale + '/' + plan[i].file + ASSET_BUST);
-          if (!resp.ok) throw new Error('font ' + plan[i].file + ' (' + resp.status + ')');
+          var resp = await fetch('assets/lang-packs/' + locale + '/' + files[i] + ASSET_BUST);
+          if (!resp.ok) throw new Error('pack ' + files[i] + ' (' + resp.status + ')');
           fontCache[key] = new Uint8Array(await resp.arrayBuffer());
         }
       }
       // --- no awaits past this point ---
-      app.beginLocale(locale);
-      for (var j = 0; j < plan.length; j++) {
-        var f = plan[j], bytes = fontCache[locale + '/' + f.file];
+      for (var j = 0; j < files.length; j++) {
+        var bytes = fontCache[locale + '/' + files[j]];
         var ptr = Module._malloc(bytes.length);
         Module.HEAPU8.set(bytes, ptr);   // re-access HEAPU8 post-malloc (growth-safe)
-        app.registerFont(f.role, ptr, bytes.length, f.px);
+        app.stageBlob(files[j], ptr, bytes.length);
         Module._free(ptr);               // C side copied the bytes
       }
+      app.loadStaged(locale);            // drives the shared loader; clears staging
     }
 
     // Switch UI language: fetch + expand the locale's scenario catalog, apply its

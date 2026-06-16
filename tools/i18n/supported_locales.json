@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for the i18n-supported locales (Stage A/B). Consumed by tools/apps/web_runner/stage_assets.py (web playground language list) and scripts/ci/ci.sh via tools/apps/screenshot_generator/gen_gallery.py (multi-language screenshot gallery). Order = English first, then the rest alphabetical by English name (production lists native-first for users; these dev tools favor English for developers). Display label is 'english (native)' — English readable name first, native name/script second (collapses to just 'english' when they match). 'pack_locales' ship a fetched/registered font pack (Greek/Cyrillic/Vietnamese script packs + CJK corpus packs + the fa Arabic/Persian pack); the rest are covered by the baked OpenSans Western baseline. fa is the first Phase-2 (shaping + RTL) pack: its NotoSansAR subset holds the presentation forms the LVGL shaper emits for the corpus. hi/th remain absent (no packs yet).",
+  "_comment": "Single source of truth for the i18n-supported locales (Stage A/B). Consumed by tools/apps/web_runner/stage_assets.py (web playground language list) and scripts/ci/ci.sh via tools/apps/screenshot_generator/gen_gallery.py (multi-language screenshot gallery). Order = English first, then the rest alphabetical by English name (production lists native-first for users; these dev tools favor English for developers). Display label is 'english (native)' — English readable name first, native name/script second (collapses to just 'english' when they match). 'pack_locales' ship a fetched/registered font pack (Greek/Cyrillic/Vietnamese script packs + CJK corpus packs + the fa Arabic/Persian pack); the rest are covered by the baked OpenSans Western baseline. fa is the first Phase-2 (RTL) pack via LVGL presentation forms: its NotoSansAR subset holds the forms the LVGL shaper emits for the corpus. hi/th/ur are complex-script packs rendered from OFFLINE-shaped glyph runs (lang-packs/<loc>/runs.json, see components/seedsigner/glyph_runs.cpp): hi Devanagari, th Thai, ur Nastaliq (RTL). NOTE: ur currently ships only a minimal AI-generated stub catalog (main-menu + status screens) — to be removed until a real full Urdu translation lands.",
   "locales": [
     { "code": "en", "english": "English", "native": "English" },
     { "code": "pt_BR", "english": "Brazilian Portuguese", "native": "Português do Brasil" },
@@ -9,6 +9,7 @@
     { "code": "fr", "english": "French", "native": "Français" },
     { "code": "de", "english": "German", "native": "Deutsch" },
     { "code": "el", "english": "Greek", "native": "Ελληνικά" },
+    { "code": "hi", "english": "Hindi", "native": "हिन्दी" },
     { "code": "id", "english": "Indonesian", "native": "Bahasa Indonesia" },
     { "code": "it", "english": "Italian", "native": "Italiano" },
     { "code": "ja", "english": "Japanese", "native": "日本語" },
@@ -19,8 +20,10 @@
     { "code": "ru", "english": "Russian", "native": "Русский" },
     { "code": "zh_Hans_CN", "english": "Simplified Chinese", "native": "简体中文" },
     { "code": "es", "english": "Spanish", "native": "Español" },
+    { "code": "th", "english": "Thai", "native": "ไทย" },
     { "code": "tr", "english": "Turkish", "native": "Türkçe" },
+    { "code": "ur", "english": "Urdu", "native": "اردو" },
     { "code": "vi", "english": "Vietnamese", "native": "Tiếng Việt" }
   ],
-  "pack_locales": ["el", "ru", "vi", "ja", "ko", "zh_Hans_CN", "fa"]
+  "pack_locales": ["el", "ru", "vi", "ja", "ko", "zh_Hans_CN", "fa", "hi", "th", "ur"]
 }

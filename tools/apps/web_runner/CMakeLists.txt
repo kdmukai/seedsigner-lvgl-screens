@@ -87,10 +87,15 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
-  # Locale font seam: ss_set_locale / ss_register_font drive these to chain the
-  # fetched script/CJK packs over the baked baseline.
+  # Locale font seam + the shared locale-pack loader (ss_load_locale): the web host
+  # pre-fetches each pack blob and stages it, then the loader chains the fetched
+  # script/CJK packs over the baked baseline and installs complex-script glyph runs.
   "${SEEDSIGNER_DIR}/font_registry.cpp"
   "${SEEDSIGNER_DIR}/locale_fonts.cpp"
+  "${SEEDSIGNER_DIR}/locale_loader.cpp"
+  # Complex-script (Devanagari/Thai/Nastaliq) glyph-run render layer.
+  "${SEEDSIGNER_DIR}/glyph_runs.cpp"
+  "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
   "${SEEDSIGNER_DIR}/images/seedsigner_logo_img.c")
 
 set(RUNNER_COMMON_SOURCES
@@ -146,14 +151,15 @@ target_compile_options(web_runner PRIVATE
 
 # Multi-file output (index.html + index.js + index.wasm), served over HTTP — no
 # -sSINGLE_FILE. ALLOW_MEMORY_GROWTH lets tiny_ttf's rasterizer grow the heap.
-# JS marshals fetched font bytes through _malloc/_free into ss_register_font.
+# JS marshals fetched pack bytes through _malloc/_free into ss_stage_blob, then
+# calls ss_load_staged once to drive the shared loader.
 target_link_options(web_runner PRIVATE
   -sUSE_SDL=2
   -sALLOW_MEMORY_GROWTH=1
   -fexceptions
   -O2
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','HEAPU8']"
-  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_locale_font_plan','_ss_begin_locale','_ss_register_font','_ss_reload','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_pack_files','_ss_stage_blob','_ss_load_staged','_ss_reload','_malloc','_free']"
   "--shell-file" "${CMAKE_CURRENT_LIST_DIR}/shell.html")
 
 # Force a relink when the shell changes.

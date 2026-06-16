@@ -33,6 +33,24 @@ void seedsigner_set_locale(const char* locale);
 // any LTR locale, or no locale set.
 bool seedsigner_locale_is_rtl();
 
+// True if the active locale renders complex scripts from OFFLINE-shaped glyph
+// runs (Devanagari/Thai/Nastaliq) rather than by codepoint. Gates the screen
+// layer's apply_glyph_runs_to_labels() pass. False for "en", any non-shaping
+// locale, or no locale set. (Mirrors LocaleFontEntry::shaping.)
+bool seedsigner_locale_uses_glyph_runs();
+
+// Glyph-run render support: for a font pointer previously installed by
+// seedsigner_register_font() — i.e. the resolved Primary a shaping locale's
+// label draws with — report the pixel size it was created at and the subset
+// .ttf bytes it lazily reads. The glyph-run renderer needs both: the px to scale
+// the resolution-independent run (font units) to the device size, and the bytes
+// to recover per-glyph bounding boxes by glyph-id (a metrics-only stb re-init,
+// the seam tiny_ttf's codepoint path otherwise owns). Returns 0 / nullptr if
+// `font` is not a registered script font.
+struct _lv_font_t;
+int seedsigner_registered_font_px(const struct _lv_font_t* font);
+const uint8_t* seedsigner_registered_font_bytes(const struct _lv_font_t* font, size_t* len_out);
+
 // Register one already-verified subset font for a text role at the active
 // profile. `logical_name` is the role id ("body", "button", "large_button",
 // "top_nav_title", "main_menu_title"). `buf`/`len` are the subset .ttf bytes.
