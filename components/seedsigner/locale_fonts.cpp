@@ -97,7 +97,7 @@ const std::vector<LocaleFontEntry>& locale_font_table() {
         {"fa", "NotoSansAR", ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/true},
         // Complex-script (Phase 2): rendered from OFFLINE HarfBuzz glyph runs, not
         // by codepoint. corpus-subset Noto as the Primary at the CJK legibility
-        // bump; the pack ships runs.json next to <locale>.ttf. The subset keeps its
+        // bump; the pack ships runs.bin next to <locale>.ttf. The subset keeps its
         // GSUB/GPOS/GDEF layout closure (the offline shaper needs it), unlike the
         // CJK packs which drop layout. shaping=true + the ISO-15924 script tag tell
         // the offline builder how to shape; the screen layer draws the runs.
@@ -112,7 +112,10 @@ const std::vector<LocaleFontEntry>& locale_font_table() {
         // (e.g. ru's Cyrillic block also serves uk/bg) with no corpus coupling.
         {"el", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0370-03FF"},              // Greek
         {"ru", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0400-04FF"},              // Cyrillic
-        {"vi", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0300-036F,U+1E00-1EFF"},  // Vietnamese / Latin Ext Additional
+        // Vietnamese: the horn vowels Ơơ/Ưư live in Latin Extended-B (above the baked
+        // Western floor's Latin-1+Ext-A); without them common words ("được") tofu. Plus
+        // combining marks + the precomposed tone-marked vowels in Latin Ext Additional.
+        {"vi", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+01A0-01A1,U+01AF-01B0,U+0300-036F,U+1E00-1EFF"},  // Vietnamese
     };
     return table;
 }
