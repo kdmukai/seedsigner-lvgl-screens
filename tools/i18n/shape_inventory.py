@@ -142,18 +142,27 @@ def build_unit(msgid, msgstr, shape_line, line_breaks=None):
     return {"msgid": msgid, "kind": "unsupported", "text": msgstr, "reason": reason}
 
 
-def build_units(catalog, shape_line, line_breaks=None):
-    """Build units for a whole catalog ({msgid: msgstr}). Returns (units, report)
-    where report = {"plain": n, "segmented": n, "unsupported": [(msgid, reason)]}.
+def build_units(entries, shape_line, line_breaks=None):
+    """Build units for a set of (msgid, msgstr) translation pairs. `entries` is any
+    iterable of (msgid, msgstr); a PLURAL entry contributes one pair PER form, so
+    every translated plural form (Hindi इनपुट AND इनपुट्स; all six Arabic forms)
+    gets shaped, not just msgstr[0]. Returns (units, report) where
+    report = {"plain": n, "segmented": n, "ascii": n, "unsupported": [(msgid, reason)]}.
+
+    Pairs are sorted ((msgid, msgstr)) for a deterministic, reproducible run order,
+    and DEDUPED BY msgstr: the device keys runs by translated text (by_text), so two
+    forms — or two msgids — that share a translation collapse to one run (e.g. a
+    locale whose plural form equals its singular, or an nplurals=1 script like Thai).
     Units with runs (plain/segmented) come first; callers should fail the build if
     `unsupported` is non-empty unless they explicitly accept the listed tail.
     `line_breaks` (optional) is threaded to build_unit for plain-line wrap marks."""
     units = []
     report = {"plain": 0, "segmented": 0, "ascii": 0, "unsupported": []}
-    for msgid in sorted(catalog):
-        msgstr = catalog[msgid]
-        if not msgstr:
+    seen_text = set()
+    for msgid, msgstr in sorted(entries):
+        if not msgstr or msgstr in seen_text:
             continue
+        seen_text.add(msgstr)
         unit = build_unit(msgid, msgstr, shape_line, line_breaks)
         units.append(unit)
         if unit["kind"] == "unsupported":

@@ -80,6 +80,42 @@ letter" as unsafe wrongly rejected that case; the real risks (a Devanagari ordin
 fused to its number, a Thai vowel abutting a hole) are correctly flagged
 `unsupported` with a reason and reported loudly — never silently dropped.
 
+## 5. Ingest EVERY plural form, not just `msgstr[0]` — keyed by text, deduped
+
+A gettext plural entry carries one msgid but several translations — `msgstr[0]`,
+`msgstr[1]`, … — and the runtime picks one via `ngettext(n)`. The earlier `.po`
+reader mapped only `msgstr[0]` onto the singular msgid, so any *other* form was
+never subset in nor shaped → a guaranteed tofu the moment the app showed it. The
+concrete miss: Hindi `input`/`inputs` → `इनपुट` (form 0, shaped) but `इनपुट्स`
+(form 1) **had no run**; the device showed `2 इनपुट्स` as boxes. (Thai is
+`nplurals=1`, so it was accidentally fine; **Arabic is `nplurals=6`** — zero/one/
+two/few/many/other — so this is not a corner case for the languages still to come.)
+
+The fix is upstream in the `.po` reader, so every consumer benefits: one grammar
+walk (`po_catalog.parse_records`) captures **all** forms indexed by the declared
+`msgstr[N]` (no hardcoded 0/1 — arbitrary `nplurals`), and `iter_translations()`
+yields one `(msgid, msgstr)` pair **per form**. The corpus builders and the
+complex-script pipeline both source it, so every form's glyphs land in the subset
+and every form gets a run. `parse_catalog` (msgid→`msgstr[0]`) stays the *singular
+view* for plain msgid→display lookups (`gen_localized_scenarios`).
+
+Two properties make this clean rather than a special case:
+
+- **Runs are keyed by translated TEXT, not msgid** (`glyph_runs.cpp::by_text`).
+  Plural forms share a msgid but differ in text, so they become distinct runs with
+  no key collision; the singular msgid only travels along in `runs.json` for debug.
+- **`build_units` dedups by `msgstr`.** Forms that coincide (Hindi
+  `recipient`/`recipients` → both `प्राप्तकर्ता`; every Thai "plural" form;
+  Arabic forms that share a string) collapse to one run — matching what the device
+  would do anyway (`by_text` overwrite). This also removed 21 pre-existing
+  duplicate-text runs in hi (337 → 317) that the old msgid-keyed loop emitted
+  redundantly. Order is `sorted((msgid, msgstr))` so the build stays byte-identical.
+
+Validation: `validate_runs.py --msgids-all` no longer collapses by msgid (it would
+have hidden the second form), so the oracle IoU gate now covers `इनपुट` **and**
+`इनपुट्स` (both PASS). This is the per-language readiness checklist's "all plural
+forms shaped" item (the i18n release model's *Deliverable C*).
+
 ## Run-table footprint: `runs.bin` is what the device loads (`runs.json` is debug)
 
 `runs.json` is verbose JSON (~0.5 MB for hi/th's ~330 runs; full per-glyph

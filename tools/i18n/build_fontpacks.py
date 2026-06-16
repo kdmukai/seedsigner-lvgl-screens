@@ -36,7 +36,7 @@ import sys
 import hb_shaper
 import runs_bin
 import shape_inventory
-from po_catalog import corpus_chars, parse_catalog, parse_entries
+from po_catalog import corpus_chars, iter_translations
 
 # This file lives at tools/i18n/; repo root is two levels up.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -60,11 +60,11 @@ def needs_arabic_shaping(symbols):
 
 
 def corpus_text(po_path):
-    """All translated strings (msgstr) joined by newlines. Unlike corpus_chars
-    (a deduped char set) this preserves each string's internal adjacency, which
-    Arabic shaping depends on. Newlines break cross-string joining, matching how
-    the renderer treats them."""
-    return "\n".join(mstr for _mid, mstr in parse_entries(po_path) if mstr)
+    """All translated strings (every plural form) joined by newlines. Unlike
+    corpus_chars (a deduped char set) this preserves each string's internal
+    adjacency, which Arabic shaping depends on. Newlines break cross-string
+    joining, matching how the renderer treats them."""
+    return "\n".join(mstr for _mid, mstr in iter_translations(po_path) if mstr)
 
 
 def ensure_shaper(shaper_bin):
@@ -239,8 +239,13 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     if not os.path.exists(po):
         print(f"[{name}] SKIP: no catalog at {po}", file=sys.stderr)
         return
-    catalog = parse_catalog(po)
-    if not catalog:
+    # Every translated form the locale can DISPLAY — the singular plus EACH plural
+    # form (msgstr[0..]; Hindi इनपुट + इनपुट्स, all six Arabic forms). The runtime
+    # picks a form via ngettext, so each must be shaped (its own text-keyed run) and
+    # have its glyphs in the subset, or it tofus. parse_catalog (msgid->msgstr[0])
+    # would silently drop msgstr[1..] — the Deliverable-C gap this closes.
+    entries = list(iter_translations(po))
+    if not entries:
         print(f"[{name}] SKIP: empty catalog", file=sys.stderr)
         return
 
@@ -256,7 +261,8 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     # Subset to the corpus KEEPING layout closure, plus HarfBuzz's pre-GSUB
     # decomposition targets (see hb_shaper.decomposition_closure) so nothing
     # renders .notdef. Shaping runs against THIS subset so gids match on-device.
-    texts = [s for s in catalog.values() if s]
+    # The corpus is ALL forms (build_units dedups by text when baking runs).
+    texts = [msgstr for _mid, msgstr in entries]
     needed = hb_shaper.decomposition_closure(src, texts, script, language, direction)
 
     loc_out = os.path.join(out_dir, name)
@@ -274,7 +280,7 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     shape_line = lambda t: hb_shaper.shape(subset_bytes, t, script, language, direction)[0]
     # Per-line wrap marks: ICU dictionary word boundaries (Thai/…) -> glyph indices.
     break_line = lambda t, glyphs: hb_shaper.line_break_indices(t, glyphs, language, direction)
-    units, report = shape_inventory.build_units(catalog, shape_line, break_line)
+    units, report = shape_inventory.build_units(entries, shape_line, break_line)
 
     _assert_runs_clean(units, glyph_count, name)
 
@@ -284,10 +290,11 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
         for mid, reason in report["unsupported"]:
             print(f"    - {mid!r}: {reason}", file=sys.stderr)
 
-    # runs.json: the pre-shaped run table, keyed by English msgid (stable across
-    # translation edits), bound to the exact subset via font_sha256. Only
-    # plain/segmented carry runs; unsupported are listed (with reason) so the gap
-    # stays visible but the device can ignore them.
+    # runs.json: the pre-shaped run table. Each run carries its translated `text`
+    # (the device keys by text; a representative msgid travels along for debug),
+    # bound to the exact subset via font_sha256. Plural forms each get their own
+    # text-keyed run; only plain/segmented carry runs; unsupported are listed (with
+    # reason) so the gap stays visible but the device can ignore them.
     font_sha = sha256_file(out_ttf)
     with_runs = [u for u in units if u["kind"] in ("plain", "segmented")]
     runs_doc = {
@@ -303,8 +310,8 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
         "unsupported": [{"msgid": m, "reason": r} for m, r in report["unsupported"]],
     }
     runs_path = os.path.join(loc_out, "runs.json")
-    # Deterministic serialization (sorted msgid order from build_units; no
-    # timestamps) so two builds of the same inputs are byte-identical.
+    # Deterministic serialization (build_units sorts (msgid, msgstr) and dedups by
+    # text; no timestamps) so two builds of the same inputs are byte-identical.
     with open(runs_path, "w", encoding="utf-8") as f:
         json.dump(runs_doc, f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
@@ -345,10 +352,14 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     }
     with open(os.path.join(loc_out, "manifest.json"), "w") as f:
         json.dump(manifest_out, f, indent=2)
+    # Plural-form coverage: how many distinct translated forms beyond one-per-msgid
+    # (the Deliverable-C ingest). 0 for nplurals=1 locales (Thai) or stubs (ur).
+    extra_forms = len(entries) - len({mid for mid, _ in entries})
     print(f"[{name}] {name}.ttf ({glyph_count} glyphs, {os.path.getsize(out_ttf)} bytes) + "
           f"runs.bin ({runs_bin_bytes} bytes, json {os.path.getsize(runs_path)}) "
           f"(plain={report['plain']} segmented={report['segmented']} "
-          f"ascii={report['ascii']} unsupported={len(report['unsupported'])})")
+          f"ascii={report['ascii']} unsupported={len(report['unsupported'])} "
+          f"plural_forms=+{extra_forms})")
 
 
 def main():

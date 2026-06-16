@@ -94,15 +94,24 @@ def render_oracle(ttf_path, text, direction, language, out_png):
 
 def select_runs(runs_doc, want_all):
     """Pick single-line plain runs to validate (the spike harness renders one
-    glyph run per line). Multi-line/segmented runs are out of scope for this
-    pixel oracle and skipped with a note."""
-    by_id = {r["msgid"]: r for r in runs_doc["runs"] if r["kind"] == "plain"}
-    ids = sorted(by_id) if want_all else [m for m in TEST_MSGIDS if m in by_id]
+    glyph run per line). Multi-line/segmented runs are out of scope for this pixel
+    oracle and skipped with a note.
+
+    want_all: EVERY plain run — keyed by text, NOT collapsed by msgid, so each
+    plural form (e.g. hi इनपुट and इनपुट्स both carry msgid "input") is validated.
+    Otherwise: the curated TEST_MSGIDS set (all singular), first form per msgid."""
+    plain = [r for r in runs_doc["runs"] if r["kind"] == "plain"]
+    if want_all:
+        chosen = plain
+    else:
+        by_id = {}
+        for r in plain:
+            by_id.setdefault(r["msgid"], r)
+        chosen = [by_id[m] for m in TEST_MSGIDS if m in by_id]
     out, skipped = [], []
-    for m in ids:
-        r = by_id[m]
+    for r in chosen:
         if len(r["lines"]) != 1:
-            skipped.append(m)
+            skipped.append(r["msgid"])
             continue
         out.append(r)
     return out, skipped
@@ -144,8 +153,8 @@ def validate_locale(locale, font_dir, want_all):
                    stdout=subprocess.DEVNULL)
 
     print(f"\n=== {locale} ({len(lines)} strings){' [skipped multi-line: ' + ','.join(skipped) + ']' if skipped else ''} ===")
-    print(f"{'msgid':<48} {'IoU':>6}  result")
-    print("-" * 66)
+    print(f"{'msgid':<34} {'text':<20} {'IoU':>6}  result")
+    print("-" * 70)
     all_pass = True
     for r, ln in zip(selected, lines):
         ref = crop_to_ink(load_gray(os.path.join(out_dir, f"spike_ref_{ln['name']}.png")))
@@ -153,8 +162,12 @@ def validate_locale(locale, font_dir, want_all):
         iou, _mad, _shift = score(ref, dev)
         ok = iou >= IOU_PASS
         all_pass &= ok
-        label = (r["msgid"][:45] + "...") if len(r["msgid"]) > 45 else r["msgid"]
-        print(f"{label:<48} {iou:>6.3f}  {'PASS' if ok else 'FAIL'}")
+        # Show msgid AND the rendered text: a plural entry yields several runs that
+        # all carry the same (singular) msgid, so the text is what disambiguates
+        # them (e.g. hi "input" -> इनपुट and इनपुट्स).
+        label = (r["msgid"][:31] + "...") if len(r["msgid"]) > 34 else r["msgid"]
+        text = (r["text"][:17] + "...") if len(r["text"]) > 20 else r["text"]
+        print(f"{label:<34} {text:<20} {iou:>6.3f}  {'PASS' if ok else 'FAIL'}")
     return all_pass
 
 
