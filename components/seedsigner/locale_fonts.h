@@ -68,6 +68,18 @@ struct LocaleFontEntry {
     // locales; bidi reordering itself is handled by LVGL (LV_USE_BIDI). Surfaced
     // in the manifest as "rtl" so every consumer/platform learns it the same way.
     bool rtl = false;
+    // Complex script rendered from OFFLINE-shaped glyph runs (Devanagari, Thai,
+    // Nastaliq/Urdu, …) rather than by codepoint. The pack ships a per-locale
+    // run table (runs.json) alongside the subset .ttf; the screen layer draws the
+    // pre-shaped glyph-ids (see glyph_runs.*). The subset still registers as the
+    // role font (so the device can rasterize those gids), but tiny_ttf's own
+    // codepoint path is bypassed for shaped text. Distinct from `fa`, which still
+    // uses LVGL's presentation-form path (LV_USE_ARABIC_PERSIAN_CHARS) — false.
+    bool shaping = false;
+    // ISO-15924 script tag for the offline shaper (e.g. "Deva", "Thai", "Arab").
+    // Only meaningful when `shaping` is true; surfaced in the manifest so the
+    // offline builder shapes with the right script without duplicating policy.
+    std::string script;
 };
 
 // Canonical table accessors.

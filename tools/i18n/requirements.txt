@@ -10,9 +10,11 @@
 #
 # fontTools provides pyftsubset (subset-then-shape) and TTFont introspection.
 # Pillow (with the libraqm layout engine) renders the reference oracle PNGs the
-# spike's on-device glyph-run render is diffed against; it is typically already
-# present from the screenshot tooling, so it is listed but version-loose.
+# glyph-run render is diffed against; NumPy backs the ink-IoU comparator in
+# validate_runs.py. Both are typically already present from the screenshot
+# tooling, so they are listed but version-loose.
 
 uharfbuzz==0.55.0
 fonttools==4.57.0
 Pillow>=10
+numpy>=1.24
