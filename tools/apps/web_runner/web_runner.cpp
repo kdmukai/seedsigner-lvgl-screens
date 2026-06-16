@@ -183,20 +183,20 @@ EMSCRIPTEN_KEEPALIVE int ss_get_height() { return runner_core::height(); }
 
 // ---- Locale packs (option B: JS pre-fetches, the shared loader orchestrates) --
 // Packs are NOT baked into the bundle: JavaScript fetches each per-locale file
-// (.ttf packs + runs.json for complex scripts) at runtime, so a font/translation
+// (.ttf packs + runs.bin for complex scripts) at runtime, so a font/translation
 // change is just a file swap (no WASM rebuild). Browser I/O is async but the shared
 // loader is synchronous, so JS stages every blob first, then drives the loader once
 // — which keeps the clear-old + register-new burst atomic (no frame redraws with a
 // freed font or the baked baseline mid-switch).
 
-// The list of files JS must fetch + stage for `locale` ("["ur.ttf","runs.json"]",
+// The list of files JS must fetch + stage for `locale` ("["ur.ttf","runs.bin"]",
 // or "[]" for a baked-floor locale). Comes from the render layer's manifest via
 // the shared loader, so the web host never duplicates that policy.
 EMSCRIPTEN_KEEPALIVE const char* ss_pack_files(const char* locale) {
     return ss_locale_pack_files(locale);
 }
 
-// Stage one fetched pack blob under its filename ("ur.ttf", "runs.json", ...). The
+// Stage one fetched pack blob under its filename ("ur.ttf", "runs.bin", ...). The
 // bytes are COPIED into a buffer this module owns, so the caller may free its
 // WASM-heap copy immediately. Call once per file from ss_pack_files, THEN
 // ss_load_staged.

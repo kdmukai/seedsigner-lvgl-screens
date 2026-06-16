@@ -631,7 +631,7 @@ int main(int argc, char **argv) {
         // (empty locale) leaves the compiled-in fonts untouched.
         if (!locale.empty()) {
             // The shared loader clears the previous profile's fonts + glyph runs,
-            // then registers this profile's pack (and runs.json, for shaping
+            // then registers this profile's pack (and runs.bin, for shaping
             // locales) via the filesystem provider — one call, all hosts identical.
             FsPackCtx fs_ctx{font_dir, {}};
             if (!ss_load_locale(locale.c_str(), fs_pack_provider, &fs_ctx)) {

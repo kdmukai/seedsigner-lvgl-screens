@@ -9,8 +9,9 @@
 // one-to-one: they reorder, form conjuncts (glyphs with no codepoint), and
 // position marks with GPOS offsets. We solve this OFFLINE — HarfBuzz shapes each
 // translated string at build time into a pre-shaped glyph RUN
-// (glyph_id, x/y offset, x/y advance, in font design units, visual order) shipped
-// as `lang-packs/<loc>/runs.json` next to the subset `<loc>.ttf`. See
+// (glyph_id, x offset/advance, in font design units, visual order) shipped as the
+// compact binary `lang-packs/<loc>/runs.bin` (SSRB format, see tools/i18n/runs_bin.py)
+// next to the subset `<loc>.ttf`. See
 // docs/knowledge/complex-script-run-pipeline.md and
 // docs/knowledge/offline-harfbuzz-shaping-spike-findings.md.
 //
@@ -31,12 +32,13 @@
 
 struct _lv_obj_t;
 
-// Install (or replace) the active locale's pre-shaped run table from runs.json
-// bytes. Pass nullptr/0 to clear. Returns true on parse success. Call alongside
-// seedsigner_set_locale(); the table is keyed by translated msgstr because that
-// is what a finished label holds (not the English msgid the offline table is
-// built from — the host supplies the already-resolved JSON).
-bool seedsigner_set_glyph_runs(const char* runs_json, size_t len);
+// Install (or replace) the active locale's pre-shaped run table from runs.bin
+// (SSRB) bytes. Pass nullptr/0 to clear. Returns true on parse success (false on a
+// bad/truncated blob, leaving no table). Call alongside seedsigner_set_locale();
+// the table is keyed by translated msgstr because that is what a finished label
+// holds (not the English msgid the offline table is built from — the host supplies
+// the already-resolved blob).
+bool seedsigner_set_glyph_runs(const char* runs_blob, size_t len);
 
 // Drop the active run table and release the metrics handle. Call before
 // switching locale/profile (sibling to seedsigner_clear_registered_fonts).

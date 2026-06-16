@@ -15,7 +15,7 @@ using json = nlohmann::json;
 // The loader OWNS the registered font byte buffers: tiny_ttf reads glyph outlines
 // lazily, so the bytes must outlive the lv_font_t. Freed on unload / next load.
 // A locale needs at most 2 unique font files (a two-weight Fallback pack), so a
-// small reserve keeps these addresses stable across registration. (runs.json
+// small reserve keeps these addresses stable across registration. (runs.bin
 // bytes are copied by seedsigner_set_glyph_runs and are not retained here.)
 static std::vector<std::vector<uint8_t>> g_owned;
 
@@ -89,17 +89,18 @@ bool ss_load_locale(const char* locale_c, ss_pack_provider_t provider, void* use
         }
     }
 
-    // Complex-script locales ship a pre-shaped glyph-run table next to the .ttf.
-    // Its bytes are copied by seedsigner_set_glyph_runs, so they need not persist.
+    // Complex-script locales ship a pre-shaped glyph-run table (the compact binary
+    // runs.bin) next to the .ttf. Its bytes are copied by seedsigner_set_glyph_runs,
+    // so they need not persist.
     if (entry.value("shaping", false)) {
         const uint8_t* b = nullptr; size_t l = 0;
-        if (!provider(locale.c_str(), "runs.json", &b, &l, user) || !b || l == 0) {
-            fprintf(stderr, "ss_load_locale: provider failed for %s/runs.json\n", locale.c_str());
+        if (!provider(locale.c_str(), "runs.bin", &b, &l, user) || !b || l == 0) {
+            fprintf(stderr, "ss_load_locale: provider failed for %s/runs.bin\n", locale.c_str());
             ss_unload_locale();
             return false;
         }
         if (!seedsigner_set_glyph_runs((const char*)b, l)) {
-            fprintf(stderr, "ss_load_locale: bad runs.json for %s\n", locale.c_str());
+            fprintf(stderr, "ss_load_locale: bad runs.bin for %s\n", locale.c_str());
             ss_unload_locale();
             return false;
         }
@@ -123,7 +124,7 @@ const char* ss_locale_pack_files(const char* locale_c) {
                 }
             }
         }
-        if (entry.value("shaping", false)) files.push_back("runs.json");
+        if (entry.value("shaping", false)) files.push_back("runs.bin");
     }
     out = files.dump();
     return out.c_str();

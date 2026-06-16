@@ -80,12 +80,34 @@ letter" as unsafe wrongly rejected that case; the real risks (a Devanagari ordin
 fused to its number, a Thai vowel abutting a hole) are correctly flagged
 `unsupported` with a reason and reported loudly — never silently dropped.
 
-## Run-table size note (for the later ESP32 footprint pass)
+## Run-table footprint: `runs.bin` is what the device loads (`runs.json` is debug)
 
 `runs.json` is verbose JSON (~0.5 MB for hi/th's ~330 runs; full per-glyph
-records). Fine as a build/desktop artifact, but on-device JSON parsing + footprint
-will want a compact binary blob (drop `cluster`/`y_advance`, pack gids+offsets) —
-explicitly out of scope for the offline pipeline, tracked for the on-target pass.
+records at ~87 bytes/glyph — almost all repeated field names + ASCII numbers, plus
+a `cluster` field the device never reads). Fine as a build/desktop artifact, but on
+the ESP32-S3 the acute cost is the transient `nlohmann` DOM built while parsing half
+a megabyte of text on a 512 KB-SRAM part.
+
+So the pipeline now also emits a compact **binary blob `runs.bin`** (`tools/i18n/
+runs_bin.py`, magic `SSRB`, little-endian) — the same `with_runs` units, ~8 bytes/
+glyph (**~10× smaller**), which the device walks straight into its run table with no
+JSON DOM. `cluster` is dropped (informational; the device never read it — the word-
+break info it fed is already baked into `breaks`), `y_advance` is dropped (always 0
+for these horizontal scripts, **asserted offline**), and the hole token string is
+dropped (`glyph_runs.cpp` only needs the `is_hole` flag). The byte layout is
+authoritative in `runs_bin.py`'s docstring and mirrored by the device's `BinReader`
+(`glyph_runs.cpp`), the same way `shape_spike.cpp` mirrored the spike's `SSR1`.
+
+`runs.json` is still written next to it as the **human-readable debug mirror** and
+the **`validate_runs.py` oracle input** (which reads it directly), so the offline
+oracle gate is unaffected. The `manifest.json` `runs` entry binds `runs.bin`'s
+sha256 (the shipped file); `gid`/advances/offsets are range-asserted to their `u16`/
+`i16` fields at serialize time so an overflow fails the build loudly. Both files are
+deterministic (sorted msgid order, no timestamps) — two builds are byte-identical.
+
+Not yet done (deferred to on-target work, by design): dropping the second on-device
+stb copy (`stb_glyph_metrics`) by carrying per-gid glyph boxes — a flash win that
+needs pixel-exact box-match validation; the `SSRB` format can add it additively.
 
 ## Reproducibility
 

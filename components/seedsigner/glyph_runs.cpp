@@ -6,8 +6,6 @@
 
 #include "stb_glyph_metrics.h"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -17,11 +15,10 @@
 #include <unordered_map>
 #include <vector>
 
-using json = nlohmann::json;
-
 // ---------------------------------------------------------------------------
-// Parsed run-table model (mirrors lang-packs/<loc>/runs.json — see
-// tools/i18n/build_fontpacks.py and docs/knowledge/complex-script-run-pipeline.md).
+// Parsed run-table model (filled from the compact lang-packs/<loc>/runs.bin blob
+// — see the SSRB format in tools/i18n/runs_bin.py, which the BinReader below
+// mirrors, and docs/knowledge/complex-script-run-pipeline.md).
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -69,6 +66,59 @@ struct RunTable {
     // Segmented {}-templates, matched against value-filled labels by their literal
     // anchors (a small list — ~26 for hi — scanned only when by_text misses).
     std::vector<SegEntry> segmented;
+};
+
+// ---------------------------------------------------------------------------
+// Bounds-checked little-endian reader over the runs.bin (SSRB) blob. Every read
+// validates remaining bytes and trips `ok=false` on overrun; the parser bails on
+// the first failure. The signing device must never walk past a truncated or
+// malformed pack, so reads fail closed (returning 0/empty) rather than reading
+// out of bounds. Mirrors the byte layout documented in tools/i18n/runs_bin.py.
+// ---------------------------------------------------------------------------
+struct BinReader {
+    const uint8_t* p;
+    const uint8_t* end;
+    bool ok = true;
+
+    BinReader(const uint8_t* data, size_t len) : p(data), end(data + len) {}
+
+    bool need(size_t n) {
+        if (!ok || (size_t)(end - p) < n) { ok = false; return false; }
+        return true;
+    }
+    uint8_t  u8()  { if (!need(1)) return 0; return *p++; }
+    uint16_t u16() { if (!need(2)) return 0; uint16_t v = (uint16_t)(p[0] | (p[1] << 8)); p += 2; return v; }
+    uint32_t u32() { if (!need(4)) return 0;
+                     uint32_t v = (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+                                | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+                     p += 4; return v; }
+    int16_t  i16() { return (int16_t)u16(); }
+
+    // A u16-length-prefixed UTF-8 string (no NUL). Empty on overrun.
+    std::string str() {
+        uint16_t n = u16();
+        if (!need(n)) return std::string();
+        std::string s((const char*)p, n);
+        p += n;
+        return s;
+    }
+
+    // A glyph run: u16 count + one 8-byte record each. y_advance is not carried
+    // (always 0 for these horizontal scripts) and is set to 0.
+    void glyphs(RunLine& out) {
+        uint16_t n = u16();
+        out.reserve(out.size() + n);
+        for (uint16_t i = 0; i < n && ok; ++i) {
+            RunGlyph g;
+            g.gid       = u16();
+            g.x_advance = i16();
+            g.x_offset  = i16();
+            g.y_offset  = i16();
+            g.y_advance = 0;
+            if (!ok) break;
+            out.push_back(g);
+        }
+    }
 };
 
 // Active table + a metrics handle over the subset bytes it was shaped against.
@@ -689,84 +739,78 @@ void attach_runs(lv_obj_t* obj) {
 // ---------------------------------------------------------------------------
 // Public seams.
 // ---------------------------------------------------------------------------
-bool seedsigner_set_glyph_runs(const char* runs_json, size_t len) {
+bool seedsigner_set_glyph_runs(const char* runs_blob, size_t len) {
     seedsigner_clear_glyph_runs();
-    if (!runs_json || len == 0) return true;  // cleared
+    if (!runs_blob || len == 0) return true;  // cleared
 
-    json doc = json::parse(runs_json, runs_json + len, nullptr, /*allow_exceptions=*/false);
-    if (doc.is_discarded() || !doc.is_object()) {
-        fprintf(stderr, "seedsigner_set_glyph_runs: bad JSON\n");
+    BinReader r((const uint8_t*)runs_blob, len);
+
+    // Header: magic "SSRB", version, upem, direction (see tools/i18n/runs_bin.py).
+    const uint8_t m0 = r.u8(), m1 = r.u8(), m2 = r.u8(), m3 = r.u8();
+    if (!r.ok || m0 != 'S' || m1 != 'S' || m2 != 'R' || m3 != 'B') {
+        fprintf(stderr, "seedsigner_set_glyph_runs: bad magic (not runs.bin)\n");
+        seedsigner_clear_glyph_runs();
         return false;
     }
-
-    g_table.upem = doc.value("upem", 1000);
-    g_table.rtl  = (doc.value("direction", std::string("ltr")) == "rtl");
-
-    if (!doc.contains("runs") || !doc["runs"].is_array()) {
-        fprintf(stderr, "seedsigner_set_glyph_runs: no runs array\n");
+    const uint16_t version = r.u16();
+    if (version != 1) {
+        fprintf(stderr, "seedsigner_set_glyph_runs: unsupported runs.bin version %u\n", version);
+        seedsigner_clear_glyph_runs();
         return false;
     }
+    g_table.upem = r.u16();
+    const uint8_t direction = r.u8();
+    r.u8();  // reserved
+    g_table.rtl = (direction == 1);
+    const uint32_t run_count = r.u32();
 
-    auto read_glyphs = [](const json& jglyphs, RunLine& out) {
-        for (const json& jg : jglyphs) {
-            RunGlyph g;
-            g.gid       = jg.value("gid", 0u);
-            g.x_advance = jg.value("x_advance", 0);
-            g.y_advance = jg.value("y_advance", 0);
-            g.x_offset  = jg.value("x_offset", 0);
-            g.y_offset  = jg.value("y_offset", 0);
-            out.push_back(g);
-        }
-    };
+    for (uint32_t i = 0; i < run_count && r.ok; ++i) {
+        const uint8_t kind = r.u8();
 
-    for (const json& e : doc["runs"]) {
-        const std::string kind = e.value("kind", std::string());
-
-        // "plain": a whole-string (multi-line) run, keyed by translated text.
-        if (kind == "plain") {
-            if (!e.contains("text") || !e.contains("lines") || !e["lines"].is_array()) continue;
-
+        if (kind == 0) {  // plain: a whole-string (multi-line) run, keyed by text
+            const std::string text = r.str();
+            const uint16_t line_count = r.u16();
             RunEntry entry;
-            for (const json& jline : e["lines"]) {
+            entry.lines.reserve(line_count);
+            for (uint16_t li = 0; li < line_count && r.ok; ++li) {
                 RunVLine vline;
-                // Lines are {glyphs, breaks}; tolerate a bare glyph list for safety.
-                const json& jglyphs = jline.is_object() ? jline.value("glyphs", json::array()) : jline;
-                read_glyphs(jglyphs, vline.glyphs);
-                if (jline.is_object() && jline.contains("breaks") && jline["breaks"].is_array()) {
-                    for (const json& jb : jline["breaks"]) vline.breaks.push_back(jb.get<uint32_t>());
-                }
+                r.glyphs(vline.glyphs);
+                const uint16_t break_count = r.u16();
+                vline.breaks.reserve(break_count);
+                for (uint16_t bi = 0; bi < break_count && r.ok; ++bi)
+                    vline.breaks.push_back(r.u16());
                 entry.lines.push_back(std::move(vline));
             }
             // Key by the presentation-form transform so RTL labels (stored as
             // presentation forms by LVGL) match; a no-op for non-Arabic scripts.
-            g_table.by_text[ap_form(e["text"].get<std::string>())] = std::move(entry);
-            continue;
-        }
+            if (r.ok) g_table.by_text[ap_form(text)] = std::move(entry);
 
-        // "segmented": a {}-template split into ordered literal runs + hole tokens.
-        // Matched against value-filled labels at attach time (LTR only).
-        if (kind == "segmented") {
-            if (!e.contains("parts") || !e["parts"].is_array()) continue;
+        } else if (kind == 1) {  // segmented: ordered literal runs + hole markers
+            const uint16_t part_count = r.u16();
             SegEntry seg;
-            bool ok = true;
-            for (const json& jp : e["parts"]) {
+            seg.parts.reserve(part_count);
+            for (uint16_t pi = 0; pi < part_count && r.ok; ++pi) {
                 SegPart part;
-                if (jp.contains("hole")) {
+                if (r.u8()) {            // is_hole
                     part.is_hole = true;
-                } else if (jp.contains("lit")) {
-                    part.lit = jp.value("lit", std::string());
-                    read_glyphs(jp.value("glyphs", json::array()), part.glyphs);
                 } else {
-                    ok = false;  // malformed part
-                    break;
+                    part.lit = r.str();
+                    r.glyphs(part.glyphs);
                 }
                 seg.parts.push_back(std::move(part));
             }
-            if (ok && !seg.parts.empty()) g_table.segmented.push_back(std::move(seg));
-            continue;
-        }
+            if (r.ok && !seg.parts.empty()) g_table.segmented.push_back(std::move(seg));
 
-        // Any other kind (e.g. "unsupported", listed for visibility) carries no run.
+        } else {
+            fprintf(stderr, "seedsigner_set_glyph_runs: bad run kind %u\n", kind);
+            r.ok = false;
+        }
+    }
+
+    if (!r.ok) {
+        fprintf(stderr, "seedsigner_set_glyph_runs: truncated/invalid runs.bin\n");
+        seedsigner_clear_glyph_runs();
+        return false;
     }
 
     g_have_table = true;

@@ -70,7 +70,7 @@ struct LocaleFontEntry {
     bool rtl = false;
     // Complex script rendered from OFFLINE-shaped glyph runs (Devanagari, Thai,
     // Nastaliq/Urdu, …) rather than by codepoint. The pack ships a per-locale
-    // run table (runs.json) alongside the subset .ttf; the screen layer draws the
+    // run table (runs.bin) alongside the subset .ttf; the screen layer draws the
     // pre-shaped glyph-ids (see glyph_runs.*). The subset still registers as the
     // role font (so the device can rasterize those gids), but tiny_ttf's own
     // codepoint path is bypassed for shaped text. Distinct from `fa`, which still

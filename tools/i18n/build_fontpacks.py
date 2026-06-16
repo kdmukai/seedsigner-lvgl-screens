@@ -34,6 +34,7 @@ import subprocess
 import sys
 
 import hb_shaper
+import runs_bin
 import shape_inventory
 from po_catalog import corpus_chars, parse_catalog, parse_entries
 
@@ -308,6 +309,13 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
         json.dump(runs_doc, f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
 
+    # runs.bin: the compact binary blob the DEVICE actually loads (~8 bytes/glyph
+    # vs ~87 for the JSON, and no on-device JSON DOM). runs.json stays on disk as
+    # the human-readable debug + validate_runs.py oracle artifact. Same with_runs
+    # data; deterministic for the same reasons. Format: tools/i18n/runs_bin.py.
+    runs_bin_path = os.path.join(loc_out, "runs.bin")
+    runs_bin_bytes = runs_bin.write_runs_bin(runs_bin_path, with_runs, upem, direction, name)
+
     manifest_out = {
         "locale": name,
         "source_family": entry["source_family"],
@@ -323,8 +331,11 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
             "sha256": font_sha,
         },
         "runs": {
-            "file": "runs.json",
-            "sha256": sha256_file(runs_path),
+            # The device loads runs.bin; runs.json is the debug/oracle mirror.
+            "file": "runs.bin",
+            "sha256": sha256_file(runs_bin_path),
+            "bytes": runs_bin_bytes,
+            "debug_json": "runs.json",
             "plain": report["plain"],
             "segmented": report["segmented"],
             "ascii_passthrough": report["ascii"],
@@ -335,7 +346,8 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     with open(os.path.join(loc_out, "manifest.json"), "w") as f:
         json.dump(manifest_out, f, indent=2)
     print(f"[{name}] {name}.ttf ({glyph_count} glyphs, {os.path.getsize(out_ttf)} bytes) + "
-          f"runs.json (plain={report['plain']} segmented={report['segmented']} "
+          f"runs.bin ({runs_bin_bytes} bytes, json {os.path.getsize(runs_path)}) "
+          f"(plain={report['plain']} segmented={report['segmented']} "
           f"ascii={report['ascii']} unsupported={len(report['unsupported'])})")
 
 

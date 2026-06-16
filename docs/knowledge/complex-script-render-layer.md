@@ -114,10 +114,12 @@ Known limitations:
   — through the script subset at the bumped size, not the OpenSans baseline (the
   documented mixed-font-line tension). Renders correctly, slightly different
   metrics.
-- **ESP32 footprint** is unaddressed here: `runs.json` is verbose JSON, and
-  `stb_glyph_metrics` compiles a second stb copy. A compact binary run blob and
-  (optionally) carrying glyph boxes in the run to drop the on-device stb are the
-  on-target pass.
+- **ESP32 footprint** is partly addressed: the device now loads the compact binary
+  `runs.bin` (`SSRB`, parsed by `BinReader` in `glyph_runs.cpp` — ~10× smaller than
+  `runs.json`, no on-device JSON DOM; see `complex-script-run-pipeline.md`). Still
+  deferred to on-target work: `stb_glyph_metrics` compiles a second stb copy, which
+  carrying per-gid glyph boxes in the run could drop (a flash win needing box-match
+  validation); plus A8-mask placement / PSRAM routing / real on-device measurement.
 
 ## Segmented (`{}`-template) runs: device-side value insertion
 
