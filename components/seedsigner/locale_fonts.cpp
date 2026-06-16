@@ -95,6 +95,18 @@ const std::vector<LocaleFontEntry>& locale_font_table() {
         // mirroring; LVGL (LV_USE_BIDI) handles the bidi reordering. The baked
         // OpenSans baseline stays as fallback so embedded Latin/digits render LTR.
         {"fa", "NotoSansAR", ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/true},
+        // Complex-script (Phase 2): rendered from OFFLINE HarfBuzz glyph runs, not
+        // by codepoint. corpus-subset Noto as the Primary at the CJK legibility
+        // bump; the pack ships runs.json next to <locale>.ttf. The subset keeps its
+        // GSUB/GPOS/GDEF layout closure (the offline shaper needs it), unlike the
+        // CJK packs which drop layout. shaping=true + the ISO-15924 script tag tell
+        // the offline builder how to shape; the screen layer draws the runs.
+        //   hi  Devanagari   reorder + conjuncts (glyphs with no codepoint)
+        //   th  Thai         GPOS mark stacking + SARA-AM decomposition
+        //   ur  Nastaliq     the extreme GPOS case (diagonal baseline cascade), rtl
+        {"hi", "NotoSansDevanagari", ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/false, /*shaping=*/true, "Deva"},
+        {"th", "NotoSansTH",         ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/false, /*shaping=*/true, "Thai"},
+        {"ur", "NotoNastaliqUrdu",   ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/true,  /*shaping=*/true, "Arab"},
         // Script packs: block-range OpenSans subsets, same-size Fallback over the
         // baked Western baseline. One pack per script covers its language family
         // (e.g. ru's Cyrillic block also serves uk/bg) with no corpus coupling.
@@ -154,6 +166,13 @@ std::string supported_locales_json() {
         // only when true (LTR is the default), mirroring the unicode_range style.
         if (e.rtl) {
             locale_obj["rtl"] = true;
+        }
+        // Complex-script locales: the offline builder shapes these into glyph runs
+        // (vs corpus/block subsetting). Emit the shaper script tag so the builder
+        // never duplicates the locale->script policy the render layer owns.
+        if (e.shaping) {
+            locale_obj["shaping"] = true;
+            locale_obj["script"] = e.script;
         }
 
         json fonts = json::array();

@@ -89,3 +89,6 @@ tools/scenarios/localized/
 # Throwaway shaping-spike output (regenerate: spike_shape.py -> --shape-spike ->
 # spike_compare.py). Subset TTFs, run table, reference + device + diff PNGs.
 tools/i18n/spike_out/
+# Production-pack validation output (regenerate: validate_runs.py). Oracle +
+# device PNGs diffed for the release-validation gate.
+tools/i18n/validate_out/
