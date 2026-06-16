@@ -51,6 +51,11 @@ float stb_metrics_scale(const stb_metrics_t *m, float pixel_size);
 void stb_metrics_glyph_box(const stb_metrics_t *m, int gid, float scale,
                            int *ix0, int *iy0, int *ix1, int *iy1);
 
+/* Glyph id of a unicode codepoint in this font (0 = .notdef / absent). Used by
+ * the glyph-run word-wrap to find the SPACE glyph (U+0020) so word-break scripts
+ * can break after spaces without the device needing the source text. */
+int stb_metrics_glyph_index(const stb_metrics_t *m, int codepoint);
+
 #ifdef __cplusplus
 }
 #endif

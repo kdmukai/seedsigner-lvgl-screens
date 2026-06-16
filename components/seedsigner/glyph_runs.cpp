@@ -8,6 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -30,8 +31,17 @@ struct RunGlyph {
 };
 using RunLine = std::vector<RunGlyph>;
 
+// One logical (\n-split) line: its visual-order glyphs plus the glyph indices at
+// which the device may wrap it (break BEFORE that glyph). The breaks are computed
+// offline by ICU's dictionary-aware line breaker — real WORD boundaries even for
+// no-space scripts (Thai/…) — so the device just greedy-fits over them.
+struct RunVLine {
+    RunLine               glyphs;
+    std::vector<uint32_t> breaks;  // sorted, strictly interior glyph indices
+};
+
 struct RunEntry {
-    std::vector<RunLine> lines;  // one per \n-split line (a run is shaped per line)
+    std::vector<RunVLine> lines;  // one per \n-split line (a run is shaped per line)
 };
 
 struct RunTable {
@@ -116,13 +126,55 @@ void blit_a8(uint8_t* dst, int dst_w, int dst_h, int dst_stride,
 }
 
 // ---------------------------------------------------------------------------
+// Greedy line-wrap a shaped run line into visual lines that fit `width_px`,
+// cutting only at the offline-computed `breaks` — ICU dictionary WORD boundaries
+// (real words even for the no-space scripts; spaces elsewhere). Greedy: fill each
+// line to the last break that still fits. A trailing SPACE glyph at the cut is
+// trimmed so it doesn't hang past the edge (ICU folds a word's following space
+// into that word, so the space sits just before the next break). A segment with
+// no break that overflows is left to run off the edge (e.g. one unbreakable word).
+//
+// All the linguistic intelligence is in `breaks`; this stays a dumb fit. The run
+// is visual order and a break is a non-joining boundary, so glyphs split without
+// re-shaping. width_px <= 0 (e.g. RTL) or no breaks => the line is returned whole.
+//
+// NOTE LTR-only: a visual-order RTL run would need right-anchored breaking to put
+// the first-read words on the top line, so callers pass width_px = 0 for RTL.
+std::vector<RunLine> wrap_line(const RunLine& g, const std::vector<uint32_t>& breaks,
+                               int width_px, float scale, uint32_t space_gid) {
+    std::vector<RunLine> out;
+    if (width_px <= 0 || g.size() < 2 || breaks.empty()) { out.push_back(g); return out; }
+
+    size_t start = 0;
+    while (start < g.size()) {
+        double acc = 0;
+        size_t cut = start;   // last break index that fits, > start (start = no break yet)
+        size_t i = start;
+        for (; i < g.size(); ++i) {
+            if (i > start && std::binary_search(breaks.begin(), breaks.end(), (uint32_t)i))
+                cut = i;
+            acc += (double)g[i].x_advance * scale;
+            if (acc > width_px && cut > start) break;  // overflowed and have somewhere to cut
+        }
+        if (i >= g.size()) { out.emplace_back(g.begin() + start, g.end()); break; }
+
+        size_t end = cut;
+        while (end > start && space_gid && g[end - 1].gid == space_gid) --end;  // trim trailing space
+        out.emplace_back(g.begin() + start, g.begin() + end);
+        start = cut;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Bake a parsed run into an A8 alpha mask sized to the font's line box (plus a
 // generous margin to catch left bearings and cursive overhang). Resolution is
 // taken from the label's own font, so one run table serves every PX_MULTIPLIER.
+// `wrap_width` (px, 0 = no wrap) word-wraps long lines to fit the label.
 // Returns a heap LabelRun on success (caller owns), or nullptr.
 // ---------------------------------------------------------------------------
 LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upem,
-                   lv_text_align_t align, bool rtl) {
+                   lv_text_align_t align, bool rtl, int wrap_width) {
     size_t len = 0;
     const uint8_t* bytes = seedsigner_registered_font_bytes(font, &len);
     stb_metrics_t* sm = metrics_for(bytes, len);
@@ -135,7 +187,17 @@ LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upe
     const int ascent      = line_height - font->base_line;  // baseline within line box
     const int margin      = line_height;                    // bearing/overhang slack
 
-    const size_t nlines = entry.lines.size();
+    // Wrap each logical (\n-split) line to the label width at its offline break
+    // marks, producing the visual lines actually laid out below. SPACE glyph id
+    // from the same subset stb (to trim a trailing space at a cut).
+    const uint32_t space_gid = (uint32_t)stb_metrics_glyph_index(sm, ' ');
+    std::vector<RunLine> vlines;
+    for (const RunVLine& logical : entry.lines) {
+        std::vector<RunLine> w = wrap_line(logical.glyphs, logical.breaks, wrap_width, scale, space_gid);
+        for (RunLine& vl : w) vlines.push_back(std::move(vl));
+    }
+
+    const size_t nlines = vlines.size();
     if (nlines == 0) return nullptr;
 
     // Pass 1 — per-line typographic width (sum of advances) and the block width.
@@ -143,7 +205,7 @@ LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upe
     int layout_w = 0;
     for (size_t li = 0; li < nlines; ++li) {
         long long adv = 0;
-        for (const RunGlyph& g : entry.lines[li]) adv += g.x_advance;
+        for (const RunGlyph& g : vlines[li]) adv += g.x_advance;
         line_w[li] = (int)lround((double)adv * scale);
         if (line_w[li] > layout_w) layout_w = line_w[li];
     }
@@ -172,7 +234,7 @@ LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upe
         const int baseline = margin + (int)li * line_height + ascent;
 
         long long cx = 0, cy = 0;  // pen cursor in font design units
-        for (const RunGlyph& g : entry.lines[li]) {
+        for (const RunGlyph& g : vlines[li]) {
             lv_font_glyph_dsc_t gd;
             memset(&gd, 0, sizeof(gd));
             gd.resolved_font = (lv_font_t*)font;
@@ -267,8 +329,12 @@ void attach_runs(lv_obj_t* obj) {
                 auto it = g_table.by_text.find(text);
                 if (it != g_table.by_text.end()) {
                     lv_text_align_t align = lv_obj_get_style_text_align(obj, LV_PART_MAIN);
+                    // Wrap long lines to the label's content width, at the offline
+                    // word-break marks. LTR only — a visual-order RTL run needs
+                    // right-anchored breaking, so ur is left unwrapped (width 0).
+                    int wrap_width = g_table.rtl ? 0 : lv_obj_get_content_width(obj);
                     LabelRun* run = bake_run(it->second, font, px, g_table.upem,
-                                             align, g_table.rtl);
+                                             align, g_table.rtl, wrap_width);
                     if (run) {
                         // Suppress the (wrong) codepoint text; draw the run instead.
                         lv_obj_set_style_text_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -307,8 +373,8 @@ bool seedsigner_set_glyph_runs(const char* runs_json, size_t len) {
         return false;
     }
 
-    auto read_line = [](const json& jline, RunLine& out) {
-        for (const json& jg : jline) {
+    auto read_glyphs = [](const json& jglyphs, RunLine& out) {
+        for (const json& jg : jglyphs) {
             RunGlyph g;
             g.gid       = jg.value("gid", 0u);
             g.x_advance = jg.value("x_advance", 0);
@@ -329,9 +395,14 @@ bool seedsigner_set_glyph_runs(const char* runs_json, size_t len) {
 
         RunEntry entry;
         for (const json& jline : e["lines"]) {
-            RunLine line;
-            read_line(jline, line);
-            entry.lines.push_back(std::move(line));
+            RunVLine vline;
+            // Lines are {glyphs, breaks}; tolerate a bare glyph list for safety.
+            const json& jglyphs = jline.is_object() ? jline.value("glyphs", json::array()) : jline;
+            read_glyphs(jglyphs, vline.glyphs);
+            if (jline.is_object() && jline.contains("breaks") && jline["breaks"].is_array()) {
+                for (const json& jb : jline["breaks"]) vline.breaks.push_back(jb.get<uint32_t>());
+            }
+            entry.lines.push_back(std::move(vline));
         }
         // Key by the presentation-form transform so RTL labels (stored as
         // presentation forms by LVGL) match; a no-op for non-Arabic scripts.

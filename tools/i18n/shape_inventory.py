@@ -110,17 +110,24 @@ def classify(msgid, msgstr):
     return "segmented", None
 
 
-def build_unit(msgid, msgstr, shape_line):
+def build_unit(msgid, msgstr, shape_line, line_breaks=None):
     """Build one shaping unit for (msgid, msgstr). `shape_line(text)` -> list of
     glyph dicts for a single line (no '\\n'); the caller binds font + script
-    params. Returns a dict (see module docstring for the per-kind shape)."""
+    params. `line_breaks(text, glyphs)` -> glyph indices where the device may wrap
+    that line (dictionary word boundaries); omit for no wrap data. Returns a dict
+    (see module docstring for the per-kind shape)."""
     kind, reason = classify(msgid, msgstr)
 
     if kind == "ascii":
         return {"msgid": msgid, "kind": "ascii", "text": msgstr}
 
     if kind == "plain":
-        lines = [shape_line(line) for line in msgstr.split("\n")]
+        # Each line carries its glyphs plus the indices where it may be wrapped.
+        lines = []
+        for line in msgstr.split("\n"):
+            glyphs = shape_line(line)
+            lines.append({"glyphs": glyphs,
+                          "breaks": line_breaks(line, glyphs) if line_breaks else []})
         return {"msgid": msgid, "kind": "plain", "text": msgstr, "lines": lines}
 
     if kind == "segmented":
@@ -135,18 +142,19 @@ def build_unit(msgid, msgstr, shape_line):
     return {"msgid": msgid, "kind": "unsupported", "text": msgstr, "reason": reason}
 
 
-def build_units(catalog, shape_line):
+def build_units(catalog, shape_line, line_breaks=None):
     """Build units for a whole catalog ({msgid: msgstr}). Returns (units, report)
     where report = {"plain": n, "segmented": n, "unsupported": [(msgid, reason)]}.
     Units with runs (plain/segmented) come first; callers should fail the build if
-    `unsupported` is non-empty unless they explicitly accept the listed tail."""
+    `unsupported` is non-empty unless they explicitly accept the listed tail.
+    `line_breaks` (optional) is threaded to build_unit for plain-line wrap marks."""
     units = []
     report = {"plain": 0, "segmented": 0, "ascii": 0, "unsupported": []}
     for msgid in sorted(catalog):
         msgstr = catalog[msgid]
         if not msgstr:
             continue
-        unit = build_unit(msgid, msgstr, shape_line)
+        unit = build_unit(msgid, msgstr, shape_line, line_breaks)
         units.append(unit)
         if unit["kind"] == "unsupported":
             report["unsupported"].append((msgid, unit["reason"]))

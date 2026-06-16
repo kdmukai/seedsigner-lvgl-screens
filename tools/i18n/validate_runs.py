@@ -135,7 +135,7 @@ def validate_locale(locale, font_dir, want_all):
         render_oracle(subset, r["text"], direction, language,
                       os.path.join(out_dir, f"spike_ref_{name}.png"))
         lines.append({"name": name, "font_file": font_file, "text": r["text"],
-                      "upem": upem, "direction": direction, "glyphs": r["lines"][0]})
+                      "upem": upem, "direction": direction, "glyphs": r["lines"][0]["glyphs"]})
     write_runs_bin(os.path.join(out_dir, "spike_runs.bin"), lines)
 
     # Device render through the proven glyph-id path.
