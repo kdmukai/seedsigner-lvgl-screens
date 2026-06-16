@@ -84,16 +84,32 @@ the label text with `text_opa = TRANSP`; reading that same `text_opa` back into
 draw). The run mask must be drawn at `opa = LV_OPA_COVER`; coverage comes from the
 mask, color from `recolor`.
 
-## Known limitations (follow-ups)
+## Word-wrap: offline word marks, dumb on-device fit
 
-- **Long body text does not wrap.** A run is one shaped line per logical
-  (`\n`-split) line. LVGL would wrap a long line to the label width, but a
-  pre-shaped, visual-order run can't be naively re-wrapped, and the device width
-  varies by profile so it can't be pre-wrapped offline. Long paragraphs overflow
-  and clip; titles / buttons / menu items / short status (the bulk of the UI) are
-  fine. The tractable fix is **device-side greedy word-wrap at space-glyph
-  boundaries** — spaces are a safe break in every script (words don't join across
-  them), so the flat run can be split into width-fitting lines and re-baked.
+Long lines wrap at **offline-computed word boundaries**, keeping the
+linguistic-intelligence-offline / dumb-device split. The offline pipeline runs
+each line through **ICU's dictionary-aware line `BreakIterator`** (PyICU over
+system libicu) — real WORD boundaries even for the no-space scripts
+(Thai/Lao/Khmer/Burmese), spaces elsewhere — and emits a per-line `breaks` array
+(glyph indices) in `runs.json`. ICU offsets and HarfBuzz clusters are both
+codepoint indices (all BMP), so a boundary at codepoint `c` maps to the first
+glyph with `cluster == c`. The `runs.json` line shape is now
+`{"glyphs": [...], "breaks": [...]}`; `icu_version` is recorded in the manifest so
+an ICU bump is a reviewed re-segmentation event (like `harfbuzz_version`).
+
+On device, `bake_run` greedy-fits each logical line to the label's content width
+(forced final via `lv_obj_update_layout` before the pass), cutting only at the
+`breaks`, and trims a trailing SPACE glyph at the cut (`stb_metrics_glyph_index(' ')`
+— ICU folds a word's following space into that word). All the language knowledge
+is the integer `breaks` list; the device grew no dictionary. This *beats* the
+production Python app, which only `str.split()`s on spaces — so it overflows a
+long space-less Thai phrase, while we break it at real words.
+
+Known limitations:
+- **RTL (ur) is not wrapped.** A visual-order RTL run needs right-anchored
+  breaking to put the first-read words on the top line, so `ur` passes
+  `wrap_width = 0` and `line_break_indices` returns `[]` for RTL. Acceptable while
+  `ur` is a removable stub; revisit when a real Urdu translation lands.
 - **Segmented (`{}`-template) runs are parsed-skipped.** The device label holds
   the value-filled string, not the template, so matching needs device-side
   template matching; until then those labels fall back to the codepoint path.

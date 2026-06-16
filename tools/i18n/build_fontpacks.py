@@ -215,7 +215,7 @@ def _assert_runs_clean(units, glyph_count, locale):
     for u in units:
         runs = []
         if u["kind"] == "plain":
-            runs = u["lines"]
+            runs = [ln["glyphs"] for ln in u["lines"]]  # each line is {glyphs, breaks}
         elif u["kind"] == "segmented":
             runs = [p["glyphs"] for p in u["parts"] if "glyphs" in p]
         for run in runs:
@@ -271,7 +271,9 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     # '\n', classifies holes, and shapes literal segments; upem is read once.
     upem = hb_shaper.shape(subset_bytes, ".", script, language, direction)[1]
     shape_line = lambda t: hb_shaper.shape(subset_bytes, t, script, language, direction)[0]
-    units, report = shape_inventory.build_units(catalog, shape_line)
+    # Per-line wrap marks: ICU dictionary word boundaries (Thai/…) -> glyph indices.
+    break_line = lambda t, glyphs: hb_shaper.line_break_indices(t, glyphs, language, direction)
+    units, report = shape_inventory.build_units(catalog, shape_line, break_line)
 
     _assert_runs_clean(units, glyph_count, name)
 
@@ -295,6 +297,7 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
         "font": f"{name}.ttf",
         "font_sha256": font_sha,
         "harfbuzz_version": hb_shaper.harfbuzz_version(),
+        "icu_version": hb_shaper.icu_version(),
         "runs": with_runs,
         "unsupported": [{"msgid": m, "reason": r} for m, r in report["unsupported"]],
     }

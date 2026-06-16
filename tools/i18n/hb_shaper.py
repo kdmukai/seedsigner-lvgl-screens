@@ -39,6 +39,50 @@ def harfbuzz_version():
     return hb.version_string()
 
 
+def icu_version():
+    """The system ICU version backing the line-break dictionary — recorded in pack
+    manifests so an ICU bump (which can change Thai/Lao/… word boundaries) is a
+    visible, reviewable re-segmentation event, exactly like the HarfBuzz bump."""
+    import icu
+    return icu.ICU_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Line-break opportunities (dictionary word boundaries for no-space scripts)
+# ---------------------------------------------------------------------------
+def line_break_indices(text, glyphs, language, direction):
+    """Glyph indices at which a line break is PERMITTED (break BEFORE that glyph).
+
+    The device greedy-fits a long line by cutting at one of these; this is where
+    the linguistic intelligence lives. From ICU's line BreakIterator, which is
+    DICTIONARY-AWARE for the no-space scripts (Thai/Lao/Khmer/Burmese — so it marks
+    real word boundaries, not syllables) and falls back to spaces/UAX-14 elsewhere.
+
+    uharfbuzz clusters and ICU boundary offsets are BOTH codepoint indices (our
+    shaping scripts are all in the BMP, no surrogate pairs), so a boundary at
+    codepoint `c` maps directly to the first glyph whose cluster == c — no byte
+    conversion. Interior boundaries only (the string start/end are not wrap points).
+
+    LTR only: returns [] for RTL — the renderer doesn't wrap RTL yet, and mapping
+    logical break offsets onto a visual-order (reversed) run needs separate care."""
+    if direction == "rtl" or not text or len(glyphs) < 2:
+        return []
+    import icu
+    bi = icu.BreakIterator.createLineInstance(icu.Locale(language or "und"))
+    bi.setText(text)
+    boundaries = []
+    p = bi.first()
+    while p != icu.BreakIterator.DONE:
+        boundaries.append(p)
+        p = bi.nextBoundary()
+    first_glyph_of_cluster = {}
+    for i, g in enumerate(glyphs):
+        first_glyph_of_cluster.setdefault(g["cluster"], i)
+    n = len(text)
+    return sorted({first_glyph_of_cluster[b] for b in boundaries
+                   if 0 < b < n and b in first_glyph_of_cluster})
+
+
 # ---------------------------------------------------------------------------
 # Core shaping
 # ---------------------------------------------------------------------------

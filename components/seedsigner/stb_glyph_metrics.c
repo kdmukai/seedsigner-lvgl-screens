@@ -57,3 +57,8 @@ void stb_metrics_glyph_box(const stb_metrics_t *m, int gid, float scale,
 {
     stbtt_GetGlyphBitmapBox(&m->info, gid, scale, scale, ix0, iy0, ix1, iy1);
 }
+
+int stb_metrics_glyph_index(const stb_metrics_t *m, int codepoint)
+{
+    return stbtt_FindGlyphIndex(&m->info, codepoint);
+}

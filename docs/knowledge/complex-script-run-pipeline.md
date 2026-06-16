@@ -17,7 +17,23 @@ HarfBuzz has no glyph for `U+000A`, so shaping a string containing one emits a
 across the break. The fix is structural, not a filter: split every string on `\n`
 and shape each line independently (`hb_shaper.shape_lines`, and the same split
 inside `decomposition_closure`). A run table entry therefore holds a LIST of line
-runs; the device stacks them like any multi-line label.
+runs; the device stacks them like any multi-line label. Each line run is
+`{"glyphs": [...], "breaks": [...]}` — see §"Word-wrap" below.
+
+## 1b. Word-wrap marks — line-break opportunities computed OFFLINE
+
+A `\n` is a HARD break (above). Within a line, the device must also wrap to the
+label width — but where a line MAY break is a language question, so it's decided
+offline and the device just greedy-fits. `hb_shaper.line_break_indices()` runs
+each line through **ICU's dictionary-aware line `BreakIterator`** (PyICU over the
+system libicu): real WORD boundaries for the no-space scripts (Thai/Lao/Khmer/
+Burmese, where `str.split()` finds nothing), spaces/UAX-14 elsewhere. The result
+is a `breaks` list of GLYPH INDICES (break-before). Mapping is direct: ICU offsets
+and uharfbuzz clusters are both codepoint indices (our scripts are all BMP), so a
+boundary at codepoint `c` → the first glyph whose `cluster == c`. RTL returns `[]`
+(the renderer doesn't wrap RTL yet). The system ICU version is recorded as
+`icu_version` in the manifest, so an ICU bump (which can shift Thai boundaries) is
+a reviewed re-segmentation event — exactly like `harfbuzz_version`.
 
 Corollary: an empty line (`"a\n\nb"`) yields an empty HarfBuzz buffer whose
 `glyph_infos` is `None`, not `[]` — `shape()` special-cases `text == ""`.

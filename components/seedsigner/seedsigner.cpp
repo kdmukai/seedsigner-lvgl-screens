@@ -122,6 +122,9 @@ static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     // matched labels' codepoint text with their pre-shaped glyph runs. Runs after
     // RTL: a matched label's codepoint text is suppressed (text_opa TRANSP), so the
     // base_dir set above is moot for it and the visual-order run is never re-reordered.
+    // Force layout first so each label's final content width is available — the
+    // glyph-run word-wrap fits long lines to it.
+    lv_obj_update_layout(new_screen);
     apply_glyph_runs_to_labels(new_screen);
 
     lv_obj_t *old_screen = lv_scr_act();
