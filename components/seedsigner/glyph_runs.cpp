@@ -44,6 +44,21 @@ struct RunEntry {
     std::vector<RunVLine> lines;  // one per \n-split line (a run is shaped per line)
 };
 
+// One ordered part of a SEGMENTED {}-template entry: either a shaped literal run,
+// or a runtime value HOLE. A finished label holds the value-filled string (not the
+// template), so the device matches the label against the literals in order,
+// extracts the inserted values, and renders the literals shaped (`glyphs`) with the
+// values drawn between them. See docs/knowledge/complex-script-run-pipeline.md §4
+// and shape_inventory.classify (the offline `segmented` classification).
+struct SegPart {
+    bool        is_hole = false;
+    std::string lit;     // literal text (used to anchor the match); empty for a hole
+    RunLine     glyphs;  // shaped glyphs of the literal; empty for a hole
+};
+struct SegEntry {
+    std::vector<SegPart> parts;  // template order: lit/hole alternation
+};
+
 struct RunTable {
     int  upem = 1000;
     bool rtl  = false;
@@ -51,6 +66,9 @@ struct RunTable {
     // holds. Multiple msgids can share one msgstr; the shaped result is identical,
     // so last-wins is harmless.
     std::unordered_map<std::string, RunEntry> by_text;
+    // Segmented {}-templates, matched against value-filled labels by their literal
+    // anchors (a small list — ~26 for hi — scanned only when by_text misses).
+    std::vector<SegEntry> segmented;
 };
 
 // Active table + a metrics handle over the subset bytes it was shaped against.
@@ -271,6 +289,316 @@ LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upe
     return run;
 }
 
+// ---------------------------------------------------------------------------
+// Segmented {}-template runs (value insertion).
+//
+// A finished label holds the value-FILLED string (e.g. `सीड शब्द #5`), not the
+// template (`सीड शब्द #{}`). We match the label against a template's literal
+// anchors, extract the inserted values, and bake one mask: literals drawn SHAPED
+// (their offline glyph runs), each hole value drawn between them. A value can be
+// an integer/ASCII string OR a translated text snippet, so a value is first looked
+// up in the plain run table (shaped — handles a complex-script snippet that is its
+// own translated msgid) and only falls back to the codepoint path otherwise.
+// LTR only (the literal/value order is left-to-right) — segmented matching is
+// skipped for RTL locales.
+// ---------------------------------------------------------------------------
+
+// Decode one UTF-8 codepoint at byte `i` (advanced past it). 0 at end; U+FFFD on a
+// malformed byte (advanced by one to make progress). Self-contained so the render
+// layer needs no LVGL text-encoding internals; our scripts are all BMP.
+uint32_t utf8_next(const std::string& s, size_t& i) {
+    if (i >= s.size()) return 0;
+    unsigned char c = (unsigned char)s[i];
+    uint32_t cp; int n;
+    if      (c < 0x80)        { cp = c;        n = 1; }
+    else if ((c >> 5) == 0x6) { cp = c & 0x1F; n = 2; }
+    else if ((c >> 4) == 0xE) { cp = c & 0x0F; n = 3; }
+    else if ((c >> 3) == 0x1E){ cp = c & 0x07; n = 4; }
+    else { i += 1; return 0xFFFD; }
+    if (i + (size_t)n > s.size()) { i = s.size(); return 0xFFFD; }
+    for (int k = 1; k < n; ++k) {
+        unsigned char cc = (unsigned char)s[i + k];
+        if ((cc & 0xC0) != 0x80) { i += 1; return 0xFFFD; }
+        cp = (cp << 6) | (cc & 0x3F);
+    }
+    i += n;
+    return cp;
+}
+
+// One laid-out glyph of a matched segmented string, in a single flat sequence that
+// mixes shaped literal/snippet glyphs (drawn by gid via stb) and codepoint value
+// glyphs (drawn via the font's fallback chain). Flattening to a uniform list lets
+// the same greedy word-wrap as the plain path run across literals AND values.
+struct FlatGlyph {
+    bool   is_cp;       // true: codepoint glyph (dsc path); false: shaped run glyph (gid)
+    uint32_t code;      // gid (run) or unicode codepoint (cp)
+    float  x_off_px;    // shaped GPOS x offset (run); 0 (cp uses dsc.ofs_x)
+    float  y_off_px;    // shaped GPOS y offset (run); 0 (cp uses dsc.ofs_y)
+    float  advance_px;  // pen advance
+    bool   is_space;    // a breaking space (trimmed at a wrap cut)
+    bool   can_break;   // a line may break BEFORE this glyph
+};
+
+// A line may break BEFORE this glyph iff the previous laid-out glyph was a space —
+// the same word-boundary rule the plain path applies (here computed on device,
+// since segmented literals carry no offline break marks). Devanagari/Latin/Arabic
+// body text is space-separated, so this wraps it correctly; the no-space scripts
+// (Thai/…) almost never appear as segmented templates, and would simply not wrap.
+inline bool break_before_here(const std::vector<FlatGlyph>& flat) {
+    return !flat.empty() && flat.back().is_space;
+}
+
+// Append a shaped run (a literal segment or a shaped snippet value) to `flat`.
+void flat_append_run(std::vector<FlatGlyph>& flat, const RunLine& glyphs,
+                     float scale, uint32_t space_gid) {
+    for (const RunGlyph& g : glyphs) {
+        FlatGlyph f;
+        f.is_cp      = false;
+        f.code       = g.gid;
+        f.x_off_px   = (float)((double)g.x_offset * scale);
+        f.y_off_px   = (float)((double)g.y_offset * scale);
+        f.advance_px = (float)((double)g.x_advance * scale);
+        f.is_space   = (space_gid && g.gid == space_gid);
+        f.can_break  = break_before_here(flat);
+        flat.push_back(f);
+    }
+}
+
+// Append a codepoint value (integer / ASCII / untranslated snippet) to `flat`,
+// resolving each codepoint through the font's fallback chain (ASCII drops to the
+// baked OpenSans floor). Break opportunity after an ASCII space.
+void flat_append_cp(std::vector<FlatGlyph>& flat, const std::string& v,
+                    const lv_font_t* font) {
+    size_t i = 0;
+    for (uint32_t cp = utf8_next(v, i); cp; cp = utf8_next(v, i)) {
+        lv_font_glyph_dsc_t d;
+        memset(&d, 0, sizeof(d));
+        if (!lv_font_get_glyph_dsc(font, &d, cp, 0)) continue;  // absent: no glyph/advance
+        FlatGlyph f;
+        f.is_cp      = true;
+        f.code       = cp;
+        f.x_off_px   = 0;
+        f.y_off_px   = 0;
+        f.advance_px = (float)d.adv_w;
+        f.is_space   = (cp == 0x20);
+        f.can_break  = break_before_here(flat);
+        flat.push_back(f);
+    }
+}
+
+// Flatten a matched segmented entry into one glyph sequence: shaped literals, and
+// each hole value shaped (if it is itself a translated run — handles a complex-
+// script snippet that is its own msgid) or else on the codepoint path.
+std::vector<FlatGlyph> flatten_segmented(const SegEntry& entry,
+                                         const std::vector<std::string>& values,
+                                         const lv_font_t* font, float scale,
+                                         uint32_t space_gid) {
+    std::vector<FlatGlyph> flat;
+    size_t hole = 0;
+    for (const SegPart& p : entry.parts) {
+        if (!p.is_hole) {
+            flat_append_run(flat, p.glyphs, scale, space_gid);
+            continue;
+        }
+        const std::string& v = (hole < values.size()) ? values[hole] : std::string();
+        ++hole;
+        // ap_form is a no-op for LTR (the only direction segmented runs match in).
+        auto it = g_table.by_text.find(ap_form(v));
+        if (it != g_table.by_text.end() && !it->second.lines.empty()) {
+            for (const RunVLine& ln : it->second.lines)
+                flat_append_run(flat, ln.glyphs, scale, space_gid);
+        } else {
+            flat_append_cp(flat, v, font);
+        }
+    }
+    return flat;
+}
+
+// Draw one flat glyph at pen `x` (px, left of the glyph origin) on `baseline`.
+void draw_flat_glyph(lv_draw_buf_t* mask, int mask_w, int mask_h, int stride,
+                     const FlatGlyph& f, double x, int baseline,
+                     const lv_font_t* font, stb_metrics_t* sm, float scale) {
+    if (!f.is_cp) {
+        lv_font_glyph_dsc_t gd;
+        memset(&gd, 0, sizeof(gd));
+        gd.resolved_font = (lv_font_t*)font;
+        gd.gid.index = f.code;
+        gd.format = LV_FONT_GLYPH_FORMAT_A8;
+        const lv_draw_buf_t* db = (const lv_draw_buf_t*)lv_font_get_glyph_bitmap(&gd, NULL);
+        if (db && db->data && db->header.w > 0 && db->header.h > 0) {
+            int ix0, iy0, ix1, iy1;
+            stb_metrics_glyph_box(sm, (int)f.code, scale, &ix0, &iy0, &ix1, &iy1);
+            int gx = (int)lround(x + (double)f.x_off_px) + ix0;
+            int gy = baseline + iy0 - (int)lround((double)f.y_off_px);  // HB y-up -> y-down
+            blit_a8((uint8_t*)mask->data, mask_w, mask_h, stride,
+                    (const uint8_t*)db->data, db->header.w, db->header.h,
+                    db->header.stride, gx, gy);
+        }
+        lv_font_glyph_release_draw_data(&gd);
+        return;
+    }
+    lv_font_glyph_dsc_t d;
+    memset(&d, 0, sizeof(d));
+    if (!lv_font_get_glyph_dsc(font, &d, f.code, 0)) return;
+    const lv_draw_buf_t* db = (const lv_draw_buf_t*)lv_font_get_glyph_bitmap(&d, NULL);
+    if (db && db->data && d.box_w > 0 && d.box_h > 0) {
+        int gx = (int)lround(x) + d.ofs_x;
+        int gy = baseline - d.ofs_y - ((int)d.box_h - 1);  // dsc box -> top row
+        blit_a8((uint8_t*)mask->data, mask_w, mask_h, stride,
+                (const uint8_t*)db->data, db->header.w, db->header.h,
+                db->header.stride, gx, gy);
+    }
+    lv_font_glyph_release_draw_data(&d);
+}
+
+// Greedy-wrap a flat glyph sequence into [start,end) line ranges fitting `width_px`,
+// cutting only where `can_break` and trimming a trailing space at the cut. Mirrors
+// wrap_line (the plain path). width_px <= 0 => a single line. Trimmed spaces between
+// the cut and the line end are dropped from both lines (they vanish at the break).
+std::vector<std::pair<size_t, size_t>> wrap_flat(const std::vector<FlatGlyph>& flat,
+                                                 int width_px) {
+    std::vector<std::pair<size_t, size_t>> lines;
+    const size_t n = flat.size();
+    if (width_px <= 0 || n == 0) { lines.push_back({0, n}); return lines; }
+
+    size_t start = 0;
+    while (start < n) {
+        double acc = 0;
+        size_t cut = start;   // last break index that fits, > start (start = none yet)
+        size_t i = start;
+        for (; i < n; ++i) {
+            if (i > start && flat[i].can_break) cut = i;
+            acc += flat[i].advance_px;
+            if (acc > width_px && cut > start) break;  // overflowed and have a cut
+        }
+        if (i >= n) { lines.push_back({start, n}); break; }
+
+        size_t end = cut;
+        while (end > start && flat[end - 1].is_space) --end;  // trim trailing space
+        lines.push_back({start, end});
+        start = cut;
+    }
+    return lines;
+}
+
+// Match `text` (the value-filled label) against a template's literal anchors. On
+// success fills `values` (one per hole, in order) and returns true. Leftmost-greedy:
+// each literal is found at/after the previous cut. Byte-level matching is valid —
+// UTF-8 is self-synchronising and the literals start/end on codepoint boundaries.
+bool match_segmented(const SegEntry& seg, const std::string& text,
+                     std::vector<std::string>& values) {
+    values.clear();
+    size_t c = 0;                          // cursor into text (bytes)
+    size_t hole_start = std::string::npos; // start of an open (pending) hole value
+    for (const SegPart& p : seg.parts) {
+        if (p.is_hole) {
+            if (hole_start != std::string::npos) return false;  // adjacent holes: ambiguous
+            hole_start = c;
+            continue;
+        }
+        if (hole_start == std::string::npos) {
+            // Leading literal (or after a consumed literal): must sit exactly at c.
+            if (c > text.size() || text.compare(c, p.lit.size(), p.lit) != 0) return false;
+            c += p.lit.size();
+        } else {
+            // Literal closes the open hole: the value is everything up to it.
+            size_t found = text.find(p.lit, c);
+            if (found == std::string::npos) return false;
+            values.push_back(text.substr(hole_start, found - hole_start));
+            hole_start = std::string::npos;
+            c = found + p.lit.size();
+        }
+    }
+    if (hole_start != std::string::npos) {
+        values.push_back(text.substr(hole_start));  // trailing hole runs to the end
+    } else if (c != text.size()) {
+        return false;  // a trailing literal must consume the whole string
+    }
+    return true;
+}
+
+// Find the first segmented template the label matches, flatten it, word-wrap to the
+// label width, and bake the (multi-line) mask — reusing the LabelRun the plain path
+// produces. Returns nullptr if no template matches (label falls back to the
+// codepoint path, as before). `wrap_width` <= 0 keeps it single line.
+LabelRun* bake_segmented(const char* label_text, const lv_font_t* font, int px,
+                         lv_text_align_t align, int wrap_width) {
+    size_t len = 0;
+    const uint8_t* bytes = seedsigner_registered_font_bytes(font, &len);
+    stb_metrics_t* sm = metrics_for(bytes, len);
+    if (!sm) return nullptr;
+    const float scale = stb_metrics_scale(sm, (float)px);
+
+    const std::string text(label_text);
+    std::vector<std::string> values;
+    const SegEntry* match = nullptr;
+    for (const SegEntry& seg : g_table.segmented) {
+        if (match_segmented(seg, text, values)) { match = &seg; break; }
+    }
+    if (!match) return nullptr;
+
+    const uint32_t space_gid = (uint32_t)stb_metrics_glyph_index(sm, ' ');
+    std::vector<FlatGlyph> flat = flatten_segmented(*match, values, font, scale, space_gid);
+    if (flat.empty()) return nullptr;
+
+    // Word-wrap to the label width at the break opportunities (after spaces / part
+    // edges) — long body text (e.g. the change-address warning) wraps like the
+    // plain path; short titles/labels stay single line.
+    std::vector<std::pair<size_t, size_t>> lines = wrap_flat(flat, wrap_width);
+    const size_t nlines = lines.size();
+    if (nlines == 0) return nullptr;
+
+    const int line_height = lv_font_get_line_height(font);
+    const int ascent      = line_height - font->base_line;
+    const int margin      = line_height;  // bearing/overhang slack (matches bake_run)
+
+    // Per-line widths (sum of advances) and the block width.
+    std::vector<double> line_w(nlines, 0);
+    double layout_wd = 0;
+    for (size_t li = 0; li < nlines; ++li) {
+        double w = 0;
+        for (size_t i = lines[li].first; i < lines[li].second; ++i) w += flat[i].advance_px;
+        line_w[li] = w;
+        if (w > layout_wd) layout_wd = w;
+    }
+    const int layout_w = (int)lround(layout_wd);
+    if (layout_w <= 0) return nullptr;
+
+    const int mask_w = layout_w + 2 * margin;
+    const int mask_h = (int)nlines * line_height + 2 * margin;
+    lv_draw_buf_t* mask = lv_draw_buf_create(mask_w, mask_h, LV_COLOR_FORMAT_A8, 0);
+    if (!mask) return nullptr;
+    const int stride = mask->header.stride;
+    memset(mask->data, 0, (size_t)stride * mask_h);
+
+    // Paint each line, intra-aligned within layout_w (the block is aligned to the
+    // label box later, at draw time).
+    for (size_t li = 0; li < nlines; ++li) {
+        double line_off;
+        switch (align) {
+            case LV_TEXT_ALIGN_CENTER: line_off = (layout_wd - line_w[li]) / 2; break;
+            case LV_TEXT_ALIGN_RIGHT:  line_off = (layout_wd - line_w[li]);     break;
+            default:                   line_off = 0; break;  // LEFT / AUTO-LTR
+        }
+        const double pen_x0  = margin + line_off;
+        const int    baseline = margin + (int)li * line_height + ascent;
+        double pen = pen_x0;
+        for (size_t i = lines[li].first; i < lines[li].second; ++i) {
+            draw_flat_glyph(mask, mask_w, mask_h, stride, flat[i], pen, baseline,
+                            font, sm, scale);
+            pen += flat[i].advance_px;
+        }
+    }
+
+    LabelRun* run = new LabelRun();
+    run->mask        = mask;
+    run->margin      = margin;
+    run->layout_w    = layout_w;
+    run->ascent      = ascent;
+    run->line_height = line_height;
+    return run;
+}
+
 // --- Draw event: paint the baked mask over the label's box, recolored to the
 // label's LIVE text color (so focus highlighting still works). ----------------
 void glyph_run_draw_cb(lv_event_t* e) {
@@ -326,21 +654,27 @@ void attach_runs(lv_obj_t* obj) {
         if (px > 0) {
             const char* text = lv_label_get_text(obj);
             if (text && *text) {
+                LabelRun* run = nullptr;
+                lv_text_align_t align = lv_obj_get_style_text_align(obj, LV_PART_MAIN);
                 auto it = g_table.by_text.find(text);
                 if (it != g_table.by_text.end()) {
-                    lv_text_align_t align = lv_obj_get_style_text_align(obj, LV_PART_MAIN);
                     // Wrap long lines to the label's content width, at the offline
                     // word-break marks. LTR only — a visual-order RTL run needs
                     // right-anchored breaking, so ur is left unwrapped (width 0).
                     int wrap_width = g_table.rtl ? 0 : lv_obj_get_content_width(obj);
-                    LabelRun* run = bake_run(it->second, font, px, g_table.upem,
-                                             align, g_table.rtl, wrap_width);
-                    if (run) {
-                        // Suppress the (wrong) codepoint text; draw the run instead.
-                        lv_obj_set_style_text_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
-                        lv_obj_add_event_cb(obj, glyph_run_draw_cb, LV_EVENT_DRAW_MAIN_END, run);
-                        lv_obj_add_event_cb(obj, glyph_run_delete_cb, LV_EVENT_DELETE, run);
-                    }
+                    run = bake_run(it->second, font, px, g_table.upem,
+                                   align, g_table.rtl, wrap_width);
+                } else if (!g_table.rtl && !g_table.segmented.empty()) {
+                    // No whole-string match: the label may be a value-filled
+                    // {}-template. Match it against the segmented anchors and bake
+                    // shaped literals + inserted values, wrapped to the label. LTR only.
+                    run = bake_segmented(text, font, px, align, lv_obj_get_content_width(obj));
+                }
+                if (run) {
+                    // Suppress the (wrong) codepoint text; draw the run instead.
+                    lv_obj_set_style_text_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+                    lv_obj_add_event_cb(obj, glyph_run_draw_cb, LV_EVENT_DRAW_MAIN_END, run);
+                    lv_obj_add_event_cb(obj, glyph_run_delete_cb, LV_EVENT_DELETE, run);
                 }
             }
         }
@@ -386,27 +720,53 @@ bool seedsigner_set_glyph_runs(const char* runs_json, size_t len) {
     };
 
     for (const json& e : doc["runs"]) {
-        // v1 renders the "plain" kind (whole-string, multi-line). "segmented"
-        // entries carry a {}-template; matching them needs device-side template
-        // matching against the value-filled label text — a tracked follow-up, so
-        // they are parsed-skipped here (the label falls back to codepoint text).
-        if (e.value("kind", std::string()) != "plain") continue;
-        if (!e.contains("text") || !e.contains("lines") || !e["lines"].is_array()) continue;
+        const std::string kind = e.value("kind", std::string());
 
-        RunEntry entry;
-        for (const json& jline : e["lines"]) {
-            RunVLine vline;
-            // Lines are {glyphs, breaks}; tolerate a bare glyph list for safety.
-            const json& jglyphs = jline.is_object() ? jline.value("glyphs", json::array()) : jline;
-            read_glyphs(jglyphs, vline.glyphs);
-            if (jline.is_object() && jline.contains("breaks") && jline["breaks"].is_array()) {
-                for (const json& jb : jline["breaks"]) vline.breaks.push_back(jb.get<uint32_t>());
+        // "plain": a whole-string (multi-line) run, keyed by translated text.
+        if (kind == "plain") {
+            if (!e.contains("text") || !e.contains("lines") || !e["lines"].is_array()) continue;
+
+            RunEntry entry;
+            for (const json& jline : e["lines"]) {
+                RunVLine vline;
+                // Lines are {glyphs, breaks}; tolerate a bare glyph list for safety.
+                const json& jglyphs = jline.is_object() ? jline.value("glyphs", json::array()) : jline;
+                read_glyphs(jglyphs, vline.glyphs);
+                if (jline.is_object() && jline.contains("breaks") && jline["breaks"].is_array()) {
+                    for (const json& jb : jline["breaks"]) vline.breaks.push_back(jb.get<uint32_t>());
+                }
+                entry.lines.push_back(std::move(vline));
             }
-            entry.lines.push_back(std::move(vline));
+            // Key by the presentation-form transform so RTL labels (stored as
+            // presentation forms by LVGL) match; a no-op for non-Arabic scripts.
+            g_table.by_text[ap_form(e["text"].get<std::string>())] = std::move(entry);
+            continue;
         }
-        // Key by the presentation-form transform so RTL labels (stored as
-        // presentation forms by LVGL) match; a no-op for non-Arabic scripts.
-        g_table.by_text[ap_form(e["text"].get<std::string>())] = std::move(entry);
+
+        // "segmented": a {}-template split into ordered literal runs + hole tokens.
+        // Matched against value-filled labels at attach time (LTR only).
+        if (kind == "segmented") {
+            if (!e.contains("parts") || !e["parts"].is_array()) continue;
+            SegEntry seg;
+            bool ok = true;
+            for (const json& jp : e["parts"]) {
+                SegPart part;
+                if (jp.contains("hole")) {
+                    part.is_hole = true;
+                } else if (jp.contains("lit")) {
+                    part.lit = jp.value("lit", std::string());
+                    read_glyphs(jp.value("glyphs", json::array()), part.glyphs);
+                } else {
+                    ok = false;  // malformed part
+                    break;
+                }
+                seg.parts.push_back(std::move(part));
+            }
+            if (ok && !seg.parts.empty()) g_table.segmented.push_back(std::move(seg));
+            continue;
+        }
+
+        // Any other kind (e.g. "unsupported", listed for visibility) carries no run.
     }
 
     g_have_table = true;
@@ -415,6 +775,7 @@ bool seedsigner_set_glyph_runs(const char* runs_json, size_t len) {
 
 void seedsigner_clear_glyph_runs() {
     g_table.by_text.clear();
+    g_table.segmented.clear();
     g_table.upem = 1000;
     g_table.rtl = false;
     g_have_table = false;

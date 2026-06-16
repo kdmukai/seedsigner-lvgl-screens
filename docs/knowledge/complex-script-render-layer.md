@@ -110,10 +110,6 @@ Known limitations:
   breaking to put the first-read words on the top line, so `ur` passes
   `wrap_width = 0` and `line_break_indices` returns `[]` for RTL. Acceptable while
   `ur` is a removable stub; revisit when a real Urdu translation lands.
-- **Segmented (`{}`-template) runs are parsed-skipped.** The device label holds
-  the value-filled string, not the template, so matching needs device-side
-  template matching; until then those labels fall back to the codepoint path.
-  (26/337 entries in `hi`; all value insertions.)
 - **Mixed Latin+script lines** shape the whole line — including embedded `BIP-39`
   — through the script subset at the bumped size, not the OpenSans baseline (the
   documented mixed-font-line tension). Renders correctly, slightly different
@@ -123,6 +119,55 @@ Known limitations:
   (optionally) carrying glyph boxes in the run to drop the on-device stb are the
   on-target pass.
 
+## Segmented (`{}`-template) runs: device-side value insertion
+
+A label built from a `{}`-template holds the value-FILLED string at runtime (e.g.
+`सीड शब्द #5`), not the template (`सीड शब्द #{}`) the offline run table is keyed by.
+So these can't be matched by whole-string lookup. The offline pipeline classifies
+them `segmented` and emits ordered `parts` — shaped literal runs (`{lit, glyphs}`)
+interleaved with hole tokens (`{hole}`) — at SHAPE-SAFE boundaries (a hole never
+abuts a joining script letter; see `complex-script-run-pipeline.md` §4). The device
+half (`glyph_runs.cpp`):
+
+1. **Parse** segmented entries into `RunTable::segmented` (a small list — ~26 for
+   `hi`), kept separate from the whole-string `by_text` map.
+2. **Match** (only when `by_text` misses, **LTR only**): `match_segmented` walks the
+   template's literal anchors against the label text — leftmost-greedy, byte-level
+   (UTF-8 is self-synchronising and literals start/end on codepoint boundaries) —
+   and extracts each hole's inserted value.
+3. **Render each value two ways.** A hole value can be an integer/ASCII string OR a
+   translated text snippet (`Transaction's {} address could not be verified...` is
+   filled with `_("change")`/`_("self-transfer")`). So a value is first looked up in
+   the **plain run table** (`by_text`): a hit means it is its own translated msgid →
+   draw it SHAPED. A miss falls to the **codepoint path** (`lv_font_get_glyph_dsc`
+   over the label font's fallback chain) — integers and untranslated-English values
+   (e.g. a `{network}` left as `Mainnet`) render via the OpenSans floor, exactly as
+   embedded English does elsewhere. This is why the same template renders correctly
+   whether the snippet is translated (`मेननेट`, shaped) or not (`Mainnet`, codepoint).
+4. **Flatten + wrap + bake.** Literals and values are flattened into one glyph
+   sequence (`FlatGlyph`: shaped-by-gid OR codepoint-by-dsc), word-wrapped to the
+   label width, and baked into the same multi-line A8 `LabelRun` the plain path
+   uses — so the draw/recolor/alignment path is shared verbatim.
+
+Why these choices:
+- **`by_text`-first, segmented-as-fallback** keeps whole strings on the cheaper
+  exact-match path; segmented matching only runs on the ~handful of labels that miss.
+- **Concatenating independently-shaped literal + value is visually exact** because
+  the offline classifier guarantees shape-safe boundaries (the spike proved
+  word-boundary concatenation); no re-shaping on device.
+- **Wrap marks are computed on device (break-after-space), not offline.** Segmented
+  literals carry no offline `breaks` (the value widths are runtime-dependent), so
+  `bake_segmented` allows a break before any glyph whose predecessor is a space —
+  the word-boundary rule for the space-separated scripts (Devanagari/Latin/Arabic)
+  that actually appear as segmented body text. (An earlier attempt also broke at
+  every part edge; that orphaned an opening `(` before a `{network}` hole, since the
+  space sits *before* the paren — break-after-space alone groups `(Mainnet)`
+  correctly.) The no-space scripts (Thai/…) essentially never appear as `{}`
+  templates and would simply not wrap.
+- **RTL is skipped** (`!g_table.rtl`): the literal/value order is laid out
+  left-to-right, and `ur` (the only RTL locale) is a removable stub with no
+  segmented entries.
+
 ## Validated
 
 Desktop screenshot generator, `--locale {hi,th,ur}` over the localized scenarios:
@@ -131,3 +176,12 @@ render correctly on real screens; ASCII (keyboard, text entry) and English are
 untouched (double-gated by `seedsigner_locale_uses_glyph_runs()` + a loaded
 table). Glyph placement is the spike's math (validated to ink-IoU 0.82–0.98 vs the
 libraqm oracle); only the compositor changed (LVGL `lv_draw_image` vs raw blit).
+
+Segmented runs validated on `hi` (all four resolutions) with value-filled labels:
+integer holes (`सीड शब्द #5`, `सिक्का उछाल 2/3`, `2 / 3 मल्टीसिग`), translated-snippet
+holes (the change/self-transfer address warnings — `चेंज`/`सेल्फ-ट्रांसफर` inserted
+SHAPED via the `by_text` lookup), and the network-mismatch warning with `{network}`
+both translated (`मेननेट`, shaped) and left as untranslated English (`Mainnet`,
+codepoint). Long body text wraps at word boundaries; titles/headlines stay single
+line. The plain path and the offline oracle gate (`validate_runs.py`, hi/th/ur)
+are unchanged and still pass.
