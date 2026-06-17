@@ -706,19 +706,28 @@ void attach_runs(lv_obj_t* obj) {
             if (text && *text) {
                 LabelRun* run = nullptr;
                 lv_text_align_t align = lv_obj_get_style_text_align(obj, LV_PART_MAIN);
+                // Word-wrap ONLY labels that actually wrap their codepoint text —
+                // i.e. LV_LABEL_LONG_WRAP (the multi-line body/warning text). The
+                // single-line labels (the top_nav title + button labels use
+                // SCROLL/CLIP) must stay on one line: wrapping a run to a
+                // single-line label's content width splits it across lines the
+                // label can't show, so only line 0 survives — e.g. a Thai title
+                // "1 อินพุต" whose run overflows the narrow title region collapses
+                // to just its ASCII prefix "1". RTL is never wrapped (a visual-order
+                // run needs right-anchored breaking). wrap_width 0 => single line.
+                const bool wraps =
+                    (lv_label_get_long_mode(obj) == LV_LABEL_LONG_WRAP) && !g_table.rtl;
+                const int wrap_width = wraps ? lv_obj_get_content_width(obj) : 0;
+
                 auto it = g_table.by_text.find(text);
                 if (it != g_table.by_text.end()) {
-                    // Wrap long lines to the label's content width, at the offline
-                    // word-break marks. LTR only — a visual-order RTL run needs
-                    // right-anchored breaking, so ur is left unwrapped (width 0).
-                    int wrap_width = g_table.rtl ? 0 : lv_obj_get_content_width(obj);
                     run = bake_run(it->second, font, px, g_table.upem,
                                    align, g_table.rtl, wrap_width);
                 } else if (!g_table.rtl && !g_table.segmented.empty()) {
                     // No whole-string match: the label may be a value-filled
                     // {}-template. Match it against the segmented anchors and bake
-                    // shaped literals + inserted values, wrapped to the label. LTR only.
-                    run = bake_segmented(text, font, px, align, lv_obj_get_content_width(obj));
+                    // shaped literals + inserted values. LTR only.
+                    run = bake_segmented(text, font, px, align, wrap_width);
                 }
                 if (run) {
                     // Suppress the (wrong) codepoint text; draw the run instead.
