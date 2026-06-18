@@ -115,6 +115,12 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/gui_constants.cpp"
   "${SEEDSIGNER_DIR}/locale_fonts.cpp"
   "${SEEDSIGNER_DIR}/font_registry.cpp"
+  # i18n locale loader + complex-script glyph-run render layer (Devanagari/Thai/
+  # Nastaliq). seedsigner.cpp calls apply_glyph_runs_to_labels()/ss_reap_retired(),
+  # so these must be linked here just as in the screenshot_generator/web_runner.
+  "${SEEDSIGNER_DIR}/locale_loader.cpp"
+  "${SEEDSIGNER_DIR}/glyph_runs.cpp"
+  "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
