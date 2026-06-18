@@ -61,8 +61,20 @@ const uint8_t* seedsigner_registered_font_bytes(const struct _lv_font_t* font, s
 // (validated). Returns true on success.
 bool seedsigner_register_font(const char* logical_name, const uint8_t* buf, size_t len, int font_px_size);
 
-// Detach and destroy every registered font, restoring the compiled-in fonts on
-// whichever profile each was installed on. Call before switching resolution.
+// Detach every registered font, restoring the compiled-in fonts on whichever
+// profile each was installed on, and RETIRE the detached fonts for later
+// destruction. The fonts are NOT freed here: the previous locale's screen is
+// usually still the active LVGL screen and its labels still point at the script
+// fonts, so freeing now would dangle them (a redraw of the old screen would draw
+// through a freed lv_font_t and fault). Call before switching resolution/locale.
 void seedsigner_clear_registered_fonts();
+
+// Destroy every font retired by seedsigner_clear_registered_fonts(). Call ONLY
+// after the screen(s) that referenced those fonts have been deleted — the screen
+// layer does this right after deleting the previous screen on a screen swap (see
+// load_screen_and_cleanup_previous). The retired fonts' backing byte buffers
+// (loader-owned) must be freed AFTER this call, never before. No-op if nothing is
+// retired (e.g. plain navigation within one locale).
+void seedsigner_reap_retired_fonts();
 
 #endif // FONT_REGISTRY_H

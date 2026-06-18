@@ -26,6 +26,18 @@ struct Registration {
 
 static std::vector<Registration> g_registrations;
 
+// Fonts detached from the active profile but NOT yet destroyed. A locale switch
+// restores the profile and registers the new fonts WHILE the previous locale's
+// screen is still the active LVGL screen — and that screen's labels hold raw
+// pointers to the previous script fonts. Destroying those fonts immediately makes
+// every still-live label a dangling pointer: the moment LVGL redraws the old
+// screen (e.g. the ESP32 render task ticking between load_locale and the screen
+// rebuild, two separate host calls), it draws a label through a freed lv_font_t
+// and faults. So clear() RETIRES the fonts here instead of freeing them; the
+// screen layer calls seedsigner_reap_retired_fonts() only AFTER it deletes the old
+// screen (see load_screen_and_cleanup_previous), when nothing references them.
+static std::vector<Registration> g_retired;
+
 // Map a text role to its DisplayProfile font-pointer member.
 static const lv_font_t* DisplayProfile::* role_field(TextRole role) {
     switch (role) {
@@ -164,13 +176,25 @@ bool seedsigner_register_font(const char* logical_name, const uint8_t* buf, size
 }
 
 void seedsigner_clear_registered_fonts() {
+    // Detach each registration from its profile (restore the compiled-in font) but
+    // DEFER destroying the fonts: the previous locale's screen is typically still
+    // active and its labels still point at `script`/`heap_copy`. Move them to the
+    // retired list; seedsigner_reap_retired_fonts() frees them once that screen is
+    // gone. Buffers (owned by the loader) must likewise outlive the retired fonts.
     for (Registration& r : g_registrations) {
         (r.profile)->*(r.field) = r.original;  // restore compiled-in font
+        g_retired.push_back(r);                 // free later, after the old screen dies
+    }
+    g_registrations.clear();
+    g_current_locale.clear();
+}
+
+void seedsigner_reap_retired_fonts() {
+    for (Registration& r : g_retired) {
         if (r.heap_copy) delete r.heap_copy;
 #if LV_USE_TINY_TTF
         if (r.script) lv_tiny_ttf_destroy(r.script);
 #endif
     }
-    g_registrations.clear();
-    g_current_locale.clear();
+    g_retired.clear();
 }

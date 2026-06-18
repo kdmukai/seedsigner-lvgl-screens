@@ -13,17 +13,38 @@
 using json = nlohmann::json;
 
 // The loader OWNS the registered font byte buffers: tiny_ttf reads glyph outlines
-// lazily, so the bytes must outlive the lv_font_t. Freed on unload / next load.
-// A locale needs at most 2 unique font files (a two-weight Fallback pack), so a
-// small reserve keeps these addresses stable across registration. (runs.bin
-// bytes are copied by seedsigner_set_glyph_runs and are not retained here.)
+// lazily, so the bytes must outlive the lv_font_t. A locale needs at most 2 unique
+// font files (a two-weight Fallback pack), so a small reserve keeps these addresses
+// stable across registration. (runs.bin bytes are copied by seedsigner_set_glyph_runs
+// and are not retained here.)
 static std::vector<std::vector<uint8_t>> g_owned;
 
+// Buffers whose fonts were RETIRED (not yet destroyed) by the last unload. They
+// back the previous locale's still-live screen, so they outlive g_owned: moved
+// here on unload, freed by ss_reap_retired() together with the retired fonts —
+// after the old screen is gone. See seedsigner_clear_registered_fonts().
+static std::vector<std::vector<uint8_t>> g_owned_retired;
+
 void ss_unload_locale(void) {
-    seedsigner_clear_registered_fonts();  // destroys fonts referencing g_owned (must run first)
+    // Retire (do NOT destroy) the current locale's fonts: the previous screen is
+    // usually still active and its labels still point at them. Glyph-run tables can
+    // clear eagerly — a matched label draws its own baked mask, not the run table.
+    seedsigner_clear_registered_fonts();   // retires fonts; reaped after old screen dies
     seedsigner_clear_glyph_runs();
-    g_owned.clear();                       // now safe to free the buffers
+
+    // The retired fonts read these buffers lazily (until reaped), so the buffers
+    // must outlive them. Move them aside rather than freeing now; append so several
+    // unloads before a reap accumulate. std::move keeps each inner buffer's heap
+    // allocation (and thus the raw pointers the fonts hold) valid.
+    for (std::vector<uint8_t>& b : g_owned) g_owned_retired.push_back(std::move(b));
+    g_owned.clear();
+
     seedsigner_set_locale("");
+}
+
+void ss_reap_retired(void) {
+    seedsigner_reap_retired_fonts();  // destroy the retired fonts first...
+    g_owned_retired.clear();          // ...then free the buffers they read
 }
 
 // Locate the manifest entry for `locale` (the per-active-profile font plan). The

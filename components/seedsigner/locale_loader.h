@@ -48,9 +48,21 @@ typedef bool (*ss_pack_provider_t)(const char* locale, const char* file,
 // them lazily for the font's lifetime), freeing them on the next load / unload.
 bool ss_load_locale(const char* locale, ss_pack_provider_t provider, void* user);
 
-// Clear everything ss_load_locale installed (fonts, glyph runs, owned buffers),
-// restoring the baked floor and clearing the active locale.
+// Clear everything ss_load_locale installed, restoring the baked floor and
+// clearing the active locale. The script fonts and their byte buffers are RETIRED
+// (detached + set aside), not freed: the previous locale's screen is usually still
+// the active LVGL screen and its labels still point at those fonts. ss_reap_retired()
+// frees them once that screen is deleted. Glyph-run tables are cleared immediately.
 void ss_unload_locale(void);
+
+// Destroy the fonts + buffers retired by the most recent unload/load. Call ONLY
+// after the screen that referenced the previous locale's fonts has been deleted —
+// the screen layer does this on every screen swap, right after deleting the old
+// screen (see load_screen_and_cleanup_previous). No-op when nothing is retired
+// (e.g. plain navigation within one locale). A host that tears the locale down
+// without a following screen build (shutdown) should call this after ss_unload_locale()
+// to free immediately; otherwise the retired memory is reclaimed at the next swap.
+void ss_reap_retired(void);
 
 // JSON array of the pack files `locale` needs ("["ur.ttf","runs.bin"]", or
 // "["vi_regular.ttf","vi_semibold.ttf"]", or "[]" for a baked-floor locale).
