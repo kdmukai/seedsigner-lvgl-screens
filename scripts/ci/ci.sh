@@ -27,7 +27,15 @@ case "$COMMAND" in
 
   install-screenshot-deps)
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3
+    # python3-icu: distro-prebuilt PyICU (ICU dictionary line-breaker). Installed via
+    # apt, NOT pip, because PyICU ships no wheels — `pip install PyICU` compiles from
+    # source (a slow build that wedged CI for >20 min). The binding tracks the system
+    # libicu, which is exactly what each pack manifest's icu_version already records.
+    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3 python3-pip python3-icu
+    # Remaining offline i18n shaping deps ship wheels (fast). Install them from the
+    # pinned requirements, minus the PyICU line (satisfied by python3-icu above) so
+    # pip doesn't trigger the source rebuild.
+    grep -viE '^pyicu' tools/i18n/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
     ;;
 
   build-screenshots)
