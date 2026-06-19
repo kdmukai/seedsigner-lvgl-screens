@@ -117,6 +117,30 @@
           "animated": true,
           "animation_seconds": 1.4
         }
+      },
+      {
+        "name": "long_text_overflow",
+        "context": {
+          "top_nav": { "title": "Caution", "show_back_button": true, "show_power_button": false },
+          "status_type": "dire_warning",
+          "status_headline": "SeedQR is your private key!",
+          "text": "Anyone who sees this QR code can steal all of your funds. Never photograph it, never scan it into a device that connects to the internet, and never store it digitally. Treat it exactly like the seed phrase itself: write it on paper or steel, keep it offline, and store it somewhere only you can reach. If you are not certain this environment is private and air-gapped, go back now and do not display the code.",
+          "button_list": ["I understand"],
+          "is_bottom_list": true,
+          "warning_edges": true
+        }
+      },
+      {
+        "name": "long_text_overflow_plain",
+        "context": {
+          "top_nav": { "title": "Caution", "show_back_button": true, "show_power_button": false },
+          "status_type": "dire_warning",
+          "status_headline": "SeedQR is your private key!",
+          "text": "Anyone who sees this QR code can steal all of your funds. Never photograph it, never scan it into a device that connects to the internet, and never store it digitally. Treat it exactly like the seed phrase itself: write it on paper or steel, keep it offline, and store it somewhere only you can reach. If you are not certain this environment is private and air-gapped, go back now and do not display the code.",
+          "button_list": ["I understand"],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
       }
     ]
   },

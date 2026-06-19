@@ -13,6 +13,12 @@ extern "C" {
 typedef enum {
     NAV_ZONE_TOP = 0,
     NAV_ZONE_BODY = 1,
+    // Body content (not a focusable item) is scrolling under joystick control.
+    // Used only by screens that opt into scroll-then-buttons navigation (e.g. an
+    // overflowing large_icon_status_screen): DOWN walks the body down a step at a
+    // time, then drops into NAV_ZONE_BODY to focus the bottom button; UP reverses.
+    // No item is highlighted while in this zone.
+    NAV_ZONE_SCROLL = 2,
 } nav_zone_t;
 
 typedef enum {
@@ -43,6 +49,15 @@ typedef struct {
     size_t initial_body_index;
     bool has_input_mode_override;
     input_mode_t input_mode_override;
+
+    // Opt-in joystick scrolling (default off: scroll_obj == NULL). When a screen's
+    // body content overflows the viewport, it passes the scrollable body here with
+    // scroll_then_buttons = true: the nav state machine inserts a NAV_ZONE_SCROLL
+    // step so DOWN scrolls the body progressively before focusing the bottom button,
+    // and UP scrolls back up before entering the top-nav. Screens whose content fits
+    // (or that never opt in) leave these unset and keep the plain TOP<->BODY flow.
+    lv_obj_t *scroll_obj;
+    bool scroll_then_buttons;
 } nav_config_t;
 
 void nav_bind(const nav_config_t *cfg);

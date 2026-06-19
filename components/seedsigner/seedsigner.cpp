@@ -230,12 +230,19 @@ static size_t nav_initial_index_from_cfg(const json &cfg, size_t default_index) 
 // Shared nav wiring helper for all screens.
 // Screens provide only focusables/layout/default body index; this helper applies
 // top-nav wiring, aux-key policy, mode override, and binds nav in one place.
+//
+// `scroll_obj` / `scroll_then_buttons` are an opt-in (default off): a screen whose
+// body content overflows the viewport passes the scrollable body so the joystick
+// nav inserts a scroll step before the bottom button (see navigation.h). All other
+// call sites omit them and keep the plain top-nav<->body flow.
 static void bind_screen_navigation(const json &cfg,
                                    const screen_scaffold_t &screen,
                                    lv_obj_t **body_items,
                                    size_t body_item_count,
                                    nav_body_layout_t body_layout,
-                                   size_t default_initial_index) {
+                                   size_t default_initial_index,
+                                   lv_obj_t *scroll_obj = nullptr,
+                                   bool scroll_then_buttons = false) {
     bool has_input_mode_override = false;
     input_mode_t input_mode_override = INPUT_MODE_TOUCH;
     nav_mode_override_from_cfg(cfg, has_input_mode_override, input_mode_override);
@@ -251,6 +258,8 @@ static void bind_screen_navigation(const json &cfg,
     nav_cfg.initial_body_index = nav_initial_index_from_cfg(cfg, default_initial_index);
     nav_cfg.has_input_mode_override = has_input_mode_override;
     nav_cfg.input_mode_override = input_mode_override;
+    nav_cfg.scroll_obj = scroll_obj;
+    nav_cfg.scroll_then_buttons = scroll_then_buttons;
     nav_bind(&nav_cfg);
 }
 
@@ -794,9 +803,13 @@ void large_icon_status_screen(void *ctx_json) {
                          lv_obj_get_width(screen.body) - 2 * EDGE_PADDING);
     }
 
-    // These screens are sized to fit; no scrolling.
-    lv_obj_remove_flag(screen.body, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(screen.body, LV_SCROLLBAR_MODE_OFF);
+    // Most status screens fit the viewport and never scroll. But a tall body
+    // (long warning text on a small display) can push the bottom button off-screen,
+    // so KEEP the body scrollable (the scaffold already set scroll_dir=VER +
+    // SCROLLBAR_MODE_AUTO): touch gets native drag-to-scroll, and overflow is
+    // detected below to opt the joystick nav into scroll-then-button stepping. When
+    // content fits, scroll_bottom == 0 — the scrollbar stays hidden and behavior is
+    // byte-identical to before.
 
     // Relax the body's default top buffer (the former top_nav bottom gap, now
     // owned by the body — see create_standard_body_content) by COMPONENT_PADDING/2
@@ -908,13 +921,23 @@ void large_icon_status_screen(void *ctx_json) {
         add_warning_edges_overlay(screen.screen, defaults.color);
     }
 
+    // Detect overflow now that all content is built: force a layout pass, then ask
+    // the body whether anything sits below the viewport. The flex-grow spacer
+    // collapses to 0 when content overflows, so the button lands directly below the
+    // text and defines scroll_bottom. Only opt the joystick nav into scrolling when
+    // there is genuine overflow AND the scaffold gave us a bottom-list spacer.
+    lv_obj_update_layout(screen.body);
+    bool body_overflows = lv_obj_get_scroll_bottom(screen.body) > 0 && screen.button_list_spacer;
+
     bind_screen_navigation(
         cfg,
         screen,
         screen.button_list_count > 0 ? screen.button_list : NULL,
         screen.button_list_count,
         NAV_BODY_VERTICAL,
-        0
+        0,
+        body_overflows ? screen.body : nullptr,
+        body_overflows
     );
 
     load_screen_and_cleanup_previous(screen.screen);
