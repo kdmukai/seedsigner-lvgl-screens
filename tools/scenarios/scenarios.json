@@ -176,6 +176,18 @@
           "is_bottom_list": true,
           "warning_edges": false
         }
+      },
+      {
+        "name": "newline",
+        "context": {
+          "top_nav": { "title": "Backup Verified", "show_back_button": false, "show_power_button": false },
+          "status_type": "success",
+          "status_headline": "Success!",
+          "text": "First line stands alone.\nThe second paragraph is longer, so it wraps onto more than one line by itself.",
+          "button_list": ["OK"],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
       }
     ]
   },

@@ -838,6 +838,53 @@ static int32_t text_top_leading(const lv_font_t *font, const char *text) {
     return leading > 0 ? leading : 0;
 }
 
+// Balanced wrap for a codepoint-rendered (subset/Latin) wrapped label: shrink its
+// column to the SMALLEST width that still produces the same number of lines —
+// floored at half the original width — so greedy wrapping fills the lines more
+// evenly and a lone trailing word gets pulled up. Width-only: the line count, and
+// therefore the label's height, is unchanged, so this composes with the vertical
+// centering / reclaim done by the caller. The search is pure metric arithmetic
+// over already-loaded glyph advances (lv_text_get_size: no rasterization, no
+// re-shaping), run once at screen build — negligible cost. Shaped glyph-run
+// locales (hi/th) wrap in the render layer (glyph_runs.cpp) and are balanced
+// there instead; this path must not touch them (its codepoint measurement would
+// not match their shaped line-breaking).
+static void balance_wrapped_label_column(lv_obj_t *label) {
+    if (!label) return;
+    const char *text = lv_label_get_text(label);
+    if (!text || !text[0]) return;
+
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    int32_t letter_space  = lv_obj_get_style_text_letter_space(label, LV_PART_MAIN);
+    int32_t line_space    = lv_obj_get_style_text_line_space(label, LV_PART_MAIN);
+    int32_t w0            = lv_obj_get_width(label);
+    if (!font || w0 < 2) return;
+
+    // Height at the full width fixes the target line count.
+    lv_point_t full;
+    lv_text_get_size(&full, text, font, letter_space, line_space, w0, LV_TEXT_FLAG_NONE);
+    // A single line has nothing to balance.
+    if (full.y <= (int32_t)lv_font_get_line_height(font)) return;
+
+    // Binary-search the narrowest width in [w0/2, w0] whose wrapped height is
+    // unchanged (same line count) AND that still contains every word (size.x must
+    // not exceed the trial width, else a word would overflow the column).
+    int32_t lo = w0 / 2, hi = w0, best = w0;
+    if (lo < 1) lo = 1;
+    while (lo <= hi) {
+        int32_t mid = (lo + hi) / 2;
+        lv_point_t sz;
+        lv_text_get_size(&sz, text, font, letter_space, line_space, mid, LV_TEXT_FLAG_NONE);
+        if (sz.y <= full.y && sz.x <= mid) {
+            best = mid;      // still the same lines, no overflow: try narrower
+            hi = mid - 1;
+        } else {
+            lo = mid + 1;    // added a line or overflowed a word: widen
+        }
+    }
+    if (best < w0) lv_obj_set_width(label, best);
+}
+
 void large_icon_status_screen(void *ctx_json) {
     const char *json_str = (const char *)ctx_json;
 
@@ -994,6 +1041,27 @@ void large_icon_status_screen(void *ctx_json) {
     if (overflow > 0 && overflow <= tn_gap) {
         lv_obj_set_height(screen.body, lv_obj_get_height(screen.body) + overflow);
         lv_obj_align_to(screen.body, screen.top_nav, LV_ALIGN_OUT_BOTTOM_MID, 0, -overflow);
+    }
+
+    // Balanced wrap: when the body fits, even out the body text's lines by
+    // narrowing its column (keeping the line count). Only the codepoint-rendered
+    // (subset/Latin) locales are handled here; shaped glyph-run locales (hi/th)
+    // wrap in the render layer and are balanced there. Done before the vertical
+    // centering below; it changes only the column width, not the height, so the
+    // centering math is unaffected.
+    //
+    // KNOWN ASYMMETRY (intentional): this subset/Latin balancing is SCOPED to this
+    // screen (called only here), while the shaped balancing in glyph_runs.cpp is
+    // GLOBAL (every wrapped shaped label, app-wide). So on a NON-status screen with
+    // wrapped body text (e.g. a button_list with intro text), shaped locales get
+    // balanced but subset/Latin ones do not. The status screen — the original
+    // motivation — is covered for all locales. If full cross-locale parity on other
+    // screens is ever needed, promote this to a global post-load pass (walk the
+    // tree, balance LONG_WRAP non-shaped labels) mirroring apply_glyph_runs_to_labels.
+    lv_obj_update_layout(screen.body);
+    bool body_fits = lv_obj_get_scroll_bottom(screen.body) == 0;
+    if (body_fits && body_label && !seedsigner_locale_uses_glyph_runs()) {
+        balance_wrapped_label_column(body_label);
     }
 
     // Vertically center the body text in the gap between the headline and the

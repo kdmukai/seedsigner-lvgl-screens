@@ -235,6 +235,64 @@ std::vector<RunLine> wrap_line(const RunLine& g, const std::vector<uint32_t>& br
 }
 
 // ---------------------------------------------------------------------------
+// Balanced wrap (shaped path). Narrow a label's wrap column to the SMALLEST width
+// that still produces the same number of visual lines — floored at half the full
+// width — so greedy wrapping fills the lines evenly and a lone trailing word is
+// pulled up. Width-only: the line count (and therefore the baked mask height) is
+// unchanged. Cost is trivial: a binary search of a handful of pure-arithmetic
+// passes over the already-shaped advances + offline ICU break marks (no
+// rasterization, no re-shaping), once per label bake.
+//
+// Applied to EVERY wrapped shaped label (in bake_run / bake_segmented below). The
+// only multi-line wrapped text in the app today is body copy, so in practice this
+// only balances body text; single-line labels (titles, buttons) have one line and
+// are left untouched. NOTE: if a future screen wraps shaped text that should NOT
+// be balanced, gate this per-label (e.g. an opt-in flag threaded from the caller)
+// rather than skipping it here.
+//
+// `measure(width, &nlines, &max_line_w)` reports, for a trial width, the visual
+// line count and the widest resulting line; a width is acceptable only if it keeps
+// the line count AND no line exceeds it (no word forced to overflow the column).
+template <typename MeasureFn>
+static int balanced_wrap_width(int full_width, MeasureFn measure) {
+    if (full_width <= 1) return full_width;
+    size_t n0 = 0; int maxw0 = 0;
+    measure(full_width, &n0, &maxw0);
+    if (n0 < 2) return full_width;   // single line: nothing to balance
+
+    int lo = full_width / 2, hi = full_width, best = full_width;
+    if (lo < 1) lo = 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        size_t n = 0; int mw = 0;
+        measure(mid, &n, &mw);
+        if (n <= n0 && mw <= mid) { best = mid; hi = mid - 1; }  // same lines, fits: narrower
+        else                      { lo = mid + 1; }              // extra line / overflow: wider
+    }
+    return best;
+}
+
+// Measure helper for the plain glyph-run path: greedy-wrap every logical
+// (\n-split) line to `width_px` and report the total visual line count + widest
+// line. Iterating entry.lines keeps intentional newlines intact.
+static void measure_wrapped_runs(const RunEntry& entry, int width_px, float scale,
+                                 uint32_t space_gid, size_t* nlines, int* max_line_w) {
+    size_t n = 0; int maxw = 0;
+    for (const RunVLine& logical : entry.lines) {
+        std::vector<RunLine> w = wrap_line(logical.glyphs, logical.breaks, width_px, scale, space_gid);
+        for (const RunLine& vl : w) {
+            long long adv = 0;
+            for (const RunGlyph& g : vl) adv += g.x_advance;
+            int lw = (int)lround((double)adv * scale);
+            if (lw > maxw) maxw = lw;
+            ++n;
+        }
+    }
+    if (nlines)     *nlines = n;
+    if (max_line_w) *max_line_w = maxw;
+}
+
+// ---------------------------------------------------------------------------
 // Bake a parsed run into an A8 alpha mask sized to the font's line box (plus a
 // generous margin to catch left bearings and cursive overhang). Resolution is
 // taken from the label's own font, so one run table serves every PX_MULTIPLIER.
@@ -259,6 +317,16 @@ LabelRun* bake_run(const RunEntry& entry, const lv_font_t* font, int px, int upe
     // marks, producing the visual lines actually laid out below. SPACE glyph id
     // from the same subset stb (to trim a trailing space at a cut).
     const uint32_t space_gid = (uint32_t)stb_metrics_glyph_index(sm, ' ');
+
+    // Balanced wrap: even out the lines by shrinking the column (see
+    // balanced_wrap_width). Width-only, keeps the line count, preserves the
+    // \n-split logical lines. wrap_width <= 0 (RTL / no-wrap) is left untouched.
+    if (wrap_width > 0) {
+        wrap_width = balanced_wrap_width(wrap_width, [&](int w, size_t* n, int* mw) {
+            measure_wrapped_runs(entry, w, scale, space_gid, n, mw);
+        });
+    }
+
     std::vector<RunLine> vlines;
     for (const RunVLine& logical : entry.lines) {
         std::vector<RunLine> w = wrap_line(logical.glyphs, logical.breaks, wrap_width, scale, space_gid);
@@ -531,6 +599,22 @@ std::vector<std::pair<size_t, size_t>> wrap_flat(const std::vector<FlatGlyph>& f
     return lines;
 }
 
+// Measure helper for the segmented path: greedy-wrap the flat glyph sequence to
+// `width_px` and report the line count + widest line (advances are already px).
+static void measure_wrapped_flat(const std::vector<FlatGlyph>& flat, int width_px,
+                                 size_t* nlines, int* max_line_w) {
+    std::vector<std::pair<size_t, size_t>> lines = wrap_flat(flat, width_px);
+    int maxw = 0;
+    for (const auto& ln : lines) {
+        double adv = 0;
+        for (size_t i = ln.first; i < ln.second; ++i) adv += flat[i].advance_px;
+        int lw = (int)lround(adv);
+        if (lw > maxw) maxw = lw;
+    }
+    if (nlines)     *nlines = lines.size();
+    if (max_line_w) *max_line_w = maxw;
+}
+
 // Match `text` (the value-filled label) against a template's literal anchors. On
 // success fills `values` (one per hole, in order) and returns true. Leftmost-greedy:
 // each literal is found at/after the previous cut. Byte-level matching is valid —
@@ -590,6 +674,14 @@ LabelRun* bake_segmented(const char* label_text, const lv_font_t* font, int px,
     const uint32_t space_gid = (uint32_t)stb_metrics_glyph_index(sm, ' ');
     std::vector<FlatGlyph> flat = flatten_segmented(*match, values, font, scale, space_gid);
     if (flat.empty()) return nullptr;
+
+    // Balanced wrap: shrink the column to even out the lines (see
+    // balanced_wrap_width); width-only, keeps the line count. Mirrors bake_run.
+    if (wrap_width > 0) {
+        wrap_width = balanced_wrap_width(wrap_width, [&](int w, size_t* n, int* mw) {
+            measure_wrapped_flat(flat, w, n, mw);
+        });
+    }
 
     // Word-wrap to the label width at the break opportunities (after spaces / part
     // edges) — long body text (e.g. the change-address warning) wraps like the
