@@ -922,10 +922,13 @@ void large_icon_status_screen(void *ctx_json) {
     // Body text — wraps inside the upper_body width minus the
     // status-type-appropriate edge inset. Warning-class screens use
     // 2 * EDGE_PADDING so text never sits under the pulsing border.
+    // Hoisted to function scope so the fits-case vertical centering below can
+    // reference it after the full layout settles.
+    lv_obj_t *body_label = nullptr;
     if (cfg.contains("text") && cfg["text"].is_string()) {
         std::string text = cfg["text"].get<std::string>();
         if (!text.empty()) {
-            lv_obj_t *body_label = lv_label_create(screen.upper_body);
+            body_label = lv_label_create(screen.upper_body);
             lv_label_set_text(body_label, text.c_str());
             lv_label_set_long_mode(body_label, LV_LABEL_LONG_WRAP);
 
@@ -991,6 +994,28 @@ void large_icon_status_screen(void *ctx_json) {
     if (overflow > 0 && overflow <= tn_gap) {
         lv_obj_set_height(screen.body, lv_obj_get_height(screen.body) + overflow);
         lv_obj_align_to(screen.body, screen.top_nav, LV_ALIGN_OUT_BOTTOM_MID, 0, -overflow);
+    }
+
+    // Vertically center the body text in the gap between the headline and the
+    // bottom button when the content FITS with slack to spare. By default the body
+    // text sits directly under the headline (gap 0) and the whole flex-grow spacer
+    // sits BELOW it, hard against the button — so the text reads as top-biased.
+    // Moving the text down by HALF the below-gap puts equal space above and below
+    // it; the spacer (which the shift comes out of) keeps the button pinned, so the
+    // button and its bottom padding never move. Skipped when the screen scrolls or
+    // only just fits (spacer smaller than the shift): the gate keeps it a no-op
+    // there, so reclaimed/overflowing screens are unaffected.
+    if (body_label && screen.button_list_count > 0 && screen.button_list_spacer) {
+        lv_obj_update_layout(screen.body);
+        lv_area_t text_area, button_area;
+        lv_obj_get_coords(body_label, &text_area);
+        lv_obj_get_coords(screen.button_list[0], &button_area);
+        int32_t below_gap = button_area.y1 - text_area.y2;   // text bottom -> button top
+        int32_t spacer_height = lv_obj_get_height(screen.button_list_spacer);
+        int32_t shift = below_gap / 2;
+        if (shift > 0 && shift <= spacer_height) {
+            lv_obj_set_style_margin_top(body_label, shift, LV_PART_MAIN);
+        }
     }
 
     // bind_screen_navigation auto-detects any remaining body overflow (a long
