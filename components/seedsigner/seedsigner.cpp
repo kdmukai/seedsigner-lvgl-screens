@@ -152,12 +152,23 @@ static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
 // boilerplate.
 static lv_obj_t* create_standard_body_content(lv_obj_t *screen, lv_obj_t *top_nav_obj, bool scrollable) {
     lv_obj_t* body_content = lv_obj_create(screen);
-    lv_obj_set_size(body_content, lv_obj_get_width(screen), lv_obj_get_height(screen) - TOP_NAV_HEIGHT);
-    lv_obj_align_to(body_content, top_nav_obj, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
+
+    // The top_nav vertically centers its buttons, leaving a gap between a button's
+    // bottom edge and TOP_NAV_HEIGHT. Make that gap part of the BODY rather than
+    // the top_nav: extend the body up to the button's bottom edge and add an equal
+    // DEFAULT top buffer, so ordinary content still begins at TOP_NAV_HEIGHT while
+    // the body now owns the gap. Layouts that need to nudge an element a little
+    // higher (e.g. the large-icon status screen's hero icon, which Python overlaps
+    // up into the nav) can RELAX this buffer instead of overflowing the body clip.
+    int32_t tn_gap = (TOP_NAV_HEIGHT - TOP_NAV_BUTTON_SIZE) / 2;
+
+    lv_obj_set_size(body_content, lv_obj_get_width(screen),
+                    lv_obj_get_height(screen) - TOP_NAV_HEIGHT + tn_gap);
+    lv_obj_align_to(body_content, top_nav_obj, LV_ALIGN_OUT_BOTTOM_MID, 0, -tn_gap);
     lv_obj_set_style_bg_color(body_content, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
     lv_obj_set_style_pad_left(body_content, EDGE_PADDING, LV_PART_MAIN);
     lv_obj_set_style_pad_right(body_content, EDGE_PADDING, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(body_content, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(body_content, tn_gap, LV_PART_MAIN);   // default buffer == the old top_nav bottom gap
     lv_obj_set_style_pad_bottom(body_content, COMPONENT_PADDING, LV_PART_MAIN);
     lv_obj_set_style_border_width(body_content, 0, LV_PART_MAIN);
     lv_obj_set_scroll_dir(body_content, LV_DIR_VER);
@@ -641,6 +652,124 @@ static void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
     lv_anim_start(&pulse);
 }
 
+// ---------------------------------------------------------------------------
+// Tight, ink-based inter-line spacing.
+//
+// LVGL's declared font line_height carries loose leading and varies wildly
+// across scripts (Arabic/Farsi fonts reserve large vertical space for stacked
+// marks), so using it as the line advance leaves multi-line body text far
+// looser than the PIL/Python reference. Instead we derive the advance from the
+// ACTUAL ink extents of the glyphs present in `text` -- the tallest ascender
+// plus the deepest descender -- and add only a small visual `gap`. The result
+// is the value to hand lv_obj_set_style_text_line_space() (the rendered advance
+// is font line_height + this), so it is usually NEGATIVE (tightening).
+//
+// Worst-case safe for a run of text: the maximum ascender (which may land on a
+// lower line) and the maximum descender (which may land on the line above it)
+// are kept at least `gap` px apart. Complex cursive scripts with a cascading
+// baseline (Urdu Nastaliq) are not well served by a single constant advance and
+// render through their own (shaped) path, not this one.
+static int32_t tight_line_space(const lv_font_t *font, const char *text, int32_t gap) {
+    if (!font || !text) {
+        return 0;
+    }
+
+    int32_t max_ascent  = 0;   // ink above the baseline
+    int32_t max_descent = 0;   // ink below the baseline
+
+    // Minimal UTF-8 walk; ask the font engine for each glyph's ink box.
+    for (const unsigned char *p = (const unsigned char *)text; *p; ) {
+        uint32_t cp;
+        if (*p < 0x80) {
+            cp = *p; p += 1;
+        } else if ((*p >> 5) == 0x6 && p[1]) {
+            cp = ((uint32_t)(p[0] & 0x1F) << 6) | (p[1] & 0x3F); p += 2;
+        } else if ((*p >> 4) == 0xE && p[1] && p[2]) {
+            cp = ((uint32_t)(p[0] & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F); p += 3;
+        } else if ((*p >> 3) == 0x1E && p[1] && p[2] && p[3]) {
+            cp = ((uint32_t)(p[0] & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) | ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F); p += 4;
+        } else {
+            p += 1; continue;
+        }
+
+        if (cp == '\n' || cp == '\r' || cp == ' ') {
+            continue;
+        }
+
+        lv_font_glyph_dsc_t d;
+        if (!lv_font_get_glyph_dsc(font, &d, cp, 0) || d.box_h == 0) {
+            continue;   // absent or inkless (whitespace)
+        }
+
+        int32_t ascent  = (int32_t)d.ofs_y + (int32_t)d.box_h;  // top, above baseline
+        int32_t descent = -(int32_t)d.ofs_y;                    // bottom, below baseline
+        if (ascent  > max_ascent)  max_ascent  = ascent;
+        if (descent > max_descent) max_descent = descent;
+    }
+
+    if (max_ascent + max_descent <= 0) {
+        return 0;   // measured nothing; leave the label's default spacing alone
+    }
+
+    int32_t line_h  = (int32_t)lv_font_get_line_height(font);
+    int32_t advance = max_ascent + max_descent + gap;
+    int32_t space   = advance - line_h;
+
+    // Safety floor on how far we tighten. Per-codepoint measurement is exact for
+    // simple LTR scripts but UNDER-counts scripts whose on-screen glyphs differ
+    // from their source codepoints (Arabic/Farsi presentation-form shaping):
+    // there the measured ink is far too small and an unclamped advance would
+    // collapse the lines on top of each other. Never remove more than a quarter
+    // of the font's declared line_height — enough to strip loose leading on
+    // well-measured fonts, but a guard against collapse on the rest.
+    int32_t min_space = -(line_h / 4);
+    if (space < min_space) {
+        space = min_space;
+    }
+    return space;
+}
+
+// Empty vertical space between a label's box top and the VISIBLE top of its text
+// — the font's ascent minus the text's real ink ascent. LVGL anchors text by the
+// font's ascent (which includes leading above the caps); PIL/Python anchors the
+// visible glyph top. Subtract this from a top margin so the visible text lands
+// where Python places it, instead of the label's (taller) box.
+static int32_t text_top_leading(const lv_font_t *font, const char *text) {
+    if (!font || !text) {
+        return 0;
+    }
+    int32_t max_ascent = 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; ) {
+        uint32_t cp;
+        if (*p < 0x80) {
+            cp = *p; p += 1;
+        } else if ((*p >> 5) == 0x6 && p[1]) {
+            cp = ((uint32_t)(p[0] & 0x1F) << 6) | (p[1] & 0x3F); p += 2;
+        } else if ((*p >> 4) == 0xE && p[1] && p[2]) {
+            cp = ((uint32_t)(p[0] & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F); p += 3;
+        } else if ((*p >> 3) == 0x1E && p[1] && p[2] && p[3]) {
+            cp = ((uint32_t)(p[0] & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) | ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F); p += 4;
+        } else {
+            p += 1; continue;
+        }
+        if (cp == '\n' || cp == '\r' || cp == ' ') {
+            continue;
+        }
+        lv_font_glyph_dsc_t d;
+        if (!lv_font_get_glyph_dsc(font, &d, cp, 0) || d.box_h == 0) {
+            continue;
+        }
+        int32_t a = (int32_t)d.ofs_y + (int32_t)d.box_h;
+        if (a > max_ascent) max_ascent = a;
+    }
+    if (max_ascent <= 0) {
+        return 0;
+    }
+    int32_t ascent  = (int32_t)lv_font_get_line_height(font) - (int32_t)font->base_line;
+    int32_t leading = ascent - max_ascent;
+    return leading > 0 ? leading : 0;
+}
+
 void large_icon_status_screen(void *ctx_json) {
     const char *json_str = (const char *)ctx_json;
 
@@ -665,31 +794,37 @@ void large_icon_status_screen(void *ctx_json) {
                          lv_obj_get_width(screen.body) - 2 * EDGE_PADDING);
     }
 
-    // Allow the icon's negative top margin (below) to draw above body's top
-    // edge — Python overlaps the icon with the top_nav by COMPONENT_PADDING/2.
-    // Without OVERFLOW_VISIBLE, LVGL would clip the overflow to body's bounds.
-    // We also disable scrolling on body since these screens are sized to fit.
-    lv_obj_add_flag(screen.body, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    // These screens are sized to fit; no scrolling.
     lv_obj_remove_flag(screen.body, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(screen.body, LV_SCROLLBAR_MODE_OFF);
 
+    // Relax the body's default top buffer (the former top_nav bottom gap, now
+    // owned by the body — see create_standard_body_content) by COMPONENT_PADDING/2
+    // so the hero icon overlaps up into the nav exactly as Python does
+    // (status_icon.screen_y = top_nav.height - COMPONENT_PADDING/2). The icon stays
+    // ENTIRELY within the body's box, so nothing clips — no overflow tricks needed.
+    int32_t tn_gap = (TOP_NAV_HEIGHT - TOP_NAV_BUTTON_SIZE) / 2;
+    lv_obj_set_style_pad_top(screen.body, tn_gap - COMPONENT_PADDING / 2, LV_PART_MAIN);
+
+    // Zero upper_body's flex row-gap so the icon->headline spacing is ONLY the
+    // headline's COMPONENT_PADDING/2 top margin (matching Python's
+    // next_y = icon_bottom + COMPONENT_PADDING/2); any inherited row-gap inflates it.
+    lv_obj_set_style_pad_row(screen.upper_body, 0, LV_PART_MAIN);
+
     // Hero icon — colored, centered, sized from the active display profile.
-    // upper_body's flex layout (column, cross-axis center) handles centering.
-    // Negative top margin places the icon's top half a COMPONENT_PADDING above
-    // upper_body's top, mirroring Python's `top_nav.height - COMPONENT_PADDING/2`
-    // anchor. Requires OVERFLOW_VISIBLE on body (set above).
+    // upper_body's flex layout (column, cross-axis center) handles centering. The
+    // icon needs no margin: the relaxed body buffer above already starts the
+    // content at top_nav.height - COMPONENT_PADDING/2 (Python's anchor), and the
+    // glyph fits its label box exactly (box_h == line_height), so it renders whole.
     lv_obj_t *icon = lv_label_create(screen.upper_body);
     lv_label_set_text(icon, defaults.icon);
     lv_obj_set_style_text_font(icon, &ICON_PRIMARY_SCREEN_FONT__SEEDSIGNER, LV_PART_MAIN);
     lv_obj_set_style_text_color(icon, lv_color_hex(defaults.color), LV_PART_MAIN);
-    lv_obj_set_style_margin_top(icon, -(COMPONENT_PADDING / 2), LV_PART_MAIN);
+    lv_obj_set_style_margin_top(icon, 0, LV_PART_MAIN);
 
-    // Strip default label padding so the bounding box matches the font's
-    // natural line_height (= cap_height for SeedSigner icons, since the icon
-    // font has base_line=0). That makes the icon's bottom edge sit exactly at
-    // the bottom of the visible glyph, mirroring Python's
-    // `Icon.height = -font.getbbox(..., anchor="ls")[1]` (cap height) and
-    // letting subsequent flex children land where Python places them.
+    // Strip default label padding so the box matches the font's line_height
+    // (cap-height; the icon font has base_line=0), so the icon's bottom edge
+    // anchors the headline spacing exactly where Python places it.
     lv_obj_set_style_pad_all(icon, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
@@ -708,7 +843,12 @@ void large_icon_status_screen(void *ctx_json) {
             lv_obj_set_style_text_align(headline_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
             lv_obj_set_style_text_color(headline_label, lv_color_hex(defaults.color), LV_PART_MAIN);
             lv_obj_set_style_text_font(headline_label, &BODY_FONT, LV_PART_MAIN);
-            lv_obj_set_style_margin_top(headline_label, COMPONENT_PADDING / 2, LV_PART_MAIN);
+            // Python's gap is CP/2 between the icon's visible bottom and the
+            // headline's VISIBLE top. The label adds top leading above the caps
+            // that PIL does not, so subtract it — otherwise the gap reads ~2x too
+            // big and cascades down, jamming the bottom button against the edge.
+            int32_t hl_lead = text_top_leading(&BODY_FONT, headline.c_str());
+            lv_obj_set_style_margin_top(headline_label, COMPONENT_PADDING / 2 - hl_lead, LV_PART_MAIN);
         }
     }
 
@@ -735,15 +875,23 @@ void large_icon_status_screen(void *ctx_json) {
             lv_obj_set_style_text_align(body_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
             lv_obj_set_style_text_color(body_label, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
             lv_obj_set_style_text_font(body_label, &BODY_FONT, LV_PART_MAIN);
-            lv_obj_set_style_margin_top(body_label, COMPONENT_PADDING / 2, LV_PART_MAIN);
+            // Python places the body immediately after the headline
+            // (body_top = headline_bottom; no extra gap) — so NO top margin here.
+            // A CP/2 margin (as before) made the headline->body gap visibly looser
+            // than the Python reference.
+            lv_obj_set_style_margin_top(body_label, 0, LV_PART_MAIN);
 
-            // Override the screen-level BODY_LINE_SPACING (= COMPONENT_PADDING)
-            // for body status text. That global value is tuned for paragraph
-            // text in the demo screen; on a status screen the extra spacing
-            // pushes a 3-4 line message off the bottom of the viewport. Use
-            // the font's natural line height (no extra leading) instead, which
-            // matches Python's TextArea default (line_spacing=None).
-            lv_obj_set_style_text_line_space(body_label, 0, LV_PART_MAIN);
+            // Tight, ink-based inter-line spacing (see tight_line_space): derive
+            // the line advance from THIS text's real glyph ink extents (max
+            // ascender + max descender) plus a tiny gap, rather than the font's
+            // loose declared line_height. Matches the PIL reference and tames
+            // scripts whose font metrics over-reserve vertical space (Farsi).
+            // The gap is intentionally small and profile-scaled.
+            int32_t line_gap = LIST_ITEM_PADDING / 2;
+            lv_obj_set_style_text_line_space(
+                body_label,
+                tight_line_space(&BODY_FONT, text.c_str(), line_gap),
+                LV_PART_MAIN);
         }
     }
 
