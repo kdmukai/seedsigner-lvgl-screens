@@ -166,11 +166,18 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
         label_w = 16;
     }
 
-    // Measure with the font actually applied to the label (title_font override
-    // or the default), not always the default.
+    // Measure the title at its ACTUAL rendered width. With LV_USE_ARABIC_PERSIAN_
+    // CHARS, lv_label_set_text rewrites Arabic/Persian into (narrower) presentation
+    // forms and stores THAT; the subset fonts carry the presentation forms, not the
+    // base codepoints. So measuring the original `label_text` over-counts massively
+    // (raw codepoints fall back to missing-glyph boxes) and wrongly tripped the
+    // overflow branch, left-aligning RTL titles off-center. Measure the label's
+    // stored (shaped) text instead — identical to `label_text` for LTR locales, so
+    // their layout is unchanged. Width is direction-independent, so measuring before
+    // the RTL base_dir post-pass is fine.
     const lv_font_t *eff_font = title_font ? title_font : &TOP_NAV_TITLE_FONT;
     lv_point_t text_size = {0, 0};
-    lv_text_get_size(&text_size, label_text, eff_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    lv_text_get_size(&text_size, lv_label_get_text(label), eff_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
 
     if (text_size.x > label_w) {
         // Overflow case: clip + scroll within the region between the buttons.
