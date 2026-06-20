@@ -504,18 +504,39 @@ lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* t
     lv_obj_t* text_label = lv_obj_get_child(lv_button, 0);
     lv_obj_set_style_text_font(text_label, &LARGE_BUTTON_FONT, LV_PART_MAIN);
 
-    // Switch to vertical flex layout: icon above text.
+    // Vertical flex layout: icon above text, the block VERTICALLY CENTERED in the
+    // button. Plain centering would float the icon up because the text font's empty
+    // descent (no menu label has descenders) sits below the visible text and biases
+    // the box's geometric center below its visual center. Compensate by reserving a
+    // top pad equal to that descent (the text font's base_line): centering the block
+    // within [base_line .. height] then leaves EQUAL visible space above the icon ink
+    // and below the text ink at every display size (240/320 stay tight like Python's
+    // MainMenuView.png; 480/800 no longer float high in their taller buttons).
     lv_obj_set_layout(lv_button, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(lv_button, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(lv_button, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_ver(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(lv_button, LARGE_BUTTON_FONT.base_line, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(lv_button, 0, LV_PART_MAIN);
 
     // Insert the icon label before the text label (which button() already created).
     lv_obj_t* icon_label = lv_label_create(lv_button);
     lv_obj_set_style_text_font(icon_label, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER, LV_PART_MAIN);
+    // Strip the icon label's default box padding so its box equals the icon font's
+    // line_height (base_line=0, glyph fills the box). The icon ink then anchors the
+    // gaps directly instead of a padded box inflating them — the same cap-height
+    // technique the status-screen hero icon uses.
+    lv_obj_set_style_pad_all(icon_label, 0, LV_PART_MAIN);
     lv_label_set_text(icon_label, icon ? icon : "");
     lv_obj_move_to_index(icon_label, 0);
+
+    // Icon->text gap: target a VISUAL COMPONENT_PADDING (ink-to-ink), like Python.
+    // LVGL anchors the text box by the font ascent, which carries empty leading above
+    // the caps; subtract that leading from the flex row gap so the visible label sits
+    // a true COMPONENT_PADDING below the icon (not COMPONENT_PADDING + leading).
+    int32_t leading = text_top_leading(&LARGE_BUTTON_FONT, lv_label_get_text(text_label));
+    int32_t row_gap = COMPONENT_PADDING - leading;
+    if (row_gap < 0) row_gap = 0;
+    lv_obj_set_style_pad_row(lv_button, row_gap, LV_PART_MAIN);
 
     return lv_button;
 }

@@ -764,7 +764,7 @@ static int32_t tight_line_space(const lv_font_t *font, const char *text, int32_t
 // font's ascent (which includes leading above the caps); PIL/Python anchors the
 // visible glyph top. Subtract this from a top margin so the visible text lands
 // where Python places it, instead of the label's (taller) box.
-static int32_t text_top_leading(const lv_font_t *font, const char *text) {
+int32_t text_top_leading(const lv_font_t *font, const char *text) {
     if (!font || !text) {
         return 0;
     }

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "lvgl.h"
 
@@ -71,6 +72,13 @@ void main_menu_screen(void *ctx);
 void screensaver_screen(void *ctx_json);
 void large_icon_status_screen(void *ctx_json);
 void seed_add_passphrase_screen(void *ctx_json);
+
+// Text metrics (shared with components.cpp). Empty vertical space between a
+// label's box top and the VISIBLE top of its text — the font's declared ascent
+// minus the text's real ink ascent. LVGL anchors a text box by the font ascent
+// (which carries leading above the caps); subtract this from a top gap/margin so
+// the visible text lands where PIL/Python places it, not at the taller box top.
+int32_t text_top_leading(const lv_font_t *font, const char *text);
 
 // misc
 void lv_seedsigner_screen_close(void);
