@@ -1033,3 +1033,14 @@ int32_t seedsigner_label_run_drawn_height(struct _lv_obj_t* label) {
     // run actually paints, from the label's content top, is nlines*line_height.
     return (int32_t)run->mask->header.h - 2 * run->margin;
 }
+
+int seedsigner_label_run_overflows(struct _lv_obj_t* label) {
+    if (!label) return -1;
+    LabelRun* run = find_label_run((lv_obj_t*)label);
+    if (!run) return -1;
+    // Same test as glyph_run_draw_cb: the typographic block width vs the label's
+    // content box. run->layout_w is the shaped width (presentation forms / conjuncts
+    // already accounted for), which the codepoint measure can't reproduce.
+    int32_t content_w = lv_obj_get_content_width((lv_obj_t*)label);
+    return run->layout_w > content_w ? 1 : 0;
+}

@@ -65,4 +65,14 @@ void apply_glyph_runs_to_labels(struct _lv_obj_t* screen);
 // the label box. The run must already be attached (apply_glyph_runs_to_labels).
 int32_t seedsigner_label_run_drawn_height(struct _lv_obj_t* label);
 
+// Whether the glyph run attached to `label` is wider than the label's content box —
+// i.e. an overflowing shaped line that clips and would scroll/start-justify. This is
+// the same comparison glyph_run_draw_cb makes (run->layout_w > content_w), exposed so
+// a caller (the touch long-press-to-scroll gesture) can decide whether a shaped label
+// actually overflows without re-measuring the codepoint text (which mis-counts the
+// on-screen presentation forms / conjuncts). Returns 1 if it overflows, 0 if it fits,
+// and -1 when no run is attached (a plain codepoint label, or a non-shaping locale) —
+// callers then measure the codepoint text themselves.
+int seedsigner_label_run_overflows(struct _lv_obj_t* label);
+
 #endif // GLYPH_RUNS_H

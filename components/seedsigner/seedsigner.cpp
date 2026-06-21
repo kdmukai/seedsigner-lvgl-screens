@@ -961,7 +961,7 @@ void large_icon_status_screen(void *ctx_json) {
                 }
                 lv_obj_set_width(headline_label, scroll_width);
                 lv_obj_set_style_text_align(headline_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-                label_set_line_autoscroll(headline_label);
+                label_set_line_autoscroll(headline_label, LINE_SCROLL_BEGIN_HOLD_MS, LINE_SCROLL_BEGIN_HOLD_MS);
             } else {
                 // Fits (any locale) or RTL overflow: centered on the full width +
                 // ellipsis-capable, exactly as before (byte-identical).
