@@ -18,5 +18,11 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
 
 void button_set_active(lv_obj_t* lv_button, bool active);
 
+// Hardware/joystick focus: promote a focused button's too-wide text label to a
+// marquee scroll (true) or clip it back to its start edge (false). Driven from the
+// nav layer because body buttons are kept out of the LVGL focus group, so LVGL
+// never emits the FOCUSED/DEFOCUSED events that would otherwise drive this.
+void button_set_label_marquee(lv_obj_t* lv_button, bool marquee);
+
 
 #endif // SEEDSIGNER_COMPONENTS_H

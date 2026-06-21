@@ -178,8 +178,13 @@ static void update_visual_focus(nav_ctx_t *ctx) {
     if (ctx->body_items) {
         for (size_t i = 0; i < ctx->body_count; ++i) {
             if (ctx->body_items[i]) {
-                button_set_active(ctx->body_items[i],
-                    ctx->zone == NAV_ZONE_BODY && i == ctx->body_index);
+                bool focused = ctx->zone == NAV_ZONE_BODY && i == ctx->body_index;
+                button_set_active(ctx->body_items[i], focused);
+                // A focused too-wide button label marquee-scrolls; the rest clip to
+                // their start edge. Body items are out of the LVGL focus group, so
+                // LVGL never emits the FOCUSED/DEFOCUSED that would drive this — the
+                // nav layer drives it explicitly here.
+                button_set_label_marquee(ctx->body_items[i], focused);
             }
         }
         // Scroll the parent container to keep the focused body item visible.

@@ -1,6 +1,5 @@
 #include "components.h"
 #include "gui_constants.h"
-#include "input_profile.h"
 #include "font_registry.h"
 #include "seedsigner.h"
 #include "lvgl.h"
@@ -239,6 +238,42 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
 }
 
 
+// In hardware/joystick mode the focused button's too-wide text label marquee-
+// scrolls (LONG_SCROLL_CIRCULAR); when it loses focus it clips back to its START
+// edge (LONG_CLIP) so the beginning of the label shows again. Called from the nav
+// layer (navigation.cpp update_visual_focus) — body buttons are deliberately kept
+// out of the LVGL focus group, so LVGL never emits the FOCUSED/DEFOCUSED that would
+// otherwise drive this (and emitting them by hand would add LV_STATE_FOCUSED and
+// fight our manual highlight). Touch has no persistent focus, so it never calls in.
+//
+// Shaped (glyph-run) locales are excluded: their labels are painted by
+// glyph_run_draw_cb from a baked alpha mask that ignores the label's scroll offset
+// (so a marquee animation wouldn't move the glyphs), AND that draw path start-
+// justifies an overflowing run only while the label stays LONG_CLIP. They keep
+// LONG_CLIP (start-justified) — no active-scroll. (A14)
+void button_set_label_marquee(lv_obj_t* lv_button, bool marquee) {
+    if (!lv_button || seedsigner_locale_uses_glyph_runs()) {
+        return;
+    }
+    lv_obj_t* label = find_last_label_child(lv_button);
+    if (!label) {
+        return;
+    }
+
+    // lv_label_set_long_mode unconditionally deletes the scroll animation, resets
+    // the offset, and marks a text refresh — so only touch it on an ACTUAL change.
+    // update_visual_focus re-asserts every non-focused button on each keypress, so
+    // an unguarded call would needlessly re-clip (and redraw) the whole list every
+    // step, and re-setting SCROLL on the still-focused button would restart its
+    // marquee from the beginning.
+    lv_label_long_mode_t want = marquee ? LV_LABEL_LONG_SCROLL_CIRCULAR
+                                        : LV_LABEL_LONG_CLIP;
+    if (lv_label_get_long_mode(label) != want) {
+        lv_label_set_long_mode(label, want);
+    }
+}
+
+
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label) {
     (void)index;
     (void)label;
@@ -351,18 +386,6 @@ void button_toggle_callback(lv_event_t* e) {
 }
 
 
-// In joystick mode, labels scroll only when their parent button is focused.
-static void label_scroll_on_focus(lv_event_t *e) {
-    lv_obj_t *text_label = find_last_label_child((lv_obj_t *)lv_event_get_target(e));
-    if (text_label) lv_label_set_long_mode(text_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-}
-
-static void label_clip_on_defocus(lv_event_t *e) {
-    lv_obj_t *text_label = find_last_label_child((lv_obj_t *)lv_event_get_target(e));
-    if (text_label) lv_label_set_long_mode(text_label, LV_LABEL_LONG_CLIP);
-}
-
-
 // Size a button's text label to the button's content box and pick the label's
 // text alignment from whether the (single-line) text fits:
 //   fits      -> centered (visual parity with the Python screens)
@@ -462,14 +485,12 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
 
     // Labels are STATIC (LONG_CLIP) at rest — a too-wide label start-justifies and
-    // clips its tail rather than marquee-scrolling. On hardware, a focused too-wide
-    // label scrolls (marquee) and re-clips on defocus, so the start is shown again.
-    // (Touch has no focus, so its labels never scroll.)
+    // clips its tail rather than marquee-scrolling. On hardware the nav layer
+    // promotes the focused button's label to a marquee scroll via
+    // button_set_label_marquee() (driven from update_visual_focus, since body
+    // buttons are kept out of the LVGL focus group). Touch has no persistent focus,
+    // so its labels stay clipped.
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-    if (input_profile_get_mode() != INPUT_MODE_TOUCH) {
-        lv_obj_add_event_cb(lv_button, label_scroll_on_focus, LV_EVENT_FOCUSED, NULL);
-        lv_obj_add_event_cb(lv_button, label_clip_on_defocus, LV_EVENT_DEFOCUSED, NULL);
-    }
 
     lv_label_set_text(label, text);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
