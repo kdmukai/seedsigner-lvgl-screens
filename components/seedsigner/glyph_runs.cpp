@@ -3,6 +3,8 @@
 
 #include "lvgl.h"
 #include "src/misc/lv_text_ap.h"   // Arabic/Persian presentation-form mapper
+#include "src/widgets/label/lv_label_private.h"  // label->offset / ->text_size (no public getter)
+#include "src/misc/lv_area_private.h"             // lv_area_intersect (clip the scrolled mask)
 
 #include "stb_glyph_metrics.h"
 
@@ -753,22 +755,35 @@ void glyph_run_draw_cb(lv_event_t* e) {
     lv_obj_get_content_coords(label, &cc);
     const int content_w = lv_area_get_width(&cc);
 
-    lv_text_align_t align = lv_obj_get_style_text_align(label, LV_PART_MAIN);
+    lv_text_align_t align     = lv_obj_get_style_text_align(label, LV_PART_MAIN);
+    const lv_label_long_mode_t long_mode = lv_label_get_long_mode(label);
+    const bool overflows      = run->layout_w > content_w;
 
-    // A centered single-line label whose run overflows (e.g. a too-wide button
-    // label) must show its START edge, not center-clip to its middle — the shaped
-    // counterpart of apply_button_label_layout()'s subset-path start-justify. The
-    // start edge is left for LTR, right for RTL. Scoped to LONG_CLIP labels — i.e.
-    // button labels (A2). NOT the top-nav title (LONG_SCROLL_CIRCULAR) or the status
-    // headline (LONG_DOT): those single-line CENTER labels are out of scope here and
-    // would still center-clip an overflowing shaped run; making them start-justify +
-    // auto-scroll is tracked separately (see .claude/plans/pre-upstream-pr-hardening.md
-    // Items 2b/2c, gated on the glyph-run mask honoring the label scroll offset).
-    // WRAP body text is also excluded so an unwrapped RTL body line (ur wrapping is
-    // deferred) keeps its centered rendering. Labels that fit are unchanged; an
-    // explicit LEFT/RIGHT align is always honored as-is.
-    if (align == LV_TEXT_ALIGN_CENTER && run->layout_w > content_w &&
-        lv_label_get_long_mode(label) == LV_LABEL_LONG_CLIP) {
+    // The scroll/marquee machinery (offset honoring, scroll-mode start-justify, the
+    // circular wrap copy, and the content-box clip) is LTR-only for now. RTL (ur)
+    // is deferred — its SCROLL_CIRCULAR title seeds offset.x at a large NEGATIVE
+    // start (-(size.x+gap), the BIDI circular start), so honoring it would push the
+    // run off-screen-left; and its button labels were never clipped. Keeping RTL on
+    // the legacy center/right path leaves ur byte-identical (see plan Item 2c, which
+    // owns the RTL start-justify + scroll framing, and project memory: ur untouched).
+    const bool ltr     = !g_table.rtl;
+    const bool scrolls = ltr && (long_mode == LV_LABEL_LONG_SCROLL ||
+                                 long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR);
+
+    // A single-line label whose run overflows must show its START edge, not
+    // center-clip to its middle — the shaped counterpart of
+    // apply_button_label_layout()'s subset-path start-justify. The start edge is
+    // left for LTR, right for RTL. It applies to button labels (LONG_CLIP, both
+    // directions — legacy A2 behavior) and to the LTR scrollable modes (the top-nav
+    // title, and any future scrolling headline), where it mirrors LVGL's own
+    // draw_main forcing CENTER/RIGHT to the base-dir start on overflow (Task 0).
+    // LONG_DOT (the status headline today) and LONG_WRAP body text are intentionally
+    // excluded: DOT center-clips an overflowing run, and an unwrapped RTL body line
+    // (ur wrapping deferred) keeps its centered rendering. Labels that fit are
+    // unchanged; an explicit LEFT/RIGHT align is always honored as-is.
+    const bool start_justify =
+        overflows && (long_mode == LV_LABEL_LONG_CLIP || scrolls);
+    if (align == LV_TEXT_ALIGN_CENTER && start_justify) {
         align = g_table.rtl ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT;
     }
 
@@ -779,12 +794,21 @@ void glyph_run_draw_cb(lv_event_t* e) {
         default:                   text_x = cc.x1; break;  // LEFT / AUTO-LTR
     }
 
+    // Honor the label's scroll offset (LTR only — see above). LVGL animates
+    // label->offset.x for the SCROLL / SCROLL_CIRCULAR marquee (and offset.y for
+    // vertical scroll) and the codepoint draw path translates the text by it — but
+    // the glyph-run mask is drawn from a separate event (DRAW_MAIN_END) and
+    // previously ignored it, so a shaped marquee moved nothing. Adding the offset
+    // lets LTR shaped labels ride LVGL's existing scroll machinery (Task 0). It is 0
+    // for the fitting / static case, so non-scrolling labels are byte-identical.
+    const lv_point_t offset = ltr ? ((lv_label_t*)label)->offset : lv_point_t{0, 0};
+
     // Mask pen origin (col/row == margin) maps to (text_x, baseline); since line 0
     // baseline sits at margin+ascent inside the mask and LVGL would put it at
     // content_top+ascent, mask row 0 -> content_top - margin (margins cancel ascent).
     lv_area_t area;
-    area.x1 = text_x  - run->margin;
-    area.y1 = cc.y1   - run->margin;
+    area.x1 = text_x  - run->margin + offset.x;
+    area.y1 = cc.y1   - run->margin + offset.y;
     area.x2 = area.x1 + run->mask->header.w - 1;
     area.y2 = area.y1 + run->mask->header.h - 1;
 
@@ -794,7 +818,41 @@ void glyph_run_draw_cb(lv_event_t* e) {
     img.recolor     = lv_obj_get_style_text_color(label, LV_PART_MAIN);// live text color
     img.recolor_opa = LV_OPA_COVER;                                    // tint A8 mask fully
     img.opa         = LV_OPA_COVER;  // coverage comes from the mask, not the (suppressed) text_opa
+
+    // When an LTR run overflows a clip/scroll mode, clip the mask to the content box
+    // so the scrolled-out tail (and the wrap-around copy below) never bleed past the
+    // label's edges — matching LVGL's own SCROLL/CLIP clip. The fitting case (and
+    // all RTL) skips this so glyphs with side/vertical overshoot keep painting into
+    // the label's extended draw area exactly as before (byte-identical).
+    lv_area_t clip_ori = layer->_clip_area;
+    const bool clip_to_content = ltr && start_justify;
+    if (clip_to_content) {
+        lv_area_t clipped;
+        if (!lv_area_intersect(&clipped, &cc, &clip_ori)) return;  // nothing visible
+        layer->_clip_area = clipped;
+    }
+
     lv_draw_image(layer, &img, &area);
+
+    // SCROLL_CIRCULAR draws a second copy one period ahead so the marquee loops
+    // seamlessly: as the first copy scrolls off the start edge, the second enters
+    // from the far edge. LVGL's offset animation travels one period =
+    // text_size.x + WAIT_CHAR_COUNT spaces (codepoint metrics), so the copy is
+    // placed exactly that far along to stay in lock-step with the animation. NOTE:
+    // the shaped run width (run->layout_w) can differ from the codepoint text_size
+    // that drives the animation, so the visible inter-copy gap is the period minus
+    // the run width rather than a fixed N-space gap; perfecting shaped marquee
+    // geometry is tracked in Items 2b/2c.
+    if (scrolls && long_mode == LV_LABEL_LONG_SCROLL_CIRCULAR && overflows) {
+        const lv_font_t* font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+        const int32_t period = ((lv_label_t*)label)->text_size.x +
+                               lv_font_get_glyph_width(font, ' ', ' ') * LV_LABEL_WAIT_CHAR_COUNT;
+        area.x1 += period;
+        area.x2 += period;
+        lv_draw_image(layer, &img, &area);
+    }
+
+    if (clip_to_content) layer->_clip_area = clip_ori;
 }
 
 void glyph_run_delete_cb(lv_event_t* e) {

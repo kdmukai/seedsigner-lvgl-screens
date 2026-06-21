@@ -84,6 +84,15 @@ and would *break* the start-justify (the run would re-center and clip to its mid
 leaving shaped labels start-justified. Active-scroll for shaped scripts would require
 animating the mask draw itself — out of scope for v1.
 
+> **Update (Task 0, 2026-06-21):** the draw-layer blocker above is now fixed for
+> **LTR** shaped locales — `glyph_run_draw_cb` honors `label->offset.x`, generalizes
+> the start-justify to the scroll modes, and clips to the content box (see
+> `glyph-run-scroll-offset.md`). So the two bullets no longer hold for hi/th. The
+> shaped **button** marquee is still gated off, though: `button_set_label_marquee`
+> still early-returns for glyph-run locales. Enabling a shaped LTR button marquee is
+> now a small consumer change (drop the early-return for `!rtl` and verify), tracked
+> alongside hardening-plan Items 2b/2c/3. RTL (ur) remains excluded at the draw layer.
+
 ## Where this lives
 
 - `button_set_label_marquee()` — components.cpp (uses the same `find_last_label_child`
