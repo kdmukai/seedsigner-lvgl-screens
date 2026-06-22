@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 64 px
  * Bpp: 4
- * Opts: --bpp 4 --size 64 --no-compress --font ../seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE900-0xE923 --format lvgl --lv-font-name seedsigner_icons_48_4bpp_150x -o components/seedsigner/fonts/seedsigner_icons_48_4bpp_150x.c
+ * Opts: --bpp 4 --size 64 --no-compress --font ../seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE900-0xE923 --format lvgl --lv-font-name seedsigner_icons_48_4bpp_133x -o components/seedsigner/fonts/seedsigner_icons_48_4bpp_133x.c
  ******************************************************************************/
 
 #ifdef __has_include
@@ -5653,9 +5653,9 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
-const lv_font_t seedsigner_icons_48_4bpp_150x = {
+const lv_font_t seedsigner_icons_48_4bpp_133x = {
 #else
-lv_font_t seedsigner_icons_48_4bpp_150x = {
+lv_font_t seedsigner_icons_48_4bpp_133x = {
 #endif
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/

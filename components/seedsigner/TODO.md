@@ -68,21 +68,6 @@
     the high-water mark can be checked on-device for Latin vs. a loaded Farsi pack and used
     to size the pool/cache from data rather than estimates.
 
-## Naming cleanup
-
-- [ ] **Rename the legacy `_150x` font assets to the accurate `_133x` scaling factor.** The
-  320px-height profile scales at `PX_MULTIPLIER_133` (geometric 320/240 = 1.333), set by commit
-  `8eb0574` ("correct 480x320 scaling to geometric 133 multiplier (was 150)"). The baked **fonts**
-  for that profile still carry the old `_150x` filename/symbol label (e.g.
-  `seedsigner_icons_24_4bpp_150x`, `inconsolata_semibold_24_4bpp_150x`) only to avoid churning
-  downstream build lists. The new splash **image** assets already use the correct `_133x` suffix;
-  the fonts should follow for consistency. Sweep every `150` (and any stray `125`) reference to the
-  scaling factor and convert to `133`: the `fonts/*_150x.c` files, `LV_FONT_DECLARE`s +
-  `fonts_for_multiplier()` in `gui_constants.{h,cpp}`, and the font source lists in all five build
-  files (IDF `CMakeLists.txt` + the four `tools/apps/*/CMakeLists.txt`). This is cross-repo: the
-  **`seedsigner-raspi-lvgl`** and **`seedsigner-micropython-builder`** submodule consumers reference
-  the same font filenames, so coordinate the rename across all three repos in lockstep.
-
 ## Cross-screen overlays
 
 - [ ] **SD-card insert/remove toast over any screen** — significant, still-undesigned. The seedsigner

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 32 px
  * Bpp: 4
- * Opts: --bpp 4 --size 32 --no-compress --font ../seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E --font ../seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE905,0xE909,0xE90A,0xE922,0xE923 --format lvgl -o components/seedsigner/fonts/inconsolata_semibold_24_4bpp_150x.c
+ * Opts: --bpp 4 --size 32 --no-compress --font ../seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E --font ../seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE905,0xE909,0xE90A,0xE922,0xE923 --format lvgl -o components/seedsigner/fonts/inconsolata_semibold_24_4bpp_133x.c
  ******************************************************************************/
 
 #ifdef __has_include
@@ -2081,9 +2081,9 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
-const lv_font_t inconsolata_semibold_24_4bpp_150x = {
+const lv_font_t inconsolata_semibold_24_4bpp_133x = {
 #else
-lv_font_t inconsolata_semibold_24_4bpp_150x = {
+lv_font_t inconsolata_semibold_24_4bpp_133x = {
 #endif
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/

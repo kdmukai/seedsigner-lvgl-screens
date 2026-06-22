@@ -81,16 +81,14 @@ LV_FONT_DECLARE(seedsigner_icons_36_4bpp);
 LV_FONT_DECLARE(inconsolata_semibold_24_4bpp);
 #endif
 
-// The "_150x" suffix is a LEGACY filename label for the 320px-height profile's
-// baked fonts; the profile now scales at PX_MULTIPLIER_133, and these fonts are
-// sized accordingly (icons 32/48/64, keyboard 32). The files keep the _150x names
-// so downstream build lists (this repo's apps + the raspi/builder submodule
-// consumers) don't need to change in lockstep.
+// The "_133x" suffix matches the 320px-height profile's PX_MULTIPLIER_133
+// (geometric 320/240); these fonts are sized accordingly (icons 32/48/64,
+// keyboard 32).
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
-LV_FONT_DECLARE(seedsigner_icons_24_4bpp_150x);
-LV_FONT_DECLARE(seedsigner_icons_36_4bpp_150x);
-LV_FONT_DECLARE(seedsigner_icons_48_4bpp_150x);
-LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_150x);
+LV_FONT_DECLARE(seedsigner_icons_24_4bpp_133x);
+LV_FONT_DECLARE(seedsigner_icons_36_4bpp_133x);
+LV_FONT_DECLARE(seedsigner_icons_48_4bpp_133x);
+LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_133x);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
@@ -104,9 +102,8 @@ LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_200x);
 // Image declarations for supported display heights
 // ---------------------------------------------------------------------------
 // Baked RGB565 logo assets, one per display-height profile, scaled by the same
-// PX_MULTIPLIER as the fonts (base 100, "_133x" = 133, "_200x" = 200). Unlike the
-// baked fonts (whose 320-height files keep a legacy "_150x" label), these images
-// are new, so they use the accurate "_133x" suffix. The SeedSigner wordmark is
+// PX_MULTIPLIER as the fonts (base 100, "_133x" = 133, "_200x" = 200 — the suffix
+// is the px_multiplier). The SeedSigner wordmark is
 // shared by the screensaver and the opening splash; the HRF partner logo is used
 // only by the splash's partner band. Pick the right variant at runtime via
 // seedsigner_logo_for_active_profile() / hrf_logo_for_active_profile() so a
