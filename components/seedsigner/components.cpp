@@ -6,6 +6,7 @@
 #include "lvgl.h"
 
 #include <stdint.h>
+#include <stdexcept>
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 
@@ -671,6 +672,14 @@ static void button_size_changed_cb(lv_event_t* e) {
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     lv_obj_t* lv_button = lv_button_create(lv_parent);
+    // OOM guard: lv_button_create / lv_label_create return NULL when the small
+    // internal-DRAM LVGL pool is exhausted (e.g. a large list built after the status
+    // screen's hero icon ate headroom — see the P4-43 hardware-kb note). Throw so
+    // run_screen catches it and the MicroPython Controller shows the recoverable
+    // not-implemented notice, instead of dereferencing NULL and panicking the device.
+    if (!lv_button) {
+        throw std::runtime_error("out of memory creating button (internal DRAM exhausted)");
+    }
     lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), BUTTON_HEIGHT);
 
     if (align_to != NULL) {
@@ -691,6 +700,9 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     lv_obj_set_style_pad_hor(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
 
     lv_obj_t* label = lv_label_create(lv_button);
+    if (!label) {
+        throw std::runtime_error("out of memory creating button label (internal DRAM exhausted)");
+    }
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
 
     // Labels are STATIC (LONG_CLIP) at rest — a too-wide label start-justifies and
