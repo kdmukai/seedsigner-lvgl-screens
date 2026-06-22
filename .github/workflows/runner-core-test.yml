@@ -1,0 +1,28 @@
+name: Runner Core Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only: this job builds and runs a headless test, surfacing pass/fail via
+# the run status. No write token is ever exposed to untrusted PR code.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: scripts/ci/ci.sh install-runner-core-test-deps
+
+      - name: Build and run headless runner_core test
+        run: scripts/ci/ci.sh test-runner-core

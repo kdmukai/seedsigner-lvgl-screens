@@ -16,6 +16,15 @@ fi
 # Portable CPU count (nproc is Linux-only; macOS uses sysctl).
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 
+# Allow system-wide pip installs in externally-managed environments (PEP 668).
+# The bare `ubuntu:24.04` Docker image GitLab/Codeberg/Forgejo run in ships
+# Python 3.12 with the EXTERNALLY-MANAGED marker, which makes our `pip3 install`
+# deps (fonttools + the i18n requirements) fail with "externally-managed-environment".
+# GitHub's hosted runner omits the marker, so it never hit this. These are
+# throwaway CI containers, so installing into the system interpreter is fine; the
+# env var is the documented override and is a harmless no-op where unneeded.
+export PIP_BREAK_SYSTEM_PACKAGES=1
+
 COMMAND="${1:-help}"
 shift || true
 
@@ -141,6 +150,30 @@ PY
     cp tools/apps/web_runner/build-wasm/index.js   "$WEB_DIR/"
     cp tools/apps/web_runner/build-wasm/index.wasm "$WEB_DIR/"
     cp -r tools/apps/web_runner/build-wasm/assets  "$WEB_DIR/"
+    ;;
+
+  # ---------------------------------------------------------------------------
+  # Headless runner_core test
+  # ---------------------------------------------------------------------------
+
+  install-runner-core-test-deps)
+    # The test is SDL-free and renders into an RGB565 buffer, so it needs only a
+    # compiler + cmake — no SDL, libpng, or imagemagick.
+    $SUDO apt-get update
+    $SUDO apt-get install -y cmake build-essential
+    ;;
+
+  test-runner-core)
+    # Configure, build, and run the headless runner_core smoke test. Builds all
+    # display heights (the default) so every gated font/image asset must link;
+    # the test itself switches resolution internally. Non-zero exit on any failed
+    # assertion fails the job. Usage: ci.sh test-runner-core [SCENARIOS_JSON]
+    SCENARIOS="${1:-tools/scenarios/scenarios.json}"
+    cmake -S tools/apps/runner_core/test -B tools/apps/runner_core/test/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240
+    cmake --build tools/apps/runner_core/test/build -j"$NPROC"
+    ./tools/apps/runner_core/test/build/test_runner_core "$SCENARIOS"
     ;;
 
   # ---------------------------------------------------------------------------
@@ -288,6 +321,10 @@ else:
     echo "Web runner (WASM) commands:"
     echo "  build-web-runner [CMAKE_ARGS]    Build the browser playground (needs emcmake on PATH)"
     echo "  package-web-runner [DIR]         Copy the single-file bundle into a deploy dir"
+    echo ""
+    echo "Headless test commands:"
+    echo "  install-runner-core-test-deps    Install runner_core test dependencies (cmake + compiler)"
+    echo "  test-runner-core [SCENARIOS]     Build and run the headless runner_core smoke test"
     echo ""
     echo "Pages commands:"
     echo "  deploy-pages SRC BRANCH [DEST]   Deploy directory to a git branch"
