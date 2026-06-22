@@ -16,6 +16,15 @@ fi
 # Portable CPU count (nproc is Linux-only; macOS uses sysctl).
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 
+# Allow system-wide pip installs in externally-managed environments (PEP 668).
+# The bare `ubuntu:24.04` Docker image GitLab/Codeberg/Forgejo run in ships
+# Python 3.12 with the EXTERNALLY-MANAGED marker, which makes our `pip3 install`
+# deps (fonttools + the i18n requirements) fail with "externally-managed-environment".
+# GitHub's hosted runner omits the marker, so it never hit this. These are
+# throwaway CI containers, so installing into the system interpreter is fine; the
+# env var is the documented override and is a harmless no-op where unneeded.
+export PIP_BREAK_SYSTEM_PACKAGES=1
+
 COMMAND="${1:-help}"
 shift || true
 
