@@ -6,6 +6,7 @@
 #include "font_registry.h"
 #include "glyph_runs.h"
 #include "locale_loader.h"   // ss_reap_retired() after the old screen is deleted
+#include "overlay_manager.h" // SS_OBJ_FLAG_NO_SCREENSAVER (per-screen saver policy)
 
 #include "lvgl.h"
 
@@ -77,6 +78,11 @@ static void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
     if (!cfg_out.is_object()) {
         throw std::runtime_error("screen config must be a JSON object");
     }
+
+    // Per-screen screensaver policy: normalize to the single system default
+    // (allowed). This is the ONLY place allow_screensaver's default is set — the
+    // view owns the value, and every downstream consumer sees an explicit bool.
+    cfg_out["allow_screensaver"] = cfg_out.value("allow_screensaver", true);
 }
 
 // Switch to a newly built LVGL screen and dispose of the old one.
@@ -348,6 +354,15 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
     lv_obj_set_style_text_line_space(out.screen, BODY_LINE_SPACING, LV_PART_MAIN);
     lv_obj_set_style_pad_all(out.screen, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(out.screen, 0, LV_PART_MAIN);
+
+    // Per-screen screensaver policy (view-owned, carried on the screen object):
+    // a view that set allow_screensaver=false gets the saver opt-out stamped onto
+    // this root, where the overlay dispatcher reads it off lv_scr_act(). Absent/
+    // true leaves the flag off = saver allowed. parse_screen_json_ctx normalizes
+    // the key, so this is the one shared stamp for every top-nav screen.
+    if (!cfg.value("allow_screensaver", true)) {
+        lv_obj_add_flag(out.screen, SS_OBJ_FLAG_NO_SCREENSAVER);
+    }
     // NB: base direction is NOT set on the screen root. A root-level RTL base_dir
     // would also mirror element LAYOUT (flex order + lv_obj_set_pos / align honor
     // base_dir), flipping the Scan tile, the nav buttons, and the passphrase
@@ -2405,6 +2420,9 @@ typedef struct {
     int32_t     screen_h;
     int32_t     logo_w;    // displayed width after zoom
     int32_t     logo_h;    // displayed height after zoom
+    bool        route_dismiss;  // true: input fires a host dismiss result (legacy
+                                // path); false: the overlay manager's idle-watch
+                                // dismisses, so input is not host-routed here.
 } screensaver_ctx_t;
 
 // Speed range: 0.07 – 0.18 pixels/ms  (70 – 180 px/s).
@@ -2433,14 +2451,18 @@ static float saver_bounce_angle(float normal_angle) {
 static void screensaver_timer_cb(lv_timer_t *timer) {
     screensaver_ctx_t *ctx = (screensaver_ctx_t *)lv_timer_get_user_data(timer);
 
-    // Check for touch dismiss: poll pointer input devices directly
-    // rather than relying on LVGL's object hit-testing.
-    lv_indev_t *indev = NULL;
-    while ((indev = lv_indev_get_next(indev)) != NULL) {
-        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER &&
-            lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
-            seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_SCREENSAVER_DISMISS, "screensaver_dismiss");
-            return;
+    // Legacy (Python-driven) path only: poll pointer devices and route a dismiss
+    // to the host on touch. In overlay-manager mode (route_dismiss == false) the
+    // manager's idle-watch handles dismissal — any input resets
+    // lv_display_get_inactive_time() — so the screensaver does not route input.
+    if (ctx->route_dismiss) {
+        lv_indev_t *indev = NULL;
+        while ((indev = lv_indev_get_next(indev)) != NULL) {
+            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER &&
+                lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
+                seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_SCREENSAVER_DISMISS, "screensaver_dismiss");
+                return;
+            }
         }
     }
 
@@ -2527,7 +2549,16 @@ static void screensaver_cleanup_handler(lv_event_t *e) {
     lv_free(ctx);
 }
 
-void screensaver_screen(void * /*ctx_json*/) {
+// Build the screensaver screen (bouncing logo) WITHOUT loading it — the caller
+// loads it. `route_dismiss_to_host` selects how the screensaver gets dismissed:
+//   true  — legacy Python-driven path: a key/touch fires
+//           SEEDSIGNER_RET_SCREENSAVER_DISMISS (via seedsigner_lvgl_on_button_selected)
+//           and the host runner restores the saved screen.
+//   false — overlay-manager path: the manager's idle-watch dismisses on any
+//           input (lv_display_get_inactive_time() resets), so input is NOT
+//           host-routed here. The keypad sink + group are still installed so the
+//           wake keypress is swallowed rather than actuating the restored screen.
+static lv_obj_t *ss_build_screensaver_impl(bool route_dismiss_to_host) {
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
@@ -2557,6 +2588,7 @@ void screensaver_screen(void * /*ctx_json*/) {
     ctx->screen_h = screen_h;
     ctx->logo_w   = logo_w;
     ctx->logo_h   = logo_h;
+    ctx->route_dismiss = route_dismiss_to_host;
 
     // Start at screen center.
     ctx->center_x = screen_w / 2.0f;
@@ -2591,7 +2623,12 @@ void screensaver_screen(void * /*ctx_json*/) {
 
         ctx->group = lv_group_create();
         lv_group_add_obj(ctx->group, sink);
-        lv_obj_add_event_cb(sink, screensaver_key_handler, LV_EVENT_KEY, ctx);
+        // Only the legacy path fires a host dismiss on keypress. In manager mode
+        // the sink still swallows the wake keypress (no handler installed) while
+        // the idle-watch performs the dismiss.
+        if (route_dismiss_to_host) {
+            lv_obj_add_event_cb(sink, screensaver_key_handler, LV_EVENT_KEY, ctx);
+        }
 
         lv_indev_t *indev = NULL;
         while ((indev = lv_indev_get_next(indev)) != NULL) {
@@ -2603,10 +2640,20 @@ void screensaver_screen(void * /*ctx_json*/) {
     }
 
     lv_obj_add_event_cb(scr, screensaver_cleanup_handler, LV_EVENT_DELETE, ctx);
+    return scr;
+}
 
-    // Load the screensaver WITHOUT destroying the previous screen.
-    // The caller is responsible for save/restore via save_screen/restore_screen.
-    lv_scr_load(scr);
+// Internal shared builder (declared in seedsigner.h) — used by the overlay
+// manager to build a manager-dismissed screensaver.
+extern "C" lv_obj_t *ss_build_screensaver_obj(bool route_dismiss_to_host) {
+    return ss_build_screensaver_impl(route_dismiss_to_host);
+}
+
+void screensaver_screen(void * /*ctx_json*/) {
+    // Legacy entry point: build with host-routed dismiss and load WITHOUT
+    // destroying the previous screen (the caller save/restores via
+    // save_screen/restore_screen).
+    lv_scr_load(ss_build_screensaver_impl(true));
 }
 
 
