@@ -88,6 +88,23 @@
             "Text file"
           ]
         }
+      },
+      {
+        "name": "left_aligned",
+        "context": {
+          "top_nav": {
+            "title": "Seed Options",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            "Scan a QR code",
+            "Export Xpub",
+            "Backup this very long seed-options label that overflows the button",
+            "Discard seed"
+          ]
+        }
       }
     ]
   },

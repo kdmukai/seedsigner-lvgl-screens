@@ -37,9 +37,22 @@ typedef struct {
     void *value;
 } button_list_item_t;
 
+// Options for button_ex() — the full-featured list-button builder. button() is a
+// thin wrapper that fills the defaults (centered text). Parity features add fields
+// here over time; designated initializers leave unset fields zeroed, so the wrapper
+// and every call site stay source-compatible as the struct grows.
+typedef struct {
+    const char *text;              // label text (NULL renders empty)
+    lv_obj_t   *align_to;          // chain-align anchor: align below this object, or
+                                   // NULL to align to the parent's top (ignored when
+                                   // the parent uses a flex layout, which positions it)
+    bool        is_text_centered;  // true: center the label; false: left-align it
+} button_opts_t;
+
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
+lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);
-lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count);
+lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered);
 
 void button_set_active(lv_obj_t* lv_button, bool active);
 

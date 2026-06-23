@@ -394,6 +394,17 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         is_bottom_list = cfg["is_bottom_list"].get<bool>();
     }
 
+    // Python ButtonListScreen.is_button_text_centered (default True). false →
+    // left-align every button's label (used by Seed Options, the tools menu, and
+    // most non-main-menu list screens). Threaded into button_list()/button_ex below.
+    bool is_button_text_centered = true;
+    if (cfg.contains("is_button_text_centered")) {
+        if (!cfg["is_button_text_centered"].is_boolean()) {
+            throw std::runtime_error("is_button_text_centered must be a boolean");
+        }
+        is_button_text_centered = cfg["is_button_text_centered"].get<bool>();
+    }
+
     if (!has_button_list) {
         // Mode 1: legacy. body == upper_body, no scaffold buttons.
         out.upper_body = out.body;
@@ -425,7 +436,7 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
             items.push_back(item);
         }
 
-        button_list(out.body, items.data(), items.size());
+        button_list(out.body, items.data(), items.size(), is_button_text_centered);
 
         // Discover the buttons that button_list() created so navigation can
         // reach them through the scaffold.
@@ -481,9 +492,13 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
     }
 
     for (size_t i = 0; i < button_labels.size(); ++i) {
-        // `button()`'s second arg is unused under flex layout — flex
-        // overrides any align_to. Pass NULL for clarity.
-        lv_obj_t *btn = button(out.body, button_labels[i].c_str(), NULL);
+        // align_to is unused under flex layout — flex positions the children — so
+        // pass NULL. is_text_centered carries the screen's centering choice.
+        button_opts_t opts = {};
+        opts.text = button_labels[i].c_str();
+        opts.align_to = NULL;
+        opts.is_text_centered = is_button_text_centered;
+        lv_obj_t *btn = button_ex(out.body, &opts);
         out.button_list[i] = btn;
         out.button_list_count = i + 1;
     }

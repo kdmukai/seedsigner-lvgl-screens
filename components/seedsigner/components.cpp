@@ -646,7 +646,7 @@ void button_toggle_callback(lv_event_t* e) {
 // alignment is decided later in glyph_run_draw_cb, which knows the run's true
 // advance and start-justifies an overflowing run there. So we only fix the label
 // WIDTH for them and leave the alignment CENTER.
-static void apply_button_label_layout(lv_obj_t* btn) {
+static void apply_button_label_layout(lv_obj_t* btn, bool is_text_centered = true) {
     lv_obj_t* label = find_button_text_label(btn);
     if (!label) return;
 
@@ -659,6 +659,18 @@ static void apply_button_label_layout(lv_obj_t* btn) {
     int32_t available_w = lv_obj_get_content_width(btn);
     if (available_w < 0) available_w = 0;
     lv_obj_set_width(label, available_w);
+
+    // Explicitly LEFT-ALIGNED button (is_text_centered == false): the label
+    // left-justifies its text at the content box's left edge (== COMPONENT_PADDING
+    // from the button edge), matching Python's text_x = COMPONENT_PADDING. This stays
+    // PHYSICAL left even for RTL locales: the UI is not flipped for RTL today, so the
+    // global apply_rtl_text_to_labels post-pass still sets this label's RTL base_dir
+    // (the text content reads right-to-left within its physically-left box) but the
+    // box itself does not move. Revisit if the no-flip RTL decision changes.
+    if (!is_text_centered) {
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        return;
+    }
 
     // Default to centered (parity with the Python screens). Unshaped locales then
     // measure the text here and flip to the START edge when it overflows; shaped
@@ -698,7 +710,7 @@ static void button_size_changed_cb(lv_event_t* e) {
 }
 
 
-lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
+lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
     lv_obj_t* lv_button = lv_button_create(lv_parent);
     // OOM guard: lv_button_create / lv_label_create return NULL when the small
     // internal-DRAM LVGL pool is exhausted (e.g. a large list built after the status
@@ -710,9 +722,9 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     }
     lv_obj_set_size(lv_button, lv_obj_get_content_width(lv_parent), BUTTON_HEIGHT);
 
-    if (align_to != NULL) {
+    if (opts->align_to != NULL) {
         // Align to the outside bottom of the provided object
-        lv_obj_align_to(lv_button, align_to, LV_ALIGN_OUT_BOTTOM_MID, 0, LIST_ITEM_PADDING);
+        lv_obj_align_to(lv_button, opts->align_to, LV_ALIGN_OUT_BOTTOM_MID, 0, LIST_ITEM_PADDING);
     } else {
         // Align to the inside top of the parent container
         lv_obj_align_to(lv_button, lv_parent, LV_ALIGN_TOP_MID, 0, 0);
@@ -746,13 +758,14 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     // so its labels stay clipped.
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
 
-    lv_label_set_text(label, text);
+    lv_label_set_text(label, opts->text ? opts->text : "");
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
     // Size the label to the button's content box and choose its text alignment
-    // (centered if it fits, start-justified if too wide). Re-run on every resize so
-    // buttons resized after creation (the main-menu grid) fix their label geometry.
-    apply_button_label_layout(lv_button);
+    // (centered-and-fitting / start-justified-when-too-wide / explicitly left). Re-run
+    // on every resize so buttons resized after creation (the main-menu grid) fix their
+    // label geometry; the resize handler is flex-only and those buttons are centered.
+    apply_button_label_layout(lv_button, opts->is_text_centered);
     lv_obj_add_event_cb(lv_button, button_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Wire up gesture-aware input callback. LONG_PRESSED drives the touch
@@ -769,6 +782,17 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     button_set_active(lv_button, false);
 
     return lv_button;
+}
+
+// Back-compatible convenience wrapper: a centered-text button with no icons. Every
+// existing caller (the main-menu large_icon_button, status-screen buttons, the legacy
+// button_list path) keeps calling this and stays byte-identical.
+lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
+    button_opts_t opts = {};
+    opts.text = text;
+    opts.align_to = align_to;
+    opts.is_text_centered = true;
+    return button_ex(lv_parent, &opts);
 }
 
 
@@ -820,7 +844,7 @@ lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* t
     return lv_button;
 }
 
-lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count) {
+lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered) {
     lv_obj_t* last_button = NULL;
     lv_obj_t* first_button = NULL;
     if (!lv_parent || !items || item_count == 0) {
@@ -828,8 +852,11 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
     }
 
     for (size_t i = 0; i < item_count; ++i) {
-        const char *label = items[i].label ? items[i].label : "";
-        last_button = button(lv_parent, label, last_button);
+        button_opts_t opts = {};
+        opts.text = items[i].label ? items[i].label : "";
+        opts.align_to = last_button;  // chain-align below the previous button
+        opts.is_text_centered = is_button_text_centered;
+        last_button = button_ex(lv_parent, &opts);
         if (i == 0) {
             first_button = last_button;
         }
