@@ -82,6 +82,13 @@ void seed_add_passphrase_screen(void *ctx_json);
 // the visible text lands where PIL/Python places it, not at the taller box top.
 int32_t text_top_leading(const lv_font_t *font, const char *text);
 
+// Internal: build the screensaver screen object (bouncing logo) WITHOUT loading
+// it. `route_dismiss_to_host` controls whether key/touch input fires
+// SEEDSIGNER_RET_SCREENSAVER_DISMISS (the legacy Python-driven path); the
+// overlay manager passes false and dismisses via its own idle-watch. Shared by
+// screensaver_screen() and the overlay manager.
+lv_obj_t *ss_build_screensaver_obj(bool route_dismiss_to_host);
+
 // misc
 void lv_seedsigner_screen_close(void);
 

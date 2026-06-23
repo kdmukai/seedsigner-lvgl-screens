@@ -35,6 +35,10 @@ list(APPEND srcs
     "glyph_runs.cpp"
     "stb_glyph_metrics.c"
     "seedsigner.cpp"
+    # Shared overlay manager: the screensaver idle-watch dispatcher (and, later,
+    # the toast queue). Runs on the LVGL loop via an lv_timer, so it links into
+    # every host that pumps lv_timer_handler().
+    "overlay_manager.cpp"
     "components.cpp"
     "input_profile.cpp"
     "navigation.cpp"

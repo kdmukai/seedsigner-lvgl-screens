@@ -106,6 +106,8 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
+  # Shared overlay manager: screensaver idle-watch dispatcher (toast queue later).
+  "${SEEDSIGNER_DIR}/overlay_manager.cpp"
   # Locale font seam + the shared locale-pack loader (ss_load_locale): the web host
   # pre-fetches each pack blob and stages it, then the loader chains the fetched
   # script/CJK packs over the baked baseline and installs complex-script glyph runs.

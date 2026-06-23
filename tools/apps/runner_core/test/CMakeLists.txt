@@ -96,6 +96,7 @@ add_executable(test_runner_core
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
+  "${SEEDSIGNER_DIR}/overlay_manager.cpp"
   "${COMMON_DIR}/runner_core.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/test_runner_core.cpp")
 

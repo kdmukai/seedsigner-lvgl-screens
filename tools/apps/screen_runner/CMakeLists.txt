@@ -144,6 +144,8 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
+  # Shared overlay manager: screensaver idle-watch dispatcher (toast queue later).
+  "${SEEDSIGNER_DIR}/overlay_manager.cpp"
 )
 
 # Shared SDL/LVGL glue, also used by the WASM web_runner.
