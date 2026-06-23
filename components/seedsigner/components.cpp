@@ -51,6 +51,33 @@ static lv_obj_t* find_last_label_child(lv_obj_t *parent) {
     return result;
 }
 
+// Identity tag for a button's TEXT label. button() stamps it onto the single text
+// label so the layout / scroll / marquee / click-readback helpers can find "the
+// text" unambiguously even once leading or trailing ICON labels (which are also
+// lv_label objects) are added as siblings — find_last_label_child() would otherwise
+// return a trailing icon. The tag is the ADDRESS of this file-scope sentinel: a
+// unique, stable value compared by pointer and never dereferenced.
+static const char BUTTON_TEXT_LABEL_TAG = 0;
+
+// Return the button's tagged TEXT label. Falls back to the last label child for any
+// button not built by button() (none of the callers hit that path today, but the
+// fallback keeps them safe). Use this — not find_last_label_child — anywhere the
+// intent is "the button's text label", so adding icon siblings cannot misdirect it.
+static lv_obj_t* find_button_text_label(lv_obj_t *btn) {
+    if (!btn) {
+        return NULL;
+    }
+    uint32_t count = lv_obj_get_child_count(btn);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t *child = lv_obj_get_child(btn, (int32_t)i);
+        if (lv_obj_check_type(child, &lv_label_class) &&
+            lv_obj_get_user_data(child) == (void *)&BUTTON_TEXT_LABEL_TAG) {
+            return child;
+        }
+    }
+    return find_last_label_child(btn);
+}
+
 // User-data attached to each top-nav icon button: the reserved code the host
 // receives via seedsigner_lvgl_on_button_selected(), plus a short informational
 // label (logging / desktop status line only — the host dispatches on the code).
@@ -349,7 +376,7 @@ void button_set_label_marquee(lv_obj_t* lv_button, bool marquee) {
     if (!lv_button || seedsigner_locale_uses_glyph_runs()) {
         return;
     }
-    lv_obj_t* label = find_last_label_child(lv_button);
+    lv_obj_t* label = find_button_text_label(lv_button);
     if (!label) {
         return;
     }
@@ -418,7 +445,7 @@ static bool button_start_label_scroll(lv_obj_t* btn) {
     if (!btn || seedsigner_locale_is_rtl()) {
         return false;
     }
-    lv_obj_t* label = find_last_label_child(btn);
+    lv_obj_t* label = find_button_text_label(btn);
     if (!label || !button_label_overflows(label)) {
         return false;
     }
@@ -438,7 +465,7 @@ static void button_clip_label(lv_obj_t* btn) {
     if (!btn) {
         return;
     }
-    lv_obj_t* label = find_last_label_child(btn);
+    lv_obj_t* label = find_button_text_label(btn);
     if (label && lv_label_get_long_mode(label) != LV_LABEL_LONG_CLIP) {
         lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     }
@@ -583,10 +610,11 @@ void button_toggle_callback(lv_event_t* e) {
         }
     }
 
-    // Derive label text from the button's last label child at event time.
-    // This avoids dangling pointers when original source strings are temporary.
+    // Derive label text from the button's tagged TEXT label at event time (icon
+    // siblings are skipped). This avoids dangling pointers when original source
+    // strings are temporary.
     const char *label_text = "";
-    lv_obj_t *text_child = find_last_label_child(btn);
+    lv_obj_t *text_child = find_button_text_label(btn);
     if (text_child) {
         const char *t = lv_label_get_text(text_child);
         if (t && t[0] != '\0') label_text = t;
@@ -619,7 +647,7 @@ void button_toggle_callback(lv_event_t* e) {
 // advance and start-justifies an overflowing run there. So we only fix the label
 // WIDTH for them and leave the alignment CENTER.
 static void apply_button_label_layout(lv_obj_t* btn) {
-    lv_obj_t* label = find_last_label_child(btn);
+    lv_obj_t* label = find_button_text_label(btn);
     if (!label) return;
 
     // Give the label the button's FULL content box. The button already carries the
@@ -703,6 +731,11 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     if (!label) {
         throw std::runtime_error("out of memory creating button label (internal DRAM exhausted)");
     }
+    // Tag this as THE text label so the layout/scroll/marquee/click helpers locate it
+    // by identity, not by child order — leading/trailing icon labels are siblings and
+    // would otherwise fool find_last_label_child(). Stamp before apply_button_label_
+    // layout() below, which looks it up via find_button_text_label().
+    lv_obj_set_user_data(label, (void *)&BUTTON_TEXT_LABEL_TAG);
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
 
     // Labels are STATIC (LONG_CLIP) at rest — a too-wide label start-justifies and
