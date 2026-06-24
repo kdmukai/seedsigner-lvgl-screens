@@ -249,11 +249,8 @@ const int ACCENT_COLOR = 0xff9f0a;
 const int TESTNET_COLOR = 0x00f100;
 const int REGTEST_COLOR = 0x00caf1;
 
-static constexpr const char* ICON_FONT_NAME__FONT_AWESOME = "Font_Awesome_6_Free-Solid-900";
-
 const int BODY_FONT_COLOR = 0xf8f8f8;
 
-static constexpr const char* FIXED_WIDTH_FONT_NAME = "Inconsolata-Regular";
 static constexpr const char* FIXED_WIDTH_EMPHASIS_FONT_NAME = "Inconsolata-SemiBold";
 
 const int LABEL_FONT_COLOR = 0x707070;
@@ -314,10 +311,19 @@ class SeedSignerIconConstants {
         // Input icons
         static constexpr const char* DELETE = "\ue922";
         static constexpr const char* SPACE = "\ue923";
+};
 
-        // Must be updated whenever new icons are added. See usage in `Icon` class below.
-        static constexpr const char* MIN_VALUE = SCAN;
-        static constexpr const char* MAX_VALUE = SPACE;
+// FontAwesome (Solid) icons that appear on SeedSigner buttons. These glyphs are NOT in
+// seedsigner-icons.otf \u2014 they are extracted from Font_Awesome_6_Free-Solid-900.otf and
+// MERGED into the seedsigner icon font at bake time (scripts/bake_icon_fonts.py), so
+// they render through ICON_FONT__SEEDSIGNER exactly like the PUA icons above. Only the
+// glyphs listed here are baked in; when a new FontAwesome button icon is introduced,
+// add its codepoint to the bake script's FontAwesome range too.
+class FontAwesomeIconConstants {
+    public:
+        static constexpr const char* CAMERA   = "\uf030";
+        static constexpr const char* KEYBOARD = "\uf11c";
+        static constexpr const char* DICE     = "\uf522";
 };
 
 
