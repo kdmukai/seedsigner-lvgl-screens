@@ -757,7 +757,8 @@ static void button_size_changed_cb(lv_event_t* e) {
 // button_set_active() can restore each icon's at-rest color and flip it to black on select.
 static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
                                      const button_opts_t* opts,
-                                     bool has_left_icon, bool has_right_icon) {
+                                     bool has_left_icon, bool has_right_icon,
+                                     bool hide_left_icon) {
     const lv_font_t* icon_font = &ICON_FONT__SEEDSIGNER;  // 24px inline (ICON_INLINE_FONT_SIZE)
     const int32_t pad   = COMPONENT_PADDING;              // == Python icon_padding
     const int32_t btn_w = lv_obj_get_width(btn);
@@ -842,6 +843,13 @@ static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
 
     if (left_icon) {
         lv_obj_align(left_icon, LV_ALIGN_LEFT_MID, left_icon_x, 0);
+        // CHECKED_SELECTION unchecked: the layout reserved the check glyph's width
+        // (so checked and unchecked rows align), but no glyph is drawn — Python builds
+        // the icon to compute spacing, then drops it. Hiding (not deleting) keeps the
+        // reserved geometry while drawing nothing.
+        if (hide_left_icon) {
+            lv_obj_add_flag(left_icon, LV_OBJ_FLAG_HIDDEN);
+        }
     }
     if (right_icon) {
         int32_t right_icon_x = btn_w - right_icon_w - pad;
@@ -885,8 +893,28 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
 
     reset_button_chrome(lv_button);
 
-    bool has_left_icon  = opts->icon && opts->icon[0];
-    bool has_right_icon = opts->right_icon && opts->right_icon[0];
+    // Resolve the checkbox / checked-selection styles into an effective leading icon.
+    // Both Python variants (CheckboxButton / CheckedSelectionButton) force left-aligned
+    // text and reuse the inline-icon machinery below:
+    //   CHECKBOX          -> CHECKBOX_SELECTED (green) when checked, else CHECKBOX (light).
+    //   CHECKED_SELECTION -> CHECK (green) when checked; when unchecked, reserve the
+    //                        check's width but draw nothing so rows still align.
+    button_opts_t eff = *opts;
+    bool hide_left_icon = false;
+    if (opts->style == BUTTON_STYLE_CHECKBOX) {
+        eff.is_text_centered = false;
+        eff.icon = opts->is_checked ? SeedSignerIconConstants::CHECKBOX_SELECTED
+                                    : SeedSignerIconConstants::CHECKBOX;
+        eff.icon_color = opts->is_checked ? (uint32_t)SUCCESS_COLOR : (uint32_t)BODY_FONT_COLOR;
+    } else if (opts->style == BUTTON_STYLE_CHECKED_SELECTION) {
+        eff.is_text_centered = false;
+        eff.icon = SeedSignerIconConstants::CHECK;
+        eff.icon_color = (uint32_t)SUCCESS_COLOR;
+        hide_left_icon = !opts->is_checked;  // reserve the gap, draw no glyph
+    }
+
+    bool has_left_icon  = eff.icon && eff.icon[0];
+    bool has_right_icon = eff.right_icon && eff.right_icon[0];
     bool has_icons = has_left_icon || has_right_icon;
 
     // Plain buttons use COMPONENT_PADDING as the label's side gutter (narrower than the
@@ -916,19 +944,19 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
     // so its labels stay clipped.
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
 
-    lv_label_set_text(label, opts->text ? opts->text : "");
+    lv_label_set_text(label, eff.text ? eff.text : "");
 
     if (has_icons) {
         // Build the inline icon(s) and lay out icon + text by hand (Python geometry);
         // also attaches the per-button icon-color state.
-        apply_button_icon_layout(lv_button, label, opts, has_left_icon, has_right_icon);
+        apply_button_icon_layout(lv_button, label, &eff, has_left_icon, has_right_icon, hide_left_icon);
     } else {
         lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         // Size the label to the content box and pick its alignment (centered-and-fitting
         // / start-justified-when-too-wide / explicitly left). Re-run on resize so buttons
         // resized after creation (the main-menu grid) fix their label geometry; the
         // resize handler is flex-only and those buttons are centered.
-        apply_button_label_layout(lv_button, opts->is_text_centered);
+        apply_button_label_layout(lv_button, eff.is_text_centered);
     }
     lv_obj_add_event_cb(lv_button, button_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
@@ -1008,7 +1036,7 @@ lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* t
     return lv_button;
 }
 
-lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered) {
+lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered, button_style_t style) {
     lv_obj_t* last_button = NULL;
     lv_obj_t* first_button = NULL;
     if (!lv_parent || !items || item_count == 0) {
@@ -1023,6 +1051,8 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         opts.icon = items[i].icon;              // per-item leading icon (or NULL)
         opts.right_icon = items[i].right_icon;  // per-item trailing icon (or NULL)
         opts.icon_color = items[i].icon_color;  // 0xRRGGBB or SEEDSIGNER_ICON_COLOR_DEFAULT
+        opts.style = style;                     // screen-wide checkbox/radio/default
+        opts.is_checked = items[i].is_checked;  // per-item checked state
         last_button = button_ex(lv_parent, &opts);
         if (i == 0) {
             first_button = last_button;

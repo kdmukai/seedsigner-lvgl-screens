@@ -37,12 +37,26 @@ int32_t label_subset_text_width(lv_obj_t* label, const lv_font_t* font);
 // color. Used by button_opts_t / button_list_item_t.
 #define SEEDSIGNER_ICON_COLOR_DEFAULT 0xFFFFFFFFu
 
+// Button visual style, mirroring Python ButtonListScreen.Button_cls:
+//   DEFAULT           — plain button (optional inline icons).
+//   CHECKBOX          — multi-select: a leading checkbox glyph, ticked when checked
+//                       (CheckboxButton). Always left-aligned.
+//   CHECKED_SELECTION — single-select / radio: a leading check glyph only when
+//                       checked, but the space is reserved when unchecked so rows
+//                       align (CheckedSelectionButton). Always left-aligned.
+typedef enum {
+    BUTTON_STYLE_DEFAULT = 0,
+    BUTTON_STYLE_CHECKBOX,
+    BUTTON_STYLE_CHECKED_SELECTION,
+} button_style_t;
+
 typedef struct {
     const char *label;
     void *value;
     const char *icon;        // leading inline icon glyph (SeedSigner icon font), or NULL
     const char *right_icon;  // trailing right-justified icon glyph, or NULL
     uint32_t    icon_color;  // leading-icon color 0xRRGGBB, or SEEDSIGNER_ICON_COLOR_DEFAULT
+    bool        is_checked;  // checkbox / checked-selection state (ignored for DEFAULT)
 } button_list_item_t;
 
 // Options for button_ex() — the full-featured list-button builder. button() is a
@@ -50,20 +64,22 @@ typedef struct {
 // add fields here over time; designated initializers leave unset fields zeroed, so
 // the wrapper and every call site stay source-compatible as the struct grows.
 typedef struct {
-    const char *text;              // label text (NULL renders empty)
-    lv_obj_t   *align_to;          // chain-align anchor: align below this object, or
-                                   // NULL to align to the parent's top (ignored when
-                                   // the parent uses a flex layout, which positions it)
-    bool        is_text_centered;  // true: center the label; false: left-align it
-    const char *icon;              // leading inline icon glyph, or NULL
-    const char *right_icon;        // trailing right-justified icon glyph, or NULL
-    uint32_t    icon_color;        // leading-icon color, or SEEDSIGNER_ICON_COLOR_DEFAULT
+    const char    *text;              // label text (NULL renders empty)
+    lv_obj_t      *align_to;          // chain-align anchor: align below this object, or
+                                      // NULL to align to the parent's top (ignored when
+                                      // the parent uses a flex layout, which positions it)
+    bool           is_text_centered;  // true: center the label; false: left-align it
+    const char    *icon;              // leading inline icon glyph, or NULL
+    const char    *right_icon;        // trailing right-justified icon glyph, or NULL
+    uint32_t       icon_color;        // leading-icon color, or SEEDSIGNER_ICON_COLOR_DEFAULT
+    button_style_t style;             // DEFAULT / CHECKBOX / CHECKED_SELECTION
+    bool           is_checked;        // checked state for the checkbox/radio styles
 } button_opts_t;
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);
-lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered);
+lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered, button_style_t style);
 
 void button_set_active(lv_obj_t* lv_button, bool active);
 

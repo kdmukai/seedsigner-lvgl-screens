@@ -353,6 +353,7 @@ struct button_item_cfg_t {
     std::string icon;        // empty = none
     std::string right_icon;  // empty = none
     uint32_t    icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    bool        is_checked = false;  // set from cfg["checked_buttons"] by the scaffold
 };
 
 static bool read_button_list_items(const json &cfg, std::vector<button_item_cfg_t> &out) {
@@ -491,6 +492,46 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         is_button_text_centered = cfg["is_button_text_centered"].get<bool>();
     }
 
+    // Button style, mirroring Python ButtonListScreen.Button_cls: "default" |
+    // "checkbox" (multi-select) | "checked_selection" (single-select radio). The
+    // checked indices come from cfg["checked_buttons"] (a list of ints), stamped onto
+    // each item's is_checked below. Both are screen-wide; the style is one value for
+    // the whole list, matching Python.
+    button_style_t button_style = BUTTON_STYLE_DEFAULT;
+    if (cfg.contains("button_style")) {
+        if (!cfg["button_style"].is_string()) {
+            throw std::runtime_error("button_style must be a string");
+        }
+        std::string s = cfg["button_style"].get<std::string>();
+        if (s == "default") {
+            button_style = BUTTON_STYLE_DEFAULT;
+        } else if (s == "checkbox") {
+            button_style = BUTTON_STYLE_CHECKBOX;
+        } else if (s == "checked_selection") {
+            button_style = BUTTON_STYLE_CHECKED_SELECTION;
+        } else {
+            throw std::runtime_error("button_style must be \"default\", \"checkbox\", or \"checked_selection\"");
+        }
+    }
+
+    std::set<int> checked_buttons;
+    if (cfg.contains("checked_buttons")) {
+        if (!cfg["checked_buttons"].is_array()) {
+            throw std::runtime_error("checked_buttons must be an array of integers");
+        }
+        for (const auto &idx : cfg["checked_buttons"]) {
+            if (!idx.is_number_integer() || idx.get<int>() < 0) {
+                throw std::runtime_error("checked_buttons entries must be non-negative integers");
+            }
+            checked_buttons.insert(idx.get<int>());
+        }
+    }
+
+    // Stamp is_checked onto each item from checked_buttons (no-op for DEFAULT style).
+    for (size_t i = 0; i < button_items.size(); ++i) {
+        button_items[i].is_checked = checked_buttons.count((int)i) > 0;
+    }
+
     if (!has_button_list) {
         // Mode 1: legacy. body == upper_body, no scaffold buttons.
         out.upper_body = out.body;
@@ -524,10 +565,11 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
             item.icon = it.icon.empty() ? nullptr : it.icon.c_str();
             item.right_icon = it.right_icon.empty() ? nullptr : it.right_icon.c_str();
             item.icon_color = it.icon_color;
+            item.is_checked = it.is_checked;
             items.push_back(item);
         }
 
-        button_list(out.body, items.data(), items.size(), is_button_text_centered);
+        button_list(out.body, items.data(), items.size(), is_button_text_centered, button_style);
 
         // Discover the buttons that button_list() created so navigation can
         // reach them through the scaffold.
@@ -594,6 +636,8 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         opts.icon = it.icon.empty() ? nullptr : it.icon.c_str();
         opts.right_icon = it.right_icon.empty() ? nullptr : it.right_icon.c_str();
         opts.icon_color = it.icon_color;
+        opts.style = button_style;        // screen-wide checkbox/radio/default
+        opts.is_checked = it.is_checked;  // per-item checked state
         lv_obj_t *btn = button_ex(out.body, &opts);
         out.button_list[i] = btn;
         out.button_list_count = i + 1;

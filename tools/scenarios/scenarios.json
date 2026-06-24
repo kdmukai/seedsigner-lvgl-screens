@@ -136,6 +136,43 @@
             { "label": "Cancel", "icon": "", "icon_color": "#ff5555" }
           ]
         }
+      },
+      {
+        "name": "checkbox_multi",
+        "context": {
+          "top_nav": {
+            "title": "Script Types",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Select which script types to enable.",
+          "button_style": "checkbox",
+          "checked_buttons": [0, 2],
+          "button_list": [
+            "Native SegWit",
+            "Nested SegWit",
+            "Taproot",
+            "Legacy"
+          ]
+        }
+      },
+      {
+        "name": "radio_single",
+        "context": {
+          "top_nav": {
+            "title": "Coordinator",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_style": "checked_selection",
+          "checked_buttons": [1],
+          "button_list": [
+            "Sparrow",
+            "Specter Desktop",
+            "BlueWallet",
+            "Nunchuk"
+          ]
+        }
       }
     ]
   },
