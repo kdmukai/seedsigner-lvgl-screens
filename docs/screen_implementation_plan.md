@@ -5,6 +5,10 @@ _Generated 2026-04-08 · Status updated 2026-06-09_
 This document catalogs every screen in the Python SeedSigner codebase, identifies which can be implemented using an enhanced reusable `button_list_screen`, and which require dedicated LVGL screen types. Companion doc: [button_list_screen_parity.md](button_list_screen_parity.md) (feature-level gap analysis).
 
 > **Status update (2026-06-09):** Progress since first writing — the **`is_bottom_list` + upper-body scaffold** (Phase 1) is implemented; the **status/warning family** (Phase 3) shipped as a dedicated `large_icon_status_screen` entry point (icon + headline + body `text` + `warning_edges`), and the **first keyboard screen** (Phase 5a), `seed_add_passphrase_screen`, is done. Still outstanding: left-aligned text + per-button icons (rest of Phase 1), checkbox/radio variants + scroll restore + top-nav icon (Phase 2), structured body content blocks (Phase 4), and the remaining dedicated screens (more keyboards, QR display, camera preview). Section statuses below are annotated inline.
+>
+> **Status update (2026-06-23):** `button_list_screen` now exposes its own intro/body `text` key (`cfg["text"]`) via the shared `upper_body` scaffold — so the Group A "body text" enhancement is **done**.
+>
+> **Status update (2026-06-23, full-parity build):** **Phase 1 and Phase 2 are now complete.** Left-aligned text, per-button inline + right icons + icon color, checkbox/checked-selection (radio) variants, and the top-nav contextual icon all shipped — so Groups A (incl. icon-bearing rows), B, and C are fully serviceable by the enhanced `button_list_screen`. See the companion doc's **Build Spec — Full Compliance Target** section for outcomes. Remaining: Phase 4 structured body content (Group D) + the dedicated Phase 5 screens, and the seedsigner-side forwarding leaf.
 
 ## Source Files
 
@@ -32,7 +36,7 @@ The vast majority of Python screens follow one pattern:
 └──────────────────────┘
 ```
 
-The current LVGL `button_list_screen` has no body content area — buttons fill the entire space below top_nav. Adding **body text support** plus **`is_bottom_list` layout mode** would let a single enhanced `button_list_screen` handle ~30 of the ~38 Python screens that aren't already implemented.
+As of 2026-06-23 the LVGL `button_list_screen` supports both a body content area (intro/body `text` via `cfg["text"]`) and the **`is_bottom_list`** layout mode — the two enhancements that let a single reusable `button_list_screen` handle ~30 of the ~38 Python screens not yet implemented. The remaining per-screen needs are left-aligned text, per-button icons, and the checkbox/radio + top-nav-icon variants (see the companion doc's Build Spec).
 
 
 ## Part 1: Screens Already Implemented in LVGL
@@ -52,7 +56,7 @@ These Python screens are all `ButtonListScreen` subclasses. They add custom comp
 
 ### Group A: Needs `is_bottom_list` + body text
 
-These screens display informational text above bottom-pinned buttons. The body content is plain text (TextArea) or simple icon+text lines. This is the biggest group and the highest-value enhancement. _(2026-06-09: `is_bottom_list` and the upper-body scaffold are done; what remains for this group is exposing a body-text JSON key on `button_list_screen` — the same `upper_body` mechanism `large_icon_status_screen` already uses for its `text` field.)_
+These screens display informational text above bottom-pinned buttons. The body content is plain text (TextArea) or simple icon+text lines. This is the biggest group and the highest-value enhancement. _(2026-06-23: `is_bottom_list`, the upper-body scaffold, and the `button_list_screen` body-text key (`cfg["text"]`) are all done — so the plain-text rows in this group are fully serviceable now. What remains is left-aligned text + per-button icons for the icon+text rows; see the companion doc's Build Spec.)_
 
 | Screen | File | Body Content | Buttons |
 |---|---|---|---|
@@ -266,15 +270,15 @@ These screens have fundamentally different rendering needs that cannot be handle
 Add these features to `button_list_screen` to unlock ~20 screens:
 
 1. ✅ **`is_bottom_list`** — Pin buttons to bottom of screen _(done)_
-2. ◑ **`body_text`** — Simple text block between top_nav and buttons _(scaffold `upper_body` exists and is used by `large_icon_status_screen`; not yet exposed as a `button_list_screen` JSON key)_
-3. ⬜ **`is_button_text_centered`** — Left-align option for icon menus
-4. ⬜ **Per-button icons** — `icon` field in button_list items
+2. ✅ **`body_text`** — Simple text block between top_nav and buttons _(done; `button_list_screen` exposes its own `text` key into the scaffold `upper_body`)_
+3. ✅ **`is_button_text_centered`** — Left-align option for icon menus _(done 2026-06-23)_
+4. ✅ **Per-button icons** — `icon` / `right_icon` / `icon_color` on object `button_list` entries _(done 2026-06-23)_
 
 ### Phase 2: Settings and selection screens
 
-5. **Checkbox/radio button variants** — `button_type` + `checked_buttons`
-6. **`scroll_y_initial_offset`** — Restore scroll position on re-entry
-7. **`top_nav_icon_name`** — Icon in top nav bar
+5. ✅ **Checkbox/radio button variants** — `button_style` + `checked_buttons` _(done 2026-06-23)_
+6. ✅ **`scroll_y_initial_offset`** — documented no-op; native restores via `initial_selected_index`
+7. ✅ **`top_nav.icon` / `top_nav.icon_color`** — Icon in top nav bar _(done 2026-06-23; 26px icon font)_
 
 ### Phase 3: Status/warning pattern — ✅ done (as `large_icon_status_screen`)
 
