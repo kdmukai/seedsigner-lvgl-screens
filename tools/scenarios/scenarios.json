@@ -105,6 +105,37 @@
             "Discard seed"
           ]
         }
+      },
+      {
+        "name": "icons",
+        "context": {
+          "top_nav": {
+            "title": "Seed Options",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            { "label": "Scan a QR code", "icon": "" },
+            { "label": "Export Xpub", "icon": "", "right_icon": "" },
+            { "label": "Verify address", "icon": "", "icon_color": "#30d158" },
+            { "label": "Sign a message", "icon": "", "right_icon": "" }
+          ]
+        }
+      },
+      {
+        "name": "icons_centered",
+        "context": {
+          "top_nav": {
+            "title": "Confirm action",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_list": [
+            { "label": "Approve", "icon": "", "icon_color": "#30d158" },
+            { "label": "Cancel", "icon": "", "icon_color": "#ff5555" }
+          ]
+        }
       }
     ]
   },

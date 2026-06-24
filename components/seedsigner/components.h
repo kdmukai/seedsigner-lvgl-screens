@@ -32,21 +32,32 @@ void label_set_line_autoscroll(lv_obj_t* label, uint32_t begin_hold_ms, uint32_t
 // presentation forms) — use seedsigner_label_run_overflows() for those.
 int32_t label_subset_text_width(lv_obj_t* label, const lv_font_t* font);
 
+// Sentinel for an unset icon color: "use the default button font color". 0xFFFFFFFF
+// is outside the 24-bit 0xRRGGBB color space, so it can never collide with a real
+// color. Used by button_opts_t / button_list_item_t.
+#define SEEDSIGNER_ICON_COLOR_DEFAULT 0xFFFFFFFFu
+
 typedef struct {
     const char *label;
     void *value;
+    const char *icon;        // leading inline icon glyph (SeedSigner icon font), or NULL
+    const char *right_icon;  // trailing right-justified icon glyph, or NULL
+    uint32_t    icon_color;  // leading-icon color 0xRRGGBB, or SEEDSIGNER_ICON_COLOR_DEFAULT
 } button_list_item_t;
 
 // Options for button_ex() — the full-featured list-button builder. button() is a
-// thin wrapper that fills the defaults (centered text). Parity features add fields
-// here over time; designated initializers leave unset fields zeroed, so the wrapper
-// and every call site stay source-compatible as the struct grows.
+// thin wrapper that fills the defaults (centered text, no icons). Parity features
+// add fields here over time; designated initializers leave unset fields zeroed, so
+// the wrapper and every call site stay source-compatible as the struct grows.
 typedef struct {
     const char *text;              // label text (NULL renders empty)
     lv_obj_t   *align_to;          // chain-align anchor: align below this object, or
                                    // NULL to align to the parent's top (ignored when
                                    // the parent uses a flex layout, which positions it)
     bool        is_text_centered;  // true: center the label; false: left-align it
+    const char *icon;              // leading inline icon glyph, or NULL
+    const char *right_icon;        // trailing right-justified icon glyph, or NULL
+    uint32_t    icon_color;        // leading-icon color, or SEEDSIGNER_ICON_COLOR_DEFAULT
 } button_opts_t;
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);

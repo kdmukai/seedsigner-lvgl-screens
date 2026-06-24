@@ -78,6 +78,28 @@ static lv_obj_t* find_button_text_label(lv_obj_t *btn) {
     return find_last_label_child(btn);
 }
 
+// Per-button state for list buttons that carry inline icons. Attached to the
+// BUTTON's user_data (plain centered buttons and large_icon_buttons have none →
+// NULL) and freed on LV_EVENT_DELETE. button_set_active() reads it to restore each
+// icon's AT-REST color: Python draws an inline icon in its own icon_color at rest
+// and in selected_icon_color (black) when the row is selected, so a custom-colored
+// icon must keep its color until selected. The text label and the main-menu
+// large-icon (no state struct) keep the simple "light at rest / black when selected"
+// rule. left_icon/right_icon are the icon label objects (or NULL).
+typedef struct {
+    lv_obj_t *left_icon;
+    lv_obj_t *right_icon;
+    uint32_t  left_icon_rest_color;
+    uint32_t  right_icon_rest_color;
+} button_state_t;
+
+static void button_state_delete_cb(lv_event_t *e) {
+    button_state_t *state = (button_state_t *)lv_event_get_user_data(e);
+    if (state) {
+        lv_free(state);
+    }
+}
+
 // User-data attached to each top-nav icon button: the reserved code the host
 // receives via seedsigner_lvgl_on_button_selected(), plus a short informational
 // label (logging / desktop status line only — the host dispatches on the code).
@@ -346,15 +368,30 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
         lv_obj_set_style_bg_color(lv_button, lv_color_hex(BUTTON_BACKGROUND_COLOR), 0);
     }
 
+    // Inline-icon buttons carry a state struct (see button_state_t); plain buttons
+    // and the main-menu large-icon button have none. When selected, EVERY glyph goes
+    // black (Python's selected_icon_color). At rest the text label and an
+    // unconfigured large-icon go light (BUTTON_FONT_COLOR), while tracked inline icons
+    // return to their own at-rest color (which may be a custom icon_color).
+    button_state_t *state = (button_state_t *)lv_obj_get_user_data(lv_button);
+
     uint32_t child_count = lv_obj_get_child_count(lv_button);
     for (uint32_t i = 0; i < child_count; ++i) {
         lv_obj_t* child = lv_obj_get_child(lv_button, i);
-        if (!child) {
+        if (!child || !lv_obj_check_type(child, &lv_label_class)) {
             continue;
         }
-        if (lv_obj_check_type(child, &lv_label_class)) {
-            lv_obj_set_style_text_color(child, active ? lv_color_hex(BUTTON_SELECTED_FONT_COLOR) : lv_color_hex(BUTTON_FONT_COLOR), 0);
+        uint32_t color;
+        if (active) {
+            color = (uint32_t)BUTTON_SELECTED_FONT_COLOR;
+        } else if (state && child == state->left_icon) {
+            color = state->left_icon_rest_color;
+        } else if (state && child == state->right_icon) {
+            color = state->right_icon_rest_color;
+        } else {
+            color = (uint32_t)BUTTON_FONT_COLOR;
         }
+        lv_obj_set_style_text_color(child, lv_color_hex(color), 0);
     }
 }
 
@@ -710,6 +747,122 @@ static void button_size_changed_cb(lv_event_t* e) {
 }
 
 
+// Lay out a list button that carries inline icon(s) — a leading icon, a trailing
+// right-justified icon, or both — together with the (already-created, tagged) text
+// label. Geometry mirrors Python Button.__post_init__ (gui/components.py): icon_padding
+// == COMPONENT_PADDING, each icon vertically centered, the centered-vs-left text rules,
+// and right_icon_x = width - icon_w - COMPONENT_PADDING. The caller set pad_hor 0 on the
+// button, so every x here is measured from the button's left edge — exactly like Python's
+// screen-relative icon_x / text_x. Also allocates the per-button button_state_t so
+// button_set_active() can restore each icon's at-rest color and flip it to black on select.
+static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
+                                     const button_opts_t* opts,
+                                     bool has_left_icon, bool has_right_icon) {
+    const lv_font_t* icon_font = &ICON_FONT__SEEDSIGNER;  // 24px inline (ICON_INLINE_FONT_SIZE)
+    const int32_t pad   = COMPONENT_PADDING;              // == Python icon_padding
+    const int32_t btn_w = lv_obj_get_width(btn);
+    int32_t visible = btn_w - 2 * pad;                    // Python: width - 2*COMPONENT_PADDING
+    int32_t text_w  = label_subset_text_width(text_label, &BUTTON_FONT);
+
+    uint32_t left_rest_color  = (opts->icon_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                                ? (uint32_t)BUTTON_FONT_COLOR : opts->icon_color;
+    uint32_t right_rest_color = (uint32_t)BUTTON_FONT_COLOR;  // right_icon has no color arg
+
+    // Build the icon labels: tight box (pad 0) so they vertically center cleanly; the
+    // at-rest color is set now and re-affirmed by button_set_active(false) below.
+    lv_obj_t* left_icon = NULL;
+    int32_t   left_icon_w = 0;
+    if (has_left_icon) {
+        left_icon = lv_label_create(btn);
+        if (!left_icon) {
+            throw std::runtime_error("out of memory creating button icon (internal DRAM exhausted)");
+        }
+        lv_obj_set_style_pad_all(left_icon, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(left_icon, icon_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(left_icon, lv_color_hex(left_rest_color), LV_PART_MAIN);
+        lv_label_set_text(left_icon, opts->icon);
+        left_icon_w = label_subset_text_width(left_icon, icon_font);
+    }
+    lv_obj_t* right_icon = NULL;
+    int32_t   right_icon_w = 0;
+    if (has_right_icon) {
+        right_icon = lv_label_create(btn);
+        if (!right_icon) {
+            throw std::runtime_error("out of memory creating button icon (internal DRAM exhausted)");
+        }
+        lv_obj_set_style_pad_all(right_icon, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(right_icon, icon_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(right_icon, lv_color_hex(right_rest_color), LV_PART_MAIN);
+        lv_label_set_text(right_icon, opts->right_icon);
+        right_icon_w = label_subset_text_width(right_icon, icon_font);
+    }
+
+    // Horizontal positions (Python Button.__post_init__ order: base text_x, then the
+    // leading-icon block, then the right-icon block).
+    bool    centered = opts->is_text_centered;
+    int32_t text_x;
+    int32_t left_icon_x = pad;
+
+    if (centered && text_w < visible) {
+        text_x = (btn_w - text_w) / 2;        // centered start: Python int((width-text_w)/2)
+    } else {
+        centered = false;
+        text_x = pad;
+    }
+
+    if (has_left_icon) {
+        visible -= left_icon_w + pad;
+        if (text_w > visible) { centered = false; text_x = pad; }
+        if (centered) {
+            text_x += (left_icon_w + pad) / 2;            // shift centered text right for the icon
+            left_icon_x = text_x - (left_icon_w + pad);   // icon to the text's left
+        } else {
+            text_x += left_icon_w + pad;
+            left_icon_x = pad;
+        }
+    }
+
+    if (has_right_icon) {
+        visible -= right_icon_w + pad;
+        if (text_w > visible) {
+            centered = false;
+        }
+    }
+
+    // Apply: text label LEFT-aligned. Centered-and-fitting → snug box at the centered
+    // start; otherwise → fill the remaining text column and let LONG_CLIP clip overflow.
+    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    if (centered) {
+        lv_obj_set_width(text_label, text_w);
+    } else {
+        if (visible < 0) visible = 0;
+        lv_obj_set_width(text_label, visible);
+    }
+    lv_obj_align(text_label, LV_ALIGN_LEFT_MID, text_x, 0);
+
+    if (left_icon) {
+        lv_obj_align(left_icon, LV_ALIGN_LEFT_MID, left_icon_x, 0);
+    }
+    if (right_icon) {
+        int32_t right_icon_x = btn_w - right_icon_w - pad;
+        lv_obj_align(right_icon, LV_ALIGN_LEFT_MID, right_icon_x, 0);
+    }
+
+    // Per-button color state: selection turns every glyph black; at rest the icons
+    // return to their own colors. If this small allocation fails, fall back to the
+    // blanket recolor (icons follow the text color) rather than crash a render.
+    button_state_t* state = (button_state_t*)lv_malloc(sizeof(button_state_t));
+    if (state) {
+        state->left_icon  = left_icon;
+        state->right_icon = right_icon;
+        state->left_icon_rest_color  = left_rest_color;
+        state->right_icon_rest_color = right_rest_color;
+        lv_obj_set_user_data(btn, state);
+        lv_obj_add_event_cb(btn, button_state_delete_cb, LV_EVENT_DELETE, state);
+    }
+}
+
+
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
     lv_obj_t* lv_button = lv_button_create(lv_parent);
     // OOM guard: lv_button_create / lv_label_create return NULL when the small
@@ -732,12 +885,17 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
 
     reset_button_chrome(lv_button);
 
-    // Use COMPONENT_PADDING for the label's side margin instead of the LVGL theme's
-    // default button pad_hor (PAD_DEF, ~13px at 240 — wider than our 8px rhythm).
-    // Invisible while a label is centered (the content box stays symmetric, so
-    // centered text is byte-identical), this gives a start-justified too-wide label
-    // a consistent COMPONENT_PADDING gutter on both the plain and grid buttons.
-    lv_obj_set_style_pad_hor(lv_button, COMPONENT_PADDING, LV_PART_MAIN);
+    bool has_left_icon  = opts->icon && opts->icon[0];
+    bool has_right_icon = opts->right_icon && opts->right_icon[0];
+    bool has_icons = has_left_icon || has_right_icon;
+
+    // Plain buttons use COMPONENT_PADDING as the label's side gutter (narrower than the
+    // LVGL theme's PAD_DEF, and our 8px rhythm). Invisible while a label is centered
+    // (symmetric content box → byte-identical), it gives a too-wide start-justified
+    // label a consistent gutter. ICON buttons instead use pad_hor 0 and position the
+    // icon + text + right-icon manually from the button's left edge, mirroring Python's
+    // screen-relative icon_x / text_x (so the content box == the full box).
+    lv_obj_set_style_pad_hor(lv_button, has_icons ? 0 : COMPONENT_PADDING, LV_PART_MAIN);
 
     lv_obj_t* label = lv_label_create(lv_button);
     if (!label) {
@@ -745,8 +903,8 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
     }
     // Tag this as THE text label so the layout/scroll/marquee/click helpers locate it
     // by identity, not by child order — leading/trailing icon labels are siblings and
-    // would otherwise fool find_last_label_child(). Stamp before apply_button_label_
-    // layout() below, which looks it up via find_button_text_label().
+    // would otherwise fool find_last_label_child(). Stamp before the layout step below,
+    // which looks it up via find_button_text_label().
     lv_obj_set_user_data(label, (void *)&BUTTON_TEXT_LABEL_TAG);
     lv_obj_set_style_text_font(label, &BUTTON_FONT, LV_PART_MAIN);
 
@@ -759,13 +917,19 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
 
     lv_label_set_text(label, opts->text ? opts->text : "");
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
-    // Size the label to the button's content box and choose its text alignment
-    // (centered-and-fitting / start-justified-when-too-wide / explicitly left). Re-run
-    // on every resize so buttons resized after creation (the main-menu grid) fix their
-    // label geometry; the resize handler is flex-only and those buttons are centered.
-    apply_button_label_layout(lv_button, opts->is_text_centered);
+    if (has_icons) {
+        // Build the inline icon(s) and lay out icon + text by hand (Python geometry);
+        // also attaches the per-button icon-color state.
+        apply_button_icon_layout(lv_button, label, opts, has_left_icon, has_right_icon);
+    } else {
+        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        // Size the label to the content box and pick its alignment (centered-and-fitting
+        // / start-justified-when-too-wide / explicitly left). Re-run on resize so buttons
+        // resized after creation (the main-menu grid) fix their label geometry; the
+        // resize handler is flex-only and those buttons are centered.
+        apply_button_label_layout(lv_button, opts->is_text_centered);
+    }
     lv_obj_add_event_cb(lv_button, button_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Wire up gesture-aware input callback. LONG_PRESSED drives the touch
@@ -856,6 +1020,9 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         opts.text = items[i].label ? items[i].label : "";
         opts.align_to = last_button;  // chain-align below the previous button
         opts.is_text_centered = is_button_text_centered;
+        opts.icon = items[i].icon;              // per-item leading icon (or NULL)
+        opts.right_icon = items[i].right_icon;  // per-item trailing icon (or NULL)
+        opts.icon_color = items[i].icon_color;  // 0xRRGGBB or SEEDSIGNER_ICON_COLOR_DEFAULT
         last_button = button_ex(lv_parent, &opts);
         if (i == 0) {
             first_button = last_button;
