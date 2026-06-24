@@ -110,16 +110,19 @@
         "name": "icons",
         "context": {
           "top_nav": {
-            "title": "Seed Options",
+            "title": "Button Icons",
             "show_back_button": true,
             "show_power_button": false
           },
           "is_button_text_centered": false,
           "button_list": [
-            { "label": "Scan a QR code", "icon": "" },
-            { "label": "Export Xpub", "icon": "", "right_icon": "" },
-            { "label": "Verify address", "icon": "", "icon_color": "#30d158" },
-            { "label": "Sign a message", "icon": "", "right_icon": "" }
+            { "label": "CAMERA", "icon": "\uf030" },
+            { "label": "DICE", "icon": "\uf522" },
+            { "label": "FINGERPRINT", "icon": "\ue91a" },
+            { "label": "KEYBOARD", "icon": "\uf11c" },
+            { "label": "PLUS", "icon": "\ue90f" },
+            { "label": "QRCODE", "icon": "\ue920" },
+            { "label": "CHEVRON_RIGHT", "right_icon": "\ue90a" }
           ]
         }
       },
@@ -179,6 +182,7 @@
         "context": {
           "top_nav": {
             "title": "6a4f e1b8",
+            "icon_color": "#409cff",
             "icon": "",
             "show_back_button": true,
             "show_power_button": false
