@@ -102,7 +102,7 @@
             "Scan a QR code",
             "Export Xpub",
             "Backup this very long seed-options label that overflows the button",
-            "Discard seed"
+            { "label": "Discard seed", "label_color": "#ff0000" }
           ]
         }
       },

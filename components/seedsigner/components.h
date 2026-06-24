@@ -59,6 +59,7 @@ typedef struct {
     const char *icon;        // leading inline icon glyph (SeedSigner icon font), or NULL
     const char *right_icon;  // trailing right-justified icon glyph, or NULL
     uint32_t    icon_color;  // leading-icon color 0xRRGGBB, or SEEDSIGNER_ICON_COLOR_DEFAULT
+    uint32_t    label_color; // label text color 0xRRGGBB, or SEEDSIGNER_ICON_COLOR_DEFAULT
     bool        is_checked;  // checkbox / checked-selection state (ignored for DEFAULT)
 } button_list_item_t;
 
@@ -75,6 +76,7 @@ typedef struct {
     const char    *icon;              // leading inline icon glyph, or NULL
     const char    *right_icon;        // trailing right-justified icon glyph, or NULL
     uint32_t       icon_color;        // leading-icon color, or SEEDSIGNER_ICON_COLOR_DEFAULT
+    uint32_t       label_color;       // label text color, or SEEDSIGNER_ICON_COLOR_DEFAULT
     button_style_t style;             // DEFAULT / CHECKBOX / CHECKED_SELECTION
     bool           is_checked;        // checked state for the checkbox/radio styles
     int32_t        icon_column_w;     // left-icon column width to reserve so left-aligned

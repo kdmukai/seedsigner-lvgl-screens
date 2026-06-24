@@ -353,6 +353,7 @@ struct button_item_cfg_t {
     std::string icon;        // empty = none
     std::string right_icon;  // empty = none
     uint32_t    icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    uint32_t    label_color = SEEDSIGNER_ICON_COLOR_DEFAULT;
     bool        is_checked = false;  // set from cfg["checked_buttons"] by the scaffold
 };
 
@@ -393,6 +394,12 @@ static bool read_button_list_items(const json &cfg, std::vector<button_item_cfg_
                     throw std::runtime_error("button_list \"icon_color\" must be a string");
                 }
                 item.icon_color = parse_hex_color(entry["icon_color"].get<std::string>());
+            }
+            if (entry.contains("label_color")) {
+                if (!entry["label_color"].is_string()) {
+                    throw std::runtime_error("button_list \"label_color\" must be a string");
+                }
+                item.label_color = parse_hex_color(entry["label_color"].get<std::string>());
             }
         } else {
             throw std::runtime_error("button_list entries must be a string, array, or object with a string \"label\"");
@@ -587,6 +594,7 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
             item.icon = it.icon.empty() ? nullptr : it.icon.c_str();
             item.right_icon = it.right_icon.empty() ? nullptr : it.right_icon.c_str();
             item.icon_color = it.icon_color;
+            item.label_color = it.label_color;
             item.is_checked = it.is_checked;
             items.push_back(item);
         }
@@ -666,6 +674,7 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         opts.icon = it.icon.empty() ? nullptr : it.icon.c_str();
         opts.right_icon = it.right_icon.empty() ? nullptr : it.right_icon.c_str();
         opts.icon_color = it.icon_color;
+        opts.label_color = it.label_color;
         opts.style = button_style;        // screen-wide checkbox/radio/default
         opts.is_checked = it.is_checked;  // per-item checked state
         opts.icon_column_w = icon_column_w;  // shared column so labels line up

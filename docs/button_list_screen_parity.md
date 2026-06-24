@@ -116,16 +116,15 @@ These were needed for common screen types beyond basic menus; all now implemente
 | Icon color | `ButtonOption.icon_color` | Custom-colored icons per button | ✅ Done |
 | Scroll position restore | `scroll_y_initial_offset` | Returning to a long list at the previously scrolled position | ✅ No-op (uses `initial_selected_index`) |
 
-### Low Priority
+### Low Priority — resolved or scoped out (2026-06-24)
 
-| Missing Feature | Python Option(s) | Used By |
+| Feature | Python Option(s) | Disposition |
 |---|---|---|
-| Title font size override | `title_font_size` | Rarely overridden outside main menu |
-| Button font overrides (screen) | `button_font_name`, `button_font_size` | Rare per-screen font changes |
-| Button font overrides (per-button) | `ButtonOption.font_name`, `ButtonOption.font_size` | Rare per-button font changes |
-| Custom selected color | `button_selected_color` | Rare highlight color overrides |
-| Per-button text color | `ButtonOption.button_label_color` | Rare per-button color overrides |
-| Active button label | `ButtonOption.active_button_label` | Alt text when selected (uncommon) |
+| Per-button text color | `ButtonOption.button_label_color` | ✅ Done — `label_color` (red "Discard"; SeedOptionsScreen). Black when selected, matching Python. |
+| Custom selected color | `button_selected_color` | Not needed — never overridden in the app (always `ACCENT_COLOR`, the default our buttons already use). |
+| Title font size override | `title_font_size` | Not needed — only the main menu uses a larger title, and that is its own `main_menu_screen`. |
+| Active button label | `ButtonOption.active_button_label` | Deferred — a scroll-vs-static workaround (LVGL's focus marquee covers it); the one real use (tools address explorer's `index:address`) is an unimplemented screen. |
+| Button font overrides (screen / per-button) | `button_font_name`, `button_font_size`, `ButtonOption.font_name`, `ButtonOption.font_size` | Deferred — only for specialized screens not yet implemented. (`ButtonOption.font_name` overrides the screen-wide `button_font_name`.) |
 
 
 ## Implementation Notes
@@ -211,13 +210,20 @@ smoke for interactive changes).
   via `initial_selected_index` (focus-scrolls the item into view). No JSON key; revisit only
   if a screen needs exact pixel restore.
 
-### Low priority (optional / cosmetic — defer unless a screen needs it)
-Per-screen/per-button font overrides (`button_font_*`, `ButtonOption.font_*`),
-`button_selected_color`, `ButtonOption.button_label_color`, `active_button_label`,
-`title_font_size`. Wire on demand.
+### Low priority — resolved (2026-06-24)
+After reviewing actual usage, the only one that was genuinely needed shipped:
+- ✅ `ButtonOption.button_label_color` — red "Discard" labels (SeedOptionsScreen).
+- Not needed: `button_selected_color` (never overridden — always `ACCENT_COLOR`),
+  `title_font_size` (only the main menu, which is its own screen).
+- Deferred to the screens that use them (not yet implemented): `active_button_label`
+  (scroll-vs-static workaround the LVGL marquee covers; one tools-screen use),
+  per-screen/per-button font overrides (`button_font_*`, `ButtonOption.font_*`).
 
 ### Definition of done
 - ✅ High + Medium items landed with `scenarios.json` cases + committed desktop screenshots;
   `runner_core` smoke passes. Series held every pre-existing screenshot byte-identical.
+- ✅ `ButtonOption.button_label_color` (the one needed Low-priority arg) landed.
 - ⬜ The matching seedsigner-side forwarding (`to_lvgl()` + `button_list_lvgl_cfg`) — opened
-  as the LVGL leaf in that repo so parity is end-to-end. **Still pending.**
+  as the LVGL leaf in that repo so parity is end-to-end. **Still pending** (separate repo).
+  Note: `to_lvgl()` must map Python's `button_label_color="red"` to a hex (`#ff0000`) for
+  the native `label_color` key.

@@ -91,6 +91,8 @@ typedef struct {
     lv_obj_t *right_icon;
     uint32_t  left_icon_rest_color;
     uint32_t  right_icon_rest_color;
+    uint32_t  text_rest_color;   // label color at rest (Python ButtonOption.button_label_color;
+                                 // e.g. red for "Discard"). black when the row is selected.
 } button_state_t;
 
 static void button_state_delete_cb(lv_event_t *e) {
@@ -98,6 +100,25 @@ static void button_state_delete_cb(lv_event_t *e) {
     if (state) {
         lv_free(state);
     }
+}
+
+// Allocate + attach a per-button color state (freed on widget delete). Returns NULL
+// on OOM, in which case the caller degrades to button_set_active's blanket recolor.
+// Icon fields start empty (the icon layout fills them when present); text_rest_color
+// is the label's at-rest color.
+static button_state_t* button_attach_state(lv_obj_t *btn, uint32_t text_rest_color) {
+    button_state_t *state = (button_state_t *)lv_malloc(sizeof(button_state_t));
+    if (!state) {
+        return NULL;
+    }
+    state->left_icon = NULL;
+    state->right_icon = NULL;
+    state->left_icon_rest_color  = (uint32_t)BUTTON_FONT_COLOR;
+    state->right_icon_rest_color = (uint32_t)BUTTON_FONT_COLOR;
+    state->text_rest_color = text_rest_color;
+    lv_obj_set_user_data(btn, state);
+    lv_obj_add_event_cb(btn, button_state_delete_cb, LV_EVENT_DELETE, state);
+    return state;
 }
 
 // User-data attached to each top-nav icon button: the reserved code the host
@@ -444,7 +465,10 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
         } else if (state && child == state->right_icon) {
             color = state->right_icon_rest_color;
         } else {
-            color = (uint32_t)BUTTON_FONT_COLOR;
+            // Text label (and the main-menu large-icon, which carries no state): a
+            // custom button_label_color rides on state->text_rest_color; otherwise the
+            // default light color.
+            color = state ? state->text_rest_color : (uint32_t)BUTTON_FONT_COLOR;
         }
         lv_obj_set_style_text_color(child, lv_color_hex(color), 0);
     }
@@ -822,7 +846,7 @@ static void button_size_changed_cb(lv_event_t* e) {
 static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
                                      const button_opts_t* opts,
                                      bool has_left_icon, bool has_right_icon,
-                                     bool hide_left_icon) {
+                                     bool hide_left_icon, uint32_t text_rest_color) {
     const lv_font_t* icon_font = &ICON_FONT__SEEDSIGNER;  // 24px inline (ICON_INLINE_FONT_SIZE)
     const int32_t pad   = COMPONENT_PADDING;              // == Python icon_padding
     const int32_t btn_w = lv_obj_get_width(btn);
@@ -944,16 +968,14 @@ static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
     }
 
     // Per-button color state: selection turns every glyph black; at rest the icons
-    // return to their own colors. If this small allocation fails, fall back to the
-    // blanket recolor (icons follow the text color) rather than crash a render.
-    button_state_t* state = (button_state_t*)lv_malloc(sizeof(button_state_t));
+    // return to their own colors and the label to text_rest_color. If this small
+    // allocation fails, fall back to the blanket recolor rather than crash a render.
+    button_state_t* state = button_attach_state(btn, text_rest_color);
     if (state) {
         state->left_icon  = left_icon;
         state->right_icon = right_icon;
         state->left_icon_rest_color  = left_rest_color;
         state->right_icon_rest_color = right_rest_color;
-        lv_obj_set_user_data(btn, state);
-        lv_obj_add_event_cb(btn, button_state_delete_cb, LV_EVENT_DELETE, state);
     }
 }
 
@@ -1033,10 +1055,17 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
 
     lv_label_set_text(label, eff.text ? eff.text : "");
 
+    // Per-button label color (Python ButtonOption.button_label_color — e.g. red for a
+    // "Discard" action). Default keeps the standard light text. Carried at rest via the
+    // per-button state so it survives (de)selection; the label still flips to black when
+    // the row is selected, matching Python's selected_font_color.
+    uint32_t text_rest_color = (opts->label_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                               ? (uint32_t)BUTTON_FONT_COLOR : opts->label_color;
+
     if (has_icons) {
         // Build the inline icon(s) and lay out icon + text by hand (Python geometry);
-        // also attaches the per-button icon-color state.
-        apply_button_icon_layout(lv_button, label, &eff, has_left_icon, has_right_icon, hide_left_icon);
+        // also attaches the per-button color state (icons + label).
+        apply_button_icon_layout(lv_button, label, &eff, has_left_icon, has_right_icon, hide_left_icon, text_rest_color);
     } else {
         lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         // Size the label to the content box and pick its alignment (centered-and-fitting
@@ -1044,6 +1073,11 @@ lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts) {
         // resized after creation (the main-menu grid) fix their label geometry; the
         // resize handler is flex-only and those buttons are centered.
         apply_button_label_layout(lv_button, eff.is_text_centered);
+        // No icons, but a custom label color still needs the state so button_set_active
+        // restores it at rest.
+        if (text_rest_color != (uint32_t)BUTTON_FONT_COLOR) {
+            button_attach_state(lv_button, text_rest_color);
+        }
     }
     lv_obj_add_event_cb(lv_button, button_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
@@ -1071,6 +1105,10 @@ lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to) {
     opts.text = text;
     opts.align_to = align_to;
     opts.is_text_centered = true;
+    // 0-init would mean black (0x000000); use the "default color" sentinel so the icon
+    // and label keep their standard colors.
+    opts.icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    opts.label_color = SEEDSIGNER_ICON_COLOR_DEFAULT;
     return button_ex(lv_parent, &opts);
 }
 
@@ -1146,6 +1184,7 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         opts.icon = items[i].icon;              // per-item leading icon (or NULL)
         opts.right_icon = items[i].right_icon;  // per-item trailing icon (or NULL)
         opts.icon_color = items[i].icon_color;  // 0xRRGGBB or SEEDSIGNER_ICON_COLOR_DEFAULT
+        opts.label_color = items[i].label_color; // 0xRRGGBB or SEEDSIGNER_ICON_COLOR_DEFAULT
         opts.style = style;                     // screen-wide checkbox/radio/default
         opts.is_checked = items[i].is_checked;  // per-item checked state
         opts.icon_column_w = icon_column_w;     // shared column so labels line up
