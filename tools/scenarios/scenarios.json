@@ -194,6 +194,41 @@
             { "label": "Sign a PSBT", "icon": "" }
           ]
         }
+      },
+      {
+        "name": "i18n_radio",
+        "context": {
+          "top_nav": {
+            "title": "Display density",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_style": "checked_selection",
+          "checked_buttons": [1],
+          "is_button_text_centered": false,
+          "button_list": [
+            "Compact",
+            "Medium",
+            "Static"
+          ]
+        }
+      },
+      {
+        "name": "i18n_icons",
+        "context": {
+          "top_nav": {
+            "title": "Verify",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            { "label": "Scan", "icon": "" },
+            { "label": "Verify", "icon": "" },
+            { "label": "Donate", "icon": "", "right_icon": "" },
+            { "label": "Cancel", "icon": "", "label_color": "#ff0000" }
+          ]
+        }
       }
     ]
   },
