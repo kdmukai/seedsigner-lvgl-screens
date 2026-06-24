@@ -646,6 +646,14 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         lv_obj_remove_flag(out.button_list_spacer, LV_OBJ_FLAG_SCROLLABLE);
     }
 
+    // Shared leading-icon column = the widest leading icon on THIS screen, so the
+    // left-aligned labels all begin at the same x (adapts to the icons in use).
+    int32_t icon_column_w = 0;
+    for (const auto &it : button_items) {
+        int32_t w = inline_icon_width(it.icon.empty() ? nullptr : it.icon.c_str());
+        if (w > icon_column_w) icon_column_w = w;
+    }
+
     for (size_t i = 0; i < button_items.size(); ++i) {
         // align_to is unused under flex layout — flex positions the children — so
         // pass NULL. is_text_centered carries the screen's centering choice; the
@@ -660,6 +668,7 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
         opts.icon_color = it.icon_color;
         opts.style = button_style;        // screen-wide checkbox/radio/default
         opts.is_checked = it.is_checked;  // per-item checked state
+        opts.icon_column_w = icon_column_w;  // shared column so labels line up
         lv_obj_t *btn = button_ex(out.body, &opts);
         out.button_list[i] = btn;
         out.button_list_count = i + 1;

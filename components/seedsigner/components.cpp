@@ -148,6 +148,8 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, icon ? icon : "");
     lv_obj_set_style_text_font(lbl, &ICON_FONT__SEEDSIGNER, LV_PART_MAIN);
+    // Plain box-center: the icon font is baked with each glyph's ink vertically
+    // centered in its line box (scripts/bake_icon_fonts.py), so this centers the ink.
     lv_obj_center(lbl);
 
     lv_obj_add_event_cb(btn, top_nav_button_event_callback, LV_EVENT_CLICKED, (void*)event);
@@ -160,6 +162,19 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
 int32_t label_subset_text_width(lv_obj_t* label, const lv_font_t* font) {
     lv_point_t size = {0, 0};
     lv_text_get_size(&size, lv_label_get_text(label), font, 0, 0,
+                     LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return size.x;
+}
+
+// See components.h: width of an inline icon glyph in the active inline icon font.
+// Matches the per-glyph measurement apply_button_icon_layout makes for a created icon
+// label, so a column sized from the MAX of these aligns the buttons' text exactly.
+int32_t inline_icon_width(const char* glyph) {
+    if (!glyph || !glyph[0]) {
+        return 0;
+    }
+    lv_point_t size = {0, 0};
+    lv_text_get_size(&size, glyph, &ICON_FONT__SEEDSIGNER, 0, 0,
                      LV_COORD_MAX, LV_TEXT_FLAG_NONE);
     return size.x;
 }
@@ -852,14 +867,34 @@ static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
     }
 
     if (has_left_icon) {
-        visible -= left_icon_w + pad;
-        if (text_w > visible) { centered = false; text_x = pad; }
         if (centered) {
-            text_x += (left_icon_w + pad) / 2;            // shift centered text right for the icon
-            left_icon_x = text_x - (left_icon_w + pad);   // icon to the text's left
-        } else {
-            text_x += left_icon_w + pad;
+            // CENTERED + icon: keep the icon+text BLOCK centered (Python geometry, using
+            // the icon's actual width). Fall back to left-aligned if the text won't fit.
+            int32_t centered_visible = visible - (left_icon_w + pad);
+            if (text_w > centered_visible) {
+                centered = false;
+            } else {
+                visible = centered_visible;
+                text_x += (left_icon_w + pad) / 2;            // shift centered text right for the icon
+                left_icon_x = text_x - (left_icon_w + pad);   // icon to the text's left
+            }
+        }
+        if (!centered) {
+            // LEFT-ALIGNED + icon: reserve an icon column so the label begins at the SAME
+            // x on every row regardless of each icon's actual width. (Python offset the
+            // text by each icon's own width, so rows with different-width icons did not
+            // line up — aligning them is an intentional improvement.) The column width is
+            // opts->icon_column_w — the MAX leading-icon width among the buttons on THIS
+            // screen (set by button_list / the scaffold), so it adapts to the icons in
+            // use rather than a global constant. 0 (standalone button) falls back to this
+            // icon's own width. The icon is left-aligned in the column.
+            int32_t icon_col = opts->icon_column_w > 0 ? opts->icon_column_w : left_icon_w;
+            if (left_icon_w > icon_col) {
+                icon_col = left_icon_w;   // safety: never overlap a wider-than-column glyph
+            }
             left_icon_x = pad;
+            text_x = pad + icon_col + pad;
+            visible = btn_w - text_x - pad;   // remaining text column up to the right gutter
         }
     }
 
@@ -881,6 +916,9 @@ static void apply_button_icon_layout(lv_obj_t* btn, lv_obj_t* text_label,
     }
     lv_obj_align(text_label, LV_ALIGN_LEFT_MID, text_x, 0);
 
+    // Vertical centering is handled by the font: each glyph's ink is baked centered in
+    // its line box (scripts/bake_icon_fonts.py), so a plain _MID centers the ink. The
+    // leading icon is left-aligned in its column; the trailing icon is right-aligned.
     if (left_icon) {
         lv_obj_align(left_icon, LV_ALIGN_LEFT_MID, left_icon_x, 0);
         // CHECKED_SELECTION unchecked: the layout reserved the check glyph's width
@@ -1083,6 +1121,14 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         return last_button;
     }
 
+    // Reserve a shared leading-icon column = the widest leading icon on THIS screen,
+    // so left-aligned labels all begin at the same x (adapts to the icons in use).
+    int32_t icon_column_w = 0;
+    for (size_t i = 0; i < item_count; ++i) {
+        int32_t w = inline_icon_width(items[i].icon);
+        if (w > icon_column_w) icon_column_w = w;
+    }
+
     for (size_t i = 0; i < item_count; ++i) {
         button_opts_t opts = {};
         opts.text = items[i].label ? items[i].label : "";
@@ -1093,6 +1139,7 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         opts.icon_color = items[i].icon_color;  // 0xRRGGBB or SEEDSIGNER_ICON_COLOR_DEFAULT
         opts.style = style;                     // screen-wide checkbox/radio/default
         opts.is_checked = items[i].is_checked;  // per-item checked state
+        opts.icon_column_w = icon_column_w;     // shared column so labels line up
         last_button = button_ex(lv_parent, &opts);
         if (i == 0) {
             first_button = last_button;

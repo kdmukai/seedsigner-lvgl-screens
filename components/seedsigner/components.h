@@ -77,7 +77,16 @@ typedef struct {
     uint32_t       icon_color;        // leading-icon color, or SEEDSIGNER_ICON_COLOR_DEFAULT
     button_style_t style;             // DEFAULT / CHECKBOX / CHECKED_SELECTION
     bool           is_checked;        // checked state for the checkbox/radio styles
+    int32_t        icon_column_w;     // left-icon column width to reserve so left-aligned
+                                      // labels start at the SAME x across a list (the max
+                                      // left-icon width on that screen). 0 = use this
+                                      // button's own icon width (standalone button).
 } button_opts_t;
+
+// Width (px) of an inline icon glyph in the active profile's inline icon font.
+// Callers (button_list / the scaffold) take the MAX across a list's leading icons to
+// size a shared icon column so left-aligned labels line up. 0 for NULL/empty.
+int32_t inline_icon_width(const char* glyph);
 
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
