@@ -74,6 +74,7 @@ void screensaver_screen(void *ctx_json);
 void splash_screen(void *ctx_json);
 void large_icon_status_screen(void *ctx_json);
 void seed_add_passphrase_screen(void *ctx_json);
+void camera_preview_overlay_screen(void *ctx_json);
 
 // Text metrics (shared with components.cpp). Empty vertical space between a
 // label's box top and the VISIBLE top of its text — the font's declared ascent

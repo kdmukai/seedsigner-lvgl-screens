@@ -261,6 +261,13 @@ const int BUTTON_SELECTED_FONT_COLOR = 0x000000;
 
 const int NOTIFICATION_COLOR = 0x00f100;
 
+// Inactive/disabled gray (Python GUIConstants.INACTIVE_COLOR) — used for the
+// animated-QR progress-bar track and the "repeated frame" status dot.
+const int INACTIVE_COLOR = 0x414141;
+// Pure-green progress fill (Python GUIConstants.GREEN_INDICATOR_COLOR) — distinct
+// from SUCCESS_COLOR; used for the animated-QR progress-bar fill.
+const int GREEN_INDICATOR_COLOR = 0x00ff00;
+
 
 class SeedSignerIconConstants {
     public:

@@ -177,6 +177,16 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
     return btn;
 }
 
+// Public back-button factory (see components.h). Builds the contextual back button via
+// the shared top_nav_icon_button() chrome + the back-button event, then positions it.
+// The y offset (top_nav_icon_button always aligns at y=0) is applied here so the camera
+// preview overlay can drop the same button into the top-left gutter.
+lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs) {
+    lv_obj_t* btn = top_nav_icon_button(lv_parent, SeedSignerIconConstants::CHEVRON_LEFT, align, x_ofs, &TOP_NAV_BACK_EVENT);
+    lv_obj_align(btn, align, x_ofs, y_ofs);
+    return btn;
+}
+
 // See components.h: width of a label's STORED (presentation-form) text at `font`.
 // The single home for the exact lv_text_get_size args every overflow check uses, so
 // the "measure the stored text, not the logical argument" convention can't drift.
@@ -299,7 +309,7 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     lv_obj_t* power_btn = NULL;
 
     if (show_back_button) {
-        back_btn = top_nav_icon_button(lv_top_nav, SeedSignerIconConstants::CHEVRON_LEFT, LV_ALIGN_LEFT_MID, EDGE_PADDING, &TOP_NAV_BACK_EVENT);
+        back_btn = back_button(lv_top_nav, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
     }
 
     if (show_power_button) {

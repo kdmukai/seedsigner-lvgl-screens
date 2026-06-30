@@ -23,6 +23,7 @@ const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"splash_screen", splash_screen},
     {"large_icon_status_screen", large_icon_status_screen},
     {"seed_add_passphrase_screen", seed_add_passphrase_screen},
+    {"camera_preview_overlay_screen", camera_preview_overlay_screen},
 };
 
 // Display / framebuffer state.

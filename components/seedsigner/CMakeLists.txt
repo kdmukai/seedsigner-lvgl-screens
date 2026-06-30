@@ -45,6 +45,9 @@ list(APPEND srcs
     # every host that pumps lv_timer_handler().
     "overlay_manager.cpp"
     "components.cpp"
+    # Camera live-preview overlay: portable spec + LVGL-widget renderer for the
+    # UI drawn over the camera square (back affordance + animated-QR status bar).
+    "camera_preview_overlay.cpp"
     "input_profile.cpp"
     "navigation.cpp"
     # Baked RGB565 logo + HRF partner-logo assets, one per display-height profile

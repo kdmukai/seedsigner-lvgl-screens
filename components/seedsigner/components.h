@@ -16,6 +16,15 @@
 // defaults to the body font color.
 lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button, bool show_power_button, lv_obj_t **out_back_btn, lv_obj_t **out_power_btn, const lv_font_t *title_font = nullptr, const char *title_icon = nullptr, uint32_t title_icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT);
 
+// Contextual back button — the single source of truth for the back button's chrome
+// (icon, highlight states, instant transition) and its SEEDSIGNER_RET_BACK_BUTTON
+// click wiring. top_nav() builds its own back button via this, and the camera
+// live-preview touch overlay reuses it to place the same button alone in the gutter,
+// so the styling/behavior only ever has to change in one place. `align`/`x_ofs`/`y_ofs`
+// position the button within `lv_parent` (e.g. LV_ALIGN_LEFT_MID, EDGE_PADDING, 0 for
+// the top nav; LV_ALIGN_TOP_LEFT, EDGE_PADDING, EDGE_PADDING for the preview gutter).
+lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs);
+
 // Configure an already start-justified, width-constrained single-line label to
 // continuously marquee-scroll (circular wrap) an overflowing line at a steady
 // ~40 px/sec, with two independently-tunable holds:

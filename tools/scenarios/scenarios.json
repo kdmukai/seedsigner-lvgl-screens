@@ -435,5 +435,50 @@
         }
       }
     ]
+  },
+  "camera_preview_overlay_screen": {
+    "context": {
+      "instructions_text": "< back  |  Scan a QR code"
+    },
+    "variations": [
+      {
+        "name": "scanning_early",
+        "context": {
+          "scanning": true,
+          "progress": 25,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "scanning_late",
+        "context": {
+          "progress": 75,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "frame_repeated",
+        "context": {
+          "progress": 60,
+          "frame_status": 2
+        }
+      },
+      {
+        "name": "force_square",
+        "context": {
+          "fill_landscape": false,
+          "progress": 50,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "fill_landscape",
+        "context": {
+          "fill_landscape": true,
+          "progress": 50,
+          "frame_status": 1
+        }
+      }
+    ]
   }
 }
