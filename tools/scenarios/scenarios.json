@@ -480,5 +480,67 @@
         }
       }
     ]
+  },
+  "keyboard_screen": {
+    "context": {
+      "top_nav": {
+        "title": "BIP-85 Index",
+        "show_back_button": true,
+        "show_power_button": false
+      },
+      "cols": 5,
+      "keys": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      "show_save_button": true
+    },
+    "variations": [
+      {
+        "name": "derivation",
+        "context": {
+          "top_nav": {
+            "title": "Derivation Path"
+          },
+          "cols": 6,
+          "keys": ["/", "1", "2", "3", "4", "5", "'", "6", "7", "8", "9", "0"],
+          "initial_value": "m/",
+          "show_save_button": true
+        }
+      },
+      {
+        "name": "coin_flip",
+        "context": {
+          "top_nav": {
+            "title": "Coin Flip 1/99"
+          },
+          "cols": 2,
+          "keys": ["1", "0"],
+          "show_save_button": false,
+          "return_after_n_chars": 99,
+          "title_keystroke_template": "Coin Flip {n}/{total}",
+          "guidance_text": "Heads = 1\nTails = 0"
+        }
+      },
+      {
+        "name": "dice",
+        "context": {
+          "top_nav": {
+            "title": "Dice Roll 1/50"
+          },
+          "cols": 3,
+          "keys": ["", "", "", "", "", ""],
+          "keys_to_values": {
+            "": "1",
+            "": "2",
+            "": "3",
+            "": "4",
+            "": "5",
+            "": "6"
+          },
+          "keyboard_font": "icon",
+          "show_save_button": false,
+          "return_after_n_chars": 50,
+          "title_keystroke_template": "Dice Roll {n}/{total}"
+        }
+      }
+    ]
   }
 }

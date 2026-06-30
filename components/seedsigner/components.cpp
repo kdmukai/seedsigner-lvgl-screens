@@ -287,7 +287,7 @@ void label_set_line_autoscroll(lv_obj_t* label, uint32_t begin_hold_ms, uint32_t
     lv_obj_set_style_anim(label, &scroll_feel_template, LV_PART_MAIN);
 }
 
-lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button, bool show_power_button, lv_obj_t **out_back_btn, lv_obj_t **out_power_btn, const lv_font_t *title_font, const char *title_icon, uint32_t title_icon_color) {
+lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button, bool show_power_button, lv_obj_t **out_back_btn, lv_obj_t **out_power_btn, const lv_font_t *title_font, const char *title_icon, uint32_t title_icon_color, lv_obj_t **out_title_label) {
 
     lv_parent = lv_parent ? lv_parent : lv_scr_act();
     lv_obj_t* lv_top_nav = lv_obj_create(lv_parent);
@@ -320,6 +320,7 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     lv_obj_t* label = lv_label_create(lv_top_nav);
     lv_label_set_text(label, label_text);
     lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    if (out_title_label) *out_title_label = label;
 
     lv_obj_set_style_text_color(label, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
     lv_obj_set_style_text_font(label, title_font ? title_font : &TOP_NAV_TITLE_FONT, LV_PART_MAIN);
@@ -343,11 +344,6 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     }
     if (power_btn) {
         right_pad += TOP_NAV_BUTTON_SIZE + COMPONENT_PADDING;
-    }
-
-    int32_t label_w = nav_w - left_pad - right_pad;
-    if (label_w < 16) {
-        label_w = 16;
     }
 
     // Measure the title at its ACTUAL rendered width. With LV_USE_ARABIC_PERSIAN_
@@ -402,34 +398,13 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
         lv_obj_align(icon_label, LV_ALIGN_LEFT_MID, group_left, 0);
         lv_obj_set_width(label, title_box);
         lv_obj_align(label, LV_ALIGN_LEFT_MID, group_left + icon_w + icon_gap, 0);
-    } else if (title_w > label_w) {
-        // Overflow case: clip + scroll within the region between the buttons. The
-        // title starts start-justified (left here; shaped RTL via the glyph-run draw)
-        // then continuously marquee-scrolls with an initial hold + a hold each time it
-        // wraps back to the start, at ~40 px/sec (label_set_line_autoscroll; it tunes
-        // the bare LONG_SCROLL_CIRCULAR set above). Shaped (hi/th) titles ride the same
-        // offset animation now that the glyph-run draw honors label->offset.x (Task 0).
-        lv_obj_set_width(label, label_w);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, left_pad, 0);
-        label_set_line_autoscroll(label, LINE_SCROLL_BEGIN_HOLD_MS, LINE_SCROLL_BEGIN_HOLD_MS);
     } else {
-        // Title fits. Prefer centering on the full nav width (visually centered
-        // on screen). But if that would push the text under a side button — the
-        // in-between case where the title is too short to scroll yet long enough
-        // to intrude given the asymmetric button padding — fall back to centering
-        // it within the available region between the buttons so it never overlaps.
-        int32_t centered_left = (nav_w - title_w) / 2;
-        bool full_center_safe = (centered_left >= left_pad) &&
-                                (centered_left + title_w <= nav_w - right_pad);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        if (full_center_safe) {
-            lv_obj_set_width(label, title_w);
-            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-        } else {
-            lv_obj_set_width(label, label_w);
-            lv_obj_align(label, LV_ALIGN_LEFT_MID, left_pad, 0);
-        }
+        // Plain title (no contextual icon): centered as if the back button weren't
+        // there, pinned left-justified against the back-button gap once centering
+        // would intrude on it, and marquee-scrolled once it overflows the region.
+        // Shared with runtime title updates (keyboard counters) so the staging is
+        // recomputed identically when the text changes.
+        top_nav_layout_title(lv_top_nav, label, back_btn != NULL, power_btn != NULL, title_font);
     }
 
     if (out_back_btn) {
@@ -442,6 +417,62 @@ lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button,
     return lv_top_nav;
 }
 
+
+void top_nav_layout_title(lv_obj_t* top_nav, lv_obj_t* title_label, bool has_back_button, bool has_power_button, const lv_font_t* title_font) {
+    if (!top_nav || !title_label) {
+        return;
+    }
+    lv_obj_update_layout(top_nav);
+    int32_t nav_w = lv_obj_get_content_width(top_nav);
+    if (nav_w <= 0) {
+        nav_w = lv_obj_get_width(lv_obj_get_parent(top_nav));
+    }
+    if (nav_w <= 0) {
+        nav_w = 320;
+    }
+
+    int32_t left_pad  = EDGE_PADDING + (has_back_button  ? TOP_NAV_BUTTON_SIZE + COMPONENT_PADDING : 0);
+    int32_t right_pad = EDGE_PADDING + (has_power_button ? TOP_NAV_BUTTON_SIZE + COMPONENT_PADDING : 0);
+    int32_t label_w = nav_w - left_pad - right_pad;
+    if (label_w < 16) {
+        label_w = 16;
+    }
+
+    // Measure the title at its ACTUAL rendered width (the label's stored, shaped text;
+    // see the RTL note above). Width is direction-independent, so this is fine before
+    // the RTL base_dir post-pass.
+    const lv_font_t *eff_font = title_font ? title_font : &TOP_NAV_TITLE_FONT;
+    int32_t title_w = label_subset_text_width(title_label, eff_font);
+
+    if (title_w > label_w) {
+        // Stage 3 — wider than the region between the buttons: clip + marquee-scroll
+        // (start-justified, continuous scroll with holds). Shaped titles ride the
+        // same offset animation via the glyph-run draw.
+        lv_label_set_long_mode(title_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        lv_obj_set_width(title_label, label_w);
+        lv_obj_align(title_label, LV_ALIGN_LEFT_MID, left_pad, 0);
+        label_set_line_autoscroll(title_label, LINE_SCROLL_BEGIN_HOLD_MS, LINE_SCROLL_BEGIN_HOLD_MS);
+        return;
+    }
+
+    // Fits — never scroll.
+    lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
+    int32_t centered_left = (nav_w - title_w) / 2;   // centered as if the back button isn't there
+    bool centers_clear = (centered_left >= left_pad) && (centered_left + title_w <= nav_w - right_pad);
+    if (centers_clear) {
+        // Stage 1 — short enough to sit centered on the full bar without touching a button.
+        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_width(title_label, title_w);
+        lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
+    } else {
+        // Stage 2 — centering would intrude on the back button's padding gap: pin the
+        // title left-justified against that gap; it grows rightward until it must scroll.
+        lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        lv_obj_set_width(title_label, label_w);
+        lv_obj_align(title_label, LV_ALIGN_LEFT_MID, left_pad, 0);
+    }
+}
 
 
 void button_set_active(lv_obj_t* lv_button, bool active) {

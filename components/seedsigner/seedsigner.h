@@ -45,6 +45,7 @@ extern "C" {
 typedef struct {
     lv_obj_t *screen;
     lv_obj_t *top_nav;
+    lv_obj_t *title_label;   // top-nav title label, for in-place title updates
     lv_obj_t *top_back_btn;
     lv_obj_t *top_power_btn;
     lv_obj_t *body;
@@ -75,6 +76,7 @@ void splash_screen(void *ctx_json);
 void large_icon_status_screen(void *ctx_json);
 void seed_add_passphrase_screen(void *ctx_json);
 void camera_preview_overlay_screen(void *ctx_json);
+void keyboard_screen(void *ctx_json);
 
 // Text metrics (shared with components.cpp). Empty vertical space between a
 // label's box top and the VISIBLE top of its text — the font's declared ascent

@@ -328,9 +328,15 @@ class SeedSignerIconConstants {
 // add its codepoint to the bake script's FontAwesome range too.
 class FontAwesomeIconConstants {
     public:
-        static constexpr const char* CAMERA   = "\uf030";
-        static constexpr const char* KEYBOARD = "\uf11c";
-        static constexpr const char* DICE     = "\uf522";
+        static constexpr const char* CAMERA     = "\uf030";
+        static constexpr const char* KEYBOARD   = "\uf11c";
+        static constexpr const char* DICE       = "\uf522";
+        static constexpr const char* DICE_ONE   = "\uf525";
+        static constexpr const char* DICE_TWO   = "\uf528";
+        static constexpr const char* DICE_THREE = "\uf527";
+        static constexpr const char* DICE_FOUR  = "\uf524";
+        static constexpr const char* DICE_FIVE  = "\uf523";
+        static constexpr const char* DICE_SIX   = "\uf526";
 };
 
 

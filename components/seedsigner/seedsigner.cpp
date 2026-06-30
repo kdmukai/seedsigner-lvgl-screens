@@ -1,6 +1,7 @@
 #include "seedsigner.h"
 #include "components.h"
 #include "camera_preview_overlay.h"
+#include "keyboard_core.h"
 #include "gui_constants.h"
 #include "navigation.h"
 #include "input_profile.h"
@@ -20,6 +21,8 @@
 #include <cstdlib>
 #include <cctype>
 #include <set>
+#include <map>
+#include <algorithm>
 
 using json = nlohmann::json;
 
@@ -497,7 +500,7 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
     out.top_nav = top_nav(out.screen, title.c_str(), show_back, show_power,
                           &out.top_back_btn, &out.top_power_btn, title_font,
                           top_nav_icon.empty() ? nullptr : top_nav_icon.c_str(),
-                          top_nav_icon_color);
+                          top_nav_icon_color, &out.title_label);
     out.body = create_standard_body_content(out.screen, out.top_nav, scrollable);
 
     // Decide which scaffold mode applies based on cfg.
@@ -1721,51 +1724,10 @@ typedef struct {
     lv_keyboard_mode_t letter_mode;  // LOWER/UPPER to restore when leaving symbols
 } passphrase_ctx_t;
 
-// Number of keys in the keyboard's current top row (used for the UP→back-button
-// handoff). Counts buttons in the active map until the first row break, so it
-// works for any page (alphabetic 7, digits 5, symbols 8, QWERTY 10).
-static size_t passphrase_top_row_count(lv_obj_t *kb) {
-    const char * const *map = lv_keyboard_get_map_array(kb);
-    size_t n = 0;
-    while (map && map[n] && map[n][0] != '\0' && std::strcmp(map[n], "\n") != 0) {
-        n++;
-    }
-    return n;
-}
-
-// Find the [first, last] button indices of the map row that contains button
-// `sel`, so LEFT/RIGHT can wrap within the current row instead of spilling onto
-// the adjacent row (matches the Python keyboard's auto_wrap). Assumes the map
-// has no hidden buttons (the passphrase maps don't).
-static void passphrase_row_bounds(lv_obj_t *kb, uint32_t sel,
-                                  uint32_t *first, uint32_t *last) {
-    const char * const *map = lv_keyboard_get_map_array(kb);
-    uint32_t id = 0, row_first = 0;
-    for (size_t i = 0; map && map[i] && map[i][0] != '\0'; ++i) {
-        if (std::strcmp(map[i], "\n") == 0) {       // end of a row [row_first, id-1]
-            if (sel < id) { *first = row_first; *last = id - 1; return; }
-            row_first = id;
-            continue;
-        }
-        id++;
-    }
-    // Last row (terminated by "" rather than "\n").
-    *first = row_first;
-    *last  = (id > 0) ? id - 1 : 0;
-}
-
-// Button index of a single-character key in the current map (-1 if absent).
-// Used to pre-select the last-typed key for the joystick selection highlight.
-static int passphrase_find_button(lv_obj_t *kb, char ch) {
-    const char * const *map = lv_keyboard_get_map_array(kb);
-    int id = 0;
-    for (size_t i = 0; map && map[i] && map[i][0] != '\0'; ++i) {
-        if (std::strcmp(map[i], "\n") == 0) continue;  // row break: not a button
-        if (std::strlen(map[i]) == 1 && map[i][0] == ch) return id;
-        id++;
-    }
-    return -1;
-}
+// The button-matrix map-inspection helpers (top-row count, row bounds, find
+// button) now live in keyboard_core.h (kb_top_row_count / kb_row_bounds /
+// kb_find_button), taking the map array directly. Passphrase passes its current
+// page's map via lv_keyboard_get_map_array(kb).
 
 // Default joystick selection when arriving at a page fresh — a central key, so
 // the first move is short on average: 'k' on the alphabetical letter grid, '6'
@@ -1777,8 +1739,9 @@ static uint32_t passphrase_default_key(lv_obj_t *kb, lv_keyboard_mode_t mode) {
     // (a-g / h-n / ...), so 'k' is its center; the QWERTY keyboards (240 touch
     // and the larger profiles) center on 'g' — the middle of the home row.
     // Detect by whether 'a'/'A' is the first key.
-    bool alphabetical = (passphrase_find_button(kb, 'a') == 0) ||
-                        (passphrase_find_button(kb, 'A') == 0);
+    const char * const *map = lv_keyboard_get_map_array(kb);
+    bool alphabetical = (kb_find_button(map, 'a') == 0) ||
+                        (kb_find_button(map, 'A') == 0);
     switch (mode) {
         case LV_KEYBOARD_MODE_TEXT_LOWER: ch = alphabetical ? 'k' : 'g'; break;
         case LV_KEYBOARD_MODE_TEXT_UPPER: ch = alphabetical ? 'K' : 'G'; break;
@@ -1786,7 +1749,7 @@ static uint32_t passphrase_default_key(lv_obj_t *kb, lv_keyboard_mode_t mode) {
         case LV_KEYBOARD_MODE_SPECIAL:    ch = '.'; break;
         default: break;
     }
-    int idx = ch ? passphrase_find_button(kb, ch) : -1;
+    int idx = ch ? kb_find_button(map, ch) : -1;
     return idx >= 0 ? (uint32_t)idx : 0;
 }
 
@@ -1851,21 +1814,7 @@ static void passphrase_key2_cycle(passphrase_ctx_t *c) {
     passphrase_update_labels(c);
 }
 
-// Momentary "pressed" flash on a side button when its physical key is hit. The
-// side buttons aren't clickable, so we drive the PRESSED state by hand: add it,
-// then clear it after a short beat via a one-shot timer (matches Python, which
-// shows the button react before its state updates).
-static void passphrase_flash_clear_cb(lv_timer_t *t) {
-    lv_obj_t *btn = (lv_obj_t *)lv_timer_get_user_data(t);
-    if (btn && lv_obj_is_valid(btn)) lv_obj_remove_state(btn, LV_STATE_PRESSED);
-    lv_timer_delete(t);
-}
-static void passphrase_flash_side_button(lv_obj_t *btn) {
-    if (!btn || !lv_obj_is_valid(btn)) return;
-    lv_obj_add_state(btn, LV_STATE_PRESSED);
-    lv_timer_t *t = lv_timer_create(passphrase_flash_clear_cb, 120, btn);
-    lv_timer_set_repeat_count(t, 1);
-}
+// The side-button press-flash (kb_flash_side_button) now lives in keyboard_core.
 
 // Hardware-mode key filter on the keyboard. Handles the KEY1/KEY2/KEY3 aux keys
 // (case / symbols / confirm) and the top-nav handoff: when the selection is on
@@ -1883,10 +1832,10 @@ static void passphrase_kb_key_cb(lv_event_t *e) {
     // act when the side panel is present (240 joystick). At >240 there is no
     // panel — switching/confirm is via the in-grid mode/OK keys.
     if (c->key2_label) {
-        if (key == (uint32_t)'1') { passphrase_flash_side_button(c->key1_btn); passphrase_key1_case(c); return; }
-        if (key == (uint32_t)'2') { passphrase_flash_side_button(c->key2_btn); passphrase_key2_cycle(c); return; }
+        if (key == (uint32_t)'1') { kb_flash_side_button(c->key1_btn); passphrase_key1_case(c); return; }
+        if (key == (uint32_t)'2') { kb_flash_side_button(c->key2_btn); passphrase_key2_cycle(c); return; }
         if (key == (uint32_t)'3') {
-            passphrase_flash_side_button(c->key3_btn);
+            kb_flash_side_button(c->key3_btn);
             if (c->ta && lv_obj_is_valid(c->ta)) {
                 seedsigner_lvgl_on_text_entered(lv_textarea_get_text(c->ta));
             }
@@ -1894,42 +1843,17 @@ static void passphrase_kb_key_cb(lv_event_t *e) {
         }
     }
 
-    if (key == LV_KEY_UP) {
-        if (!c->back_btn || !lv_obj_is_valid(c->back_btn)) return;
-        uint32_t sel = lv_keyboard_get_selected_button(c->kb);
-        if (sel == LV_BUTTONMATRIX_BUTTON_NONE) return;
-        if (sel < passphrase_top_row_count(c->kb)) {
-            lv_group_focus_obj(c->back_btn);
-        }
-    }
-
-    // LEFT/RIGHT wrap within the current row rather than spilling onto the
-    // adjacent row (matches the Python keyboard's auto_wrap). As a PREPROCESS
-    // handler we see the selection before the buttonmatrix moves it, set the
-    // wrapped target ourselves, and stop the event so its default linear move
-    // (which would cross rows) does not run.
-    if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
-        uint32_t sel = lv_keyboard_get_selected_button(c->kb);
-        if (sel == LV_BUTTONMATRIX_BUTTON_NONE) return;  // let the default enter the grid
-        uint32_t first, last;
-        passphrase_row_bounds(c->kb, sel, &first, &last);
-        uint32_t target = (key == LV_KEY_RIGHT) ? (sel >= last  ? first : sel + 1)
-                                                : (sel <= first ? last  : sel - 1);
-        lv_buttonmatrix_set_selected_button(c->kb, target);
-        lv_event_stop_processing(e);
-    }
+    // The remaining directional keys (UP top-row → back-button handoff, LEFT/RIGHT
+    // row-wrap) are the generic keyboard navigation, shared via keyboard_core.
+    kb_handle_directional(e, lv_keyboard_get_map_array(c->kb), c->kb, c->back_btn);
 }
 
 // Hardware-mode key filter on the back button: DOWN returns focus to the
 // keyboard.
 static void passphrase_back_key_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_KEY) return;
-    if (lv_event_get_key(e) != LV_KEY_DOWN) return;
-
     passphrase_ctx_t *c = (passphrase_ctx_t *)lv_event_get_user_data(e);
-    if (c && c->kb && lv_obj_is_valid(c->kb)) {
-        lv_group_focus_obj(c->kb);
-    }
+    if (c) kb_back_down_to_matrix(e, c->kb);
 }
 
 // Tear down the group + ctx when the screen is destroyed (mirrors
@@ -1945,62 +1869,7 @@ static void passphrase_cleanup_cb(lv_event_t *e) {
     lv_free(c);
 }
 
-// Build one right-side panel button (KEY1/KEY2/KEY3 indicator). These are
-// display-only — they show what the physical keys do; they are not
-// joystick-navigable targets.
-// `clipped_right` is how many px of the button run off the right screen edge.
-// The label is centered within the VISIBLE portion (full width minus the clipped
-// strip), not the full button — matching Python, which re-centers the text for
-// what remains on-screen. Pass 0 for a fully-visible button.
-static lv_obj_t *passphrase_side_button(lv_obj_t *parent, int32_t x, int32_t y,
-                                        int32_t w, int32_t h, const char *text,
-                                        const lv_font_t *font, int color,
-                                        int32_t clipped_right,
-                                        lv_obj_t **out_label) {
-    lv_obj_t *btn = lv_obj_create(parent);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_set_pos(btn, x, y);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn, BUTTON_RADIUS / 2, LV_PART_MAIN);
-    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
-    lv_obj_remove_flag(btn, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
-
-    // Pressed (flash) look: orange fill with a black glyph, matching the keyboard
-    // selection. The buttons aren't clickable; the flash is driven by hand from
-    // the KEY1/KEY2/KEY3 handlers. Glyph color is set on the button (not the
-    // label) so the PRESSED selector applies and the label inherits the color.
-    lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(btn, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_set_style_text_color(btn, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_MAIN | LV_STATE_PRESSED);
-
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-
-    // A single SeedSigner icon glyph (the confirm check) is line-centered by the
-    // label box, but its ink can sit off-center within that box (glyph metrics
-    // vary — the back chevron happens to be centered, the check is not). Nudge it
-    // by the gap between the glyph's ink center and the line center.
-    int32_t dy = 0;
-    if ((unsigned char)text[0] == 0xEE && text[3] == '\0') {  // one 3-byte U+Exxx char
-        uint32_t cp = ((uint32_t)(text[0] & 0x0F) << 12) |
-                      ((uint32_t)(text[1] & 0x3F) << 6) |
-                      ((uint32_t)(text[2] & 0x3F));
-        lv_font_glyph_dsc_t g;
-        if (lv_font_get_glyph_dsc(font, &g, cp, 0)) {
-            int32_t line_center  = lv_font_get_line_height(font) / 2 - font->base_line;
-            int32_t glyph_center = g.ofs_y + (int32_t)g.box_h / 2;
-            dy = glyph_center - line_center;
-        }
-    }
-    // Center within the on-screen portion: shift left by half the clipped strip.
-    lv_obj_align(label, LV_ALIGN_CENTER, -clipped_right / 2, dy);
-
-    if (out_label) *out_label = label;
-    return btn;
-}
+// The side-panel button factory (kb_side_button) now lives in keyboard_core.
 
 // Custom keyboard handler, installed in place of lv_keyboard_def_event_cb so we
 // control the in-grid control-key labels (notably the symbols toggle, which the
@@ -2060,123 +1929,8 @@ static void passphrase_kb_value_changed(lv_event_t *e) {
     lv_textarea_add_text(ta, txt);
 }
 
-// Per-key restyling of the SeedSigner control-icon keys (CHECK, the two
-// CHEVRON cursors, DELETE, SPACE). These glyphs are merged into the keyboard
-// text font for layout, but they need two fixes the buttonmatrix can't do per
-// key, done here at draw time (it tags each label task with the button index in
-// base.id1):
-//
-//   - Color: the confirm CHECK is green; SPACE is muted gray (it enters a real
-//     character); the cursor + backspace controls are SeedSigner-orange so they
-//     read as actions, not enterable glyphs (clearest on the symbol page).
-//   - Vertical centering: lv_keyboard line-centers key text by the font line
-//     height, but these icons are bottom-anchored and as tall as the ascent
-//     (they were designed for a dedicated icon font, then merged onto the text
-//     baseline), so they would sit at the top of the key. Nudge each down by the
-//     gap between its ink center and the line-box center — computed from the
-//     font so it holds at any size, with no edits to the generated font data.
-static void passphrase_kb_draw_cb(lv_event_t *e) {
-    lv_draw_task_t *task = lv_event_get_draw_task(e);
-    lv_draw_label_dsc_t *label_dsc = lv_draw_task_get_label_dsc(task);
-    if (!label_dsc) return;  // not a label draw task
-
-    lv_draw_dsc_base_t *base = (lv_draw_dsc_base_t *)lv_draw_task_get_draw_dsc(task);
-    if (!base || base->part != LV_PART_ITEMS) return;
-
-    lv_obj_t *kb = lv_event_get_target_obj(e);
-    const char *txt = lv_buttonmatrix_get_button_text(kb, base->id1);
-    if (!txt) return;
-
-    // SeedSigner icon glyphs are the only U+Exxx keys (3-byte UTF-8, lead byte
-    // 0xEE); letter and mode-label keys are ASCII and fall through untouched.
-    if ((unsigned char)txt[0] != 0xEE) return;
-    uint32_t cp = ((uint32_t)(txt[0] & 0x0F) << 12) |
-                  ((uint32_t)(txt[1] & 0x3F) << 6) |
-                  ((uint32_t)(txt[2] & 0x3F));
-
-    // Leave the highlighted key's color alone: when a control key is selected
-    // (joystick) or pressed (touch), the buttonmatrix has already applied the
-    // active text color (BUTTON_SELECTED_FONT_COLOR, black) so the glyph stays
-    // visible on the orange highlight — exactly like the letter keys. Only
-    // recolor the resting state:
-    //   CHECK confirms (green); SPACE enters a real character (muted gray, like
-    //   Python); the cursor + backspace keys are controls, kept SeedSigner-orange
-    //   so they read as actions, not enterable glyphs — clearest on the symbol
-    //   page where every surrounding key IS enterable.
-    if (!lv_color_eq(label_dsc->color, lv_color_hex(BUTTON_SELECTED_FONT_COLOR))) {
-        uint32_t icon_color;
-        if (cp == 0xE905)      icon_color = SUCCESS_COLOR;  // CHECK
-        else if (cp == 0xE923) icon_color = 0x999999u;      // SPACE
-        else                   icon_color = ACCENT_COLOR;   // CHEVRON_LEFT/RIGHT, DELETE
-        label_dsc->color = lv_color_hex(icon_color);
-    }
-
-    lv_font_glyph_dsc_t g;
-    const lv_font_t *font = label_dsc->font;
-    if (font && lv_font_get_glyph_dsc(font, &g, cp, 0)) {
-        int32_t line_center  = lv_font_get_line_height(font) / 2 - font->base_line;
-        int32_t glyph_center = g.ofs_y + (int32_t)g.box_h / 2;
-        label_dsc->ofs_y = glyph_center - line_center;
-    }
-}
-
-// Apply SeedSigner styling to the keyboard: black panel, dark keys with light
-// text, control keys marked in accent orange, and the selected/pressed key
-// highlighted in SeedSigner orange (matches button_set_active elsewhere).
-static void passphrase_style_keyboard(lv_obj_t *kb) {
-    lv_obj_set_style_bg_color(kb, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(kb, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(kb, 0, LV_PART_MAIN);
-    // The keyboard is the focused group object in joystick mode; suppress the
-    // theme's focus outline/border on the panel (we show focus per-key instead).
-    lv_obj_set_style_outline_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN | LV_STATE_FOCUS_KEY);
-    // Tight inter-key gaps + modest rounding so the keys read as large hit
-    // targets (the default theme padding/radius made them look small).
-    lv_obj_set_style_pad_row(kb, COMPONENT_PADDING / 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(kb, COMPONENT_PADDING / 4, LV_PART_MAIN);
-
-    // Keys: fixed-width font (matches the text-entry box), dark fill, light text.
-    lv_obj_set_style_text_font(kb, &KEYBOARD_FONT, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_ITEMS);
-    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_FONT_COLOR), LV_PART_ITEMS);
-    lv_obj_set_style_radius(kb, BUTTON_RADIUS / 2, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
-
-    // Control keys are flagged CHECKED; the theme would draw them light. Force
-    // the same dark fill as every other key (dark-mode throughout) and mark them
-    // only with accent-orange text so they read as actions, not a light key.
-    lv_obj_set_style_bg_color(kb, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | LV_STATE_CHECKED);
-
-    // Selected key: SeedSigner orange, FULL opacity, black text. Joystick
-    // navigation marks the key FOCUSED/FOCUS_KEY; touch press and our static
-    // screenshot highlight use PRESSED. bg_opa COVER is set explicitly because
-    // the default theme draws the focus states at partial opacity — that looked
-    // like a muted/inactive dark orange. Control keys are also CHECKED, so the
-    // CHECKED combos are styled too.
-    const lv_state_t sel_states[] = {
-        LV_STATE_PRESSED, LV_STATE_FOCUSED, LV_STATE_FOCUS_KEY,
-        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_PRESSED),
-        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_FOCUSED),
-        (lv_state_t)(LV_STATE_CHECKED | LV_STATE_FOCUS_KEY),
-    };
-    for (lv_state_t st : sel_states) {
-        lv_obj_set_style_bg_color(kb, lv_color_hex(ACCENT_COLOR), LV_PART_ITEMS | st);
-        lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | st);
-        lv_obj_set_style_text_color(kb, lv_color_hex(BUTTON_SELECTED_FONT_COLOR), LV_PART_ITEMS | st);
-    }
-
-    // Recolor the OK key green at draw time (per-key color isn't a style option).
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
-    lv_obj_add_event_cb(kb, passphrase_kb_draw_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
-}
+// The keyboard theming + per-key SeedSigner icon recolor (kb_style_matrix and
+// its draw callback) now live in keyboard_core.
 
 // Parse cfg["initial_mode"] into a starting keyboard mode (for screenshots /
 // deep-links into a specific charset page). Defaults to lowercase letters.
@@ -2281,85 +2035,8 @@ void seed_add_passphrase_screen(void *ctx_json) {
     passphrase_ctx_t *c = (passphrase_ctx_t *)lv_malloc(sizeof(passphrase_ctx_t));
     lv_memzero(c, sizeof(*c));
 
-    // Text-entry strip: one-line, cleartext. Font matches the keyboard for a
-    // consistent look; SeedSigner dark fill with an accent-orange border/cursor.
-    // cursor_click_pos (on by default) lets touch tap to position; the in-grid
-    // cursor keys are the precise fallback.
-    const int32_t ta_border = 2;
-    lv_obj_t *ta = lv_textarea_create(body);
-    lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_placeholder_text(ta, "");
-    lv_obj_set_width(ta, main_w);
-    // NOTE: do NOT force a fixed height. one_line mode sizes the box to its
-    // content (LV_SIZE_CONTENT). Forcing BUTTON_HEIGHT made the content area
-    // (height - padding - border) slightly shorter than one line, so
-    // scroll_to_cursor perpetually animated a vertical scroll — the box bounced.
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(ta, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(ta, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_text_font(ta, &KEYBOARD_FONT, LV_PART_MAIN);
-    lv_obj_set_style_border_color(ta, lv_color_hex(ACCENT_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_border_width(ta, ta_border, LV_PART_MAIN);
-    lv_obj_set_style_radius(ta, BUTTON_RADIUS / 2, LV_PART_MAIN);
-    // Cursor: a thin light-gray I-bar (Python's #ccc bar), drawn as a left border
-    // so it sits between characters as an insert/position cursor — the default
-    // block fill reads as "overwrite the character". The blink is desirable in
-    // live use; disable it only in static-render mode so screenshots reliably
-    // capture the cursor (anim_duration 0 -> cursor shown without blinking).
-    // The default theme already styles the cursor as a thin left-border I-bar,
-    // but with a DARK border (color_text) and on the LV_PART_CURSOR|FOCUSED
-    // selector — so when the box is focused that dark border wins over a base-part
-    // override and the cursor looks dark grey. Override on BOTH the base and the
-    // focused selector with an opaque white border so it's clearly visible.
-    const int32_t cur_w = 2 * active_profile().px_multiplier / 100;
-    // Box vertical-centering padding (computed up here because the cursor inset
-    // below is derived from it). The box height under LV_SIZE_CONTENT is
-    // line_height + 2*pad + 2*border, so size the padding (minus the border) to
-    // land near BUTTON_HEIGHT.
-    int32_t ta_pad_v = (BUTTON_HEIGHT - (int32_t)lv_font_get_line_height(&KEYBOARD_FONT)) / 2 - ta_border;
-    if (ta_pad_v < 0) ta_pad_v = 0;
-    // Keep a constant small gap (>=1px, scaled) between the cursor bar and the
-    // top/bottom of the text box at every size. refr_cursor_area makes the bar
-    // letter_h + 2*(pad + cur_w) tall while the box interior is letter_h +
-    // 2*ta_pad_v, so a top gap of cur_gap needs pad = ta_pad_v - cur_w - cur_gap.
-    // 2px at the base profile, widening as the display scales up (taller screens
-    // have the room): 100x -> 2, 150x -> 4, 200x -> 6.
-    int32_t cur_gap = 2 * (1 + (active_profile().px_multiplier - 100) / 50);
-    if (cur_gap < 2) cur_gap = 2;
-    int32_t cur_pad_v = ta_pad_v - cur_w - cur_gap;
-    const lv_style_selector_t cur_sel[] = {
-        LV_PART_CURSOR, (lv_style_selector_t)(LV_PART_CURSOR | LV_STATE_FOCUSED),
-    };
-    for (lv_style_selector_t cs : cur_sel) {
-        lv_obj_set_style_bg_opa(ta, LV_OPA_TRANSP, cs);
-        lv_obj_set_style_border_color(ta, lv_color_hex(0xffffff), cs);
-        lv_obj_set_style_border_opa(ta, LV_OPA_COVER, cs);
-        lv_obj_set_style_border_width(ta, cur_w, cs);
-        lv_obj_set_style_border_side(ta, LV_BORDER_SIDE_LEFT, cs);
-        // The theme nudges the cursor left (pad_left = -1px) so it sits ON the
-        // previous glyph; zero it so the bar sits in the gap after the character.
-        lv_obj_set_style_pad_left(ta, 0, cs);
-        lv_obj_set_style_pad_top(ta, cur_pad_v, cs);
-        lv_obj_set_style_pad_bottom(ta, cur_pad_v, cs);
-    }
-    if (g_static_render) {
-        lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
-    } else {
-        // The textarea is never the group's focused object (the keyboard is), so
-        // the cursor blink that normally kicks off on LV_EVENT_FOCUSED never
-        // fires. Trigger it manually so the cursor blinks while waiting for the
-        // first input, not just after text exists. The textarea's FOCUSED handler
-        // does nothing but start_cursor_blink, so this has no other side effects.
-        lv_obj_send_event(ta, LV_EVENT_FOCUSED, NULL);
-    }
-    // One-line entry: never show a (vertical) scrollbar. Horizontal overflow is
-    // handled by the textarea scrolling its content to follow the cursor.
-    lv_obj_set_scrollbar_mode(ta, LV_SCROLLBAR_MODE_OFF);
-    // Vertically center the text in the box via the symmetric top/bottom padding
-    // computed above.
-    lv_obj_set_style_pad_top(ta, ta_pad_v, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(ta, ta_pad_v, LV_PART_MAIN);
+    // Text-entry strip: the shared one-line, cursor-styled SeedSigner box.
+    lv_obj_t *ta = kb_make_text_entry(body, main_w, g_static_render);
 
     std::string initial_text;
     if (cfg.contains("initial_text") && cfg["initial_text"].is_string()) {
@@ -2385,7 +2062,7 @@ void seed_add_passphrase_screen(void *ctx_json) {
         lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_NUMBER, map_digits, ctrl_digits);
     }
     lv_keyboard_set_textarea(kb, ta);
-    passphrase_style_keyboard(kb);
+    kb_style_matrix(kb, &KEYBOARD_FONT);
 
     lv_keyboard_mode_t start_mode = passphrase_initial_mode(cfg);
     // The digits page only exists at 240; elsewhere fall back to letters.
@@ -2431,11 +2108,11 @@ void seed_add_passphrase_screen(void *ctx_json) {
         // keys and the Python side panel (FIXED_WIDTH_EMPHASIS_FONT_NAME), not the
         // OpenSans body button font.
         const int32_t clipped = COMPONENT_PADDING;  // overshoot off the right edge
-        c->key1_btn = passphrase_side_button(body, px, center_y - spacing, panel_w, btn_h,
+        c->key1_btn = kb_side_button(body, px, center_y - spacing, panel_w, btn_h,
                                UPPER_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key1_label);
-        c->key2_btn = passphrase_side_button(body, px, center_y, panel_w, btn_h,
+        c->key2_btn = kb_side_button(body, px, center_y, panel_w, btn_h,
                                NUM_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key2_label);
-        c->key3_btn = passphrase_side_button(body, px, center_y + spacing, panel_w, btn_h,
+        c->key3_btn = kb_side_button(body, px, center_y + spacing, panel_w, btn_h,
                                SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, clipped, NULL);
         passphrase_update_labels(c);
     }
@@ -2463,13 +2140,7 @@ void seed_add_passphrase_screen(void *ctx_json) {
         lv_group_focus_obj(kb);
 
         // Connect all keypad/encoder indevs to this group.
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, c->group);
-            }
-        }
+        kb_connect_indevs(c->group);
 
         // Pre-select an initial key so the joystick selection is visible from the
         // start. Otherwise btn_id_sel is NONE and it takes an arrow press just to
@@ -2478,7 +2149,7 @@ void seed_add_passphrase_screen(void *ctx_json) {
         // central default key (k / 6). The highlight shows via the focused-key
         // style in live use; static-render (screenshots) has no indev to apply
         // that focus state, so add PRESSED to make the highlight show in the still.
-        int sel = initial_text.empty() ? -1 : passphrase_find_button(kb, initial_text.back());
+        int sel = initial_text.empty() ? -1 : kb_find_button(lv_keyboard_get_map_array(kb), initial_text.back());
         if (sel < 0) sel = (int)passphrase_default_key(kb, start_mode);
         lv_buttonmatrix_set_selected_button(kb, (uint32_t)sel);
         if (g_static_render) {
@@ -2489,6 +2160,344 @@ void seed_add_passphrase_screen(void *ctx_json) {
     // Free ctx (+ group, if any) when the screen is destroyed.
     lv_obj_add_event_cb(screen.screen, passphrase_cleanup_cb, LV_EVENT_DELETE, c);
 
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// ---------------------------------------------------------------------------
+// keyboard_screen
+// ---------------------------------------------------------------------------
+//
+// Generalized single-charset text/char entry (the LVGL port of Python's
+// KeyboardScreen). Unlike the passphrase screen there is one static page with no
+// mode switching, so this is a plain lv_buttonmatrix (built on keyboard_core for
+// the text-entry box, key theming, and joystick nav). Consumers: dice-roll /
+// coin-flip entropy, BIP-85 child index, custom derivation path.
+//
+// Because the native screen owns the input loop and only returns the final
+// string, two things that live in Python's KeyboardScreen move native here: the
+// per-keystroke title (via `title_keystroke_template`) and `return_after_n_chars`
+// auto-completion.
+//
+// cfg:
+//   top_nav: { title, show_back_button, show_power_button }
+//   cols (int, default 10)         grid columns; rows derive from the key count
+//   keys (array of strings)        the value keys, one label per cell, row-major
+//   keys_to_values (object)        optional label->emitted-value map (e.g. a dice
+//                                  glyph -> "1"); absent => the label IS the value
+//   keyboard_font ("fixed"|"icon") key glyph font (default "fixed" = KEYBOARD_FONT;
+//                                  "icon"/"fontawesome" = ICON_FONT__SEEDSIGNER)
+//   return_after_n_chars (int)     auto-return once this many chars are entered
+//   show_save_button (bool)        append an in-grid green CHECK confirm key
+//   initial_value (string)         prefill the text entry
+//   title_keystroke_template (str) e.g. "Dice Roll {n}/{total}"; {n}=next entry
+//                                  index, {total}=return_after_n_chars; live-updated
+//   max_length (int)               optional cap on entered length
+//
+// A DELETE (backspace) key is always appended; CHECK is appended when
+// show_save_button. Completion routes through seedsigner_lvgl_on_text_entered(),
+// the same host hook the passphrase screen uses.
+
+// Button-matrix control entries for keyboard_screen. KSW(n): a plain value key of
+// relative width n. KSC(n): a control key (DELETE/CHECK) — marked CHECKED so
+// kb_style_matrix paints it as a control + the icon draw-cb recolors it, plus
+// NO_REPEAT/CLICK_TRIG so a hold doesn't auto-repeat.
+#define KSW(n) ((lv_buttonmatrix_ctrl_t)(n))
+#define KSC(n) ((lv_buttonmatrix_ctrl_t)(LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG | LV_BUTTONMATRIX_CTRL_CHECKED | (n)))
+
+// Per-screen state. C++ (vectors/strings/map), so new/delete rather than
+// lv_malloc; freed in keyboard_cleanup_cb. The text-entry box (c->ta) is the
+// source of truth for the entered string — control keys edit it at the cursor.
+struct keyboard_screen_ctx_t {
+    lv_obj_t   *matrix = nullptr;
+    lv_obj_t   *ta = nullptr;
+    lv_obj_t   *back_btn = nullptr;
+    lv_obj_t   *top_nav = nullptr;       // for re-laying-out the title on each update
+    lv_obj_t   *title_label = nullptr;
+    bool        title_has_power = false; // power button present (for title centering)
+    lv_group_t *group = nullptr;
+
+    std::vector<std::string>           key_storage;  // backs the value-key char*s
+    std::vector<const char *>          map;          // buttonmatrix map (persistent)
+    std::vector<lv_buttonmatrix_ctrl_t> ctrl;        // one entry per button
+    std::map<std::string, std::string> values;       // label -> emitted value
+
+    std::string title_template;
+    int  return_after = 0;   // 0 = no auto-return
+    int  total = 0;          // {total} in the title template
+};
+
+// Substitute {n} / {total} in a title template.
+static std::string keyboard_render_title(const std::string &tmpl, int n, int total) {
+    std::string out = tmpl;
+    auto rep = [&](const char *key, int v) {
+        std::string s = std::to_string(v);
+        size_t p;
+        while ((p = out.find(key)) != std::string::npos) out.replace(p, std::strlen(key), s);
+    };
+    rep("{n}", n);
+    rep("{total}", total);
+    return out;
+}
+
+// Refresh the top-nav title from the template: {n} is the index of the entry the
+// user is about to make (chars entered + 1, clamped to total).
+static void keyboard_update_title(keyboard_screen_ctx_t *c) {
+    if (c->title_template.empty() || !c->title_label || !lv_obj_is_valid(c->title_label)) return;
+    int len = (c->ta && lv_obj_is_valid(c->ta)) ? (int)std::strlen(lv_textarea_get_text(c->ta)) : 0;
+    int n = len + 1;
+    if (c->total > 0 && n > c->total) n = c->total;
+    lv_label_set_text(c->title_label,
+                      keyboard_render_title(c->title_template, n, c->total).c_str());
+    // The counter changes width as it grows, so re-run the top-nav title staging
+    // (center → left-pin → scroll) against the new text instead of marquee-scrolling
+    // within the slice top_nav measured for the initial value.
+    top_nav_layout_title(c->top_nav, c->title_label, c->back_btn != nullptr,
+                         c->title_has_power, nullptr);
+}
+
+static void keyboard_complete(keyboard_screen_ctx_t *c) {
+    if (c->ta && lv_obj_is_valid(c->ta)) {
+        seedsigner_lvgl_on_text_entered(lv_textarea_get_text(c->ta));
+    }
+}
+
+// Buttonmatrix click handler (both input modes). The control glyphs act on the
+// text-entry box directly so the cursor position is honored; any other key inserts
+// its (possibly mapped) value at the cursor.
+static void keyboard_value_changed_cb(lv_event_t *e) {
+    lv_obj_t *m = lv_event_get_target_obj(e);
+    keyboard_screen_ctx_t *c = (keyboard_screen_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+    lv_obj_t *ta = c->ta;
+    if (!ta || !lv_obj_is_valid(ta)) return;
+
+    uint32_t id = lv_buttonmatrix_get_selected_button(m);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) return;
+    const char *txt = lv_buttonmatrix_get_button_text(m, id);
+    if (!txt) return;
+
+    if (std::strcmp(txt, SeedSignerIconConstants::DELETE) == 0)        { lv_textarea_delete_char(ta);  keyboard_update_title(c); return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::CHEVRON_LEFT) == 0)  { lv_textarea_cursor_left(ta);  return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::CHEVRON_RIGHT) == 0) { lv_textarea_cursor_right(ta); return; }
+    if (std::strcmp(txt, SeedSignerIconConstants::CHECK) == 0) {
+        if (std::strlen(lv_textarea_get_text(ta)) > 0) keyboard_complete(c);  // don't submit empty (Python parity)
+        return;
+    }
+
+    // A value key: insert its mapped value (or the label) at the cursor. The
+    // textarea enforces max_length natively.
+    auto it = c->values.find(txt);
+    lv_textarea_add_text(ta, (it != c->values.end()) ? it->second.c_str() : txt);
+    keyboard_update_title(c);
+
+    if (c->return_after > 0 && (int)std::strlen(lv_textarea_get_text(ta)) >= c->return_after) {
+        keyboard_complete(c);
+    }
+}
+
+// Hardware key filter: the generic top-nav handoff + row-wrap (no aux keys — the
+// confirm/backspace are in-grid and joystick-navigable).
+static void keyboard_kb_key_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    keyboard_screen_ctx_t *c = (keyboard_screen_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+    kb_handle_directional(e, c->map.data(), c->matrix, c->back_btn);
+}
+
+static void keyboard_back_key_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    keyboard_screen_ctx_t *c = (keyboard_screen_ctx_t *)lv_event_get_user_data(e);
+    if (c) kb_back_down_to_matrix(e, c->matrix);
+}
+
+static void keyboard_cleanup_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
+    keyboard_screen_ctx_t *c = (keyboard_screen_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+    if (c->group) lv_group_del(c->group);
+    delete c;
+}
+
+void keyboard_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // Input mode selects the joystick group wiring (touch needs none).
+    bool has_mode_override = false;
+    input_mode_t mode_override = INPUT_MODE_TOUCH;
+    nav_mode_override_from_cfg(cfg, has_mode_override, mode_override);
+    bool hardware = (has_mode_override ? mode_override : input_profile_get_mode()) == INPUT_MODE_HARDWARE;
+
+    // No button_list: the body is a custom textarea + keyboard. upper_body == body.
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+    lv_obj_t *body = screen.body;
+    lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_OFF);
+
+    const int32_t content_w = lv_obj_get_content_width(body);
+    const int32_t content_h = lv_obj_get_content_height(body);
+
+    keyboard_screen_ctx_t *c = new keyboard_screen_ctx_t();
+    c->back_btn = screen.top_back_btn;
+    c->top_nav = screen.top_nav;
+    c->title_label = screen.title_label;
+    c->title_has_power = (screen.top_power_btn != nullptr);
+
+    int cols = 10;
+    if (cfg.contains("cols") && cfg["cols"].is_number_integer()) cols = cfg["cols"].get<int>();
+    if (cols < 1) cols = 1;
+
+    if (!cfg.contains("keys") || !cfg["keys"].is_array() || cfg["keys"].empty()) {
+        throw std::runtime_error("keyboard_screen requires a non-empty \"keys\" array");
+    }
+    c->key_storage.reserve(cfg["keys"].size());
+    for (const auto &k : cfg["keys"]) {
+        if (!k.is_string()) throw std::runtime_error("keyboard_screen \"keys\" entries must be strings");
+        c->key_storage.push_back(k.get<std::string>());
+    }
+
+    if (cfg.contains("keys_to_values") && cfg["keys_to_values"].is_object()) {
+        for (auto it = cfg["keys_to_values"].begin(); it != cfg["keys_to_values"].end(); ++it) {
+            if (it.value().is_string()) c->values[it.key()] = it.value().get<std::string>();
+        }
+    }
+
+    if (cfg.contains("return_after_n_chars") && cfg["return_after_n_chars"].is_number_integer()) {
+        c->return_after = cfg["return_after_n_chars"].get<int>();
+    }
+    c->total = c->return_after;
+    bool show_save = cfg.value("show_save_button", false);
+    bool show_cursor_keys = cfg.value("show_cursor_keys", true);
+    if (cfg.contains("title_keystroke_template") && cfg["title_keystroke_template"].is_string()) {
+        c->title_template = cfg["title_keystroke_template"].get<std::string>();
+    }
+    int max_length = 0;
+    if (cfg.contains("max_length") && cfg["max_length"].is_number_integer()) {
+        max_length = cfg["max_length"].get<int>();
+    }
+    std::string initial_value = cfg.value("initial_value", std::string());
+
+    const lv_font_t *key_font = &KEYBOARD_FONT;
+    if (cfg.contains("keyboard_font") && cfg["keyboard_font"].is_string()) {
+        std::string kf = cfg["keyboard_font"].get<std::string>();
+        if (kf == "icon" || kf == "fontawesome") key_font = &ICON_FONT__SEEDSIGNER;
+    }
+
+    // Assemble the buttonmatrix map. Value keys wrap by `cols`; the control keys
+    // (cursor left/right, backspace, optional save check) go on their OWN row
+    // beneath — so a sparse value grid (e.g. coin flip) doesn't stretch the
+    // controls across the width. The map char*s reference c->key_storage (fully
+    // populated before any .c_str() is taken, so no realloc invalidates them) and
+    // static icon/literal strings; c->ctrl has one entry per button (no "\n").
+    struct cell_t { const char *txt; lv_buttonmatrix_ctrl_t ctrl; };
+    std::vector<cell_t> controls;
+    if (show_cursor_keys) {
+        controls.push_back({SeedSignerIconConstants::CHEVRON_LEFT,  KSC(1)});
+        controls.push_back({SeedSignerIconConstants::CHEVRON_RIGHT, KSC(1)});
+    }
+    controls.push_back({SeedSignerIconConstants::DELETE, KSC(1)});       // always a backspace
+    if (show_save) controls.push_back({SeedSignerIconConstants::CHECK, KSC(1)});
+
+    c->map.clear();
+    c->ctrl.clear();
+    const int value_count = (int)c->key_storage.size();
+    int col = 0;
+    for (int i = 0; i < value_count; ++i) {
+        c->map.push_back(c->key_storage[i].c_str());
+        c->ctrl.push_back(KSW(1));
+        if (++col == cols && i + 1 < value_count) { c->map.push_back("\n"); col = 0; }
+    }
+    c->map.push_back("\n");
+    for (const cell_t &cc : controls) { c->map.push_back(cc.txt); c->ctrl.push_back(cc.ctrl); }
+    c->map.push_back("");
+
+    const int value_rows = (value_count + cols - 1) / cols;
+    const int total_rows = value_rows + 1;  // + the control row
+
+    // Text-entry strip: the shared cursor-styled box (the entry's source of truth).
+    lv_obj_t *ta = kb_make_text_entry(body, content_w, g_static_render);
+    if (!initial_value.empty()) lv_textarea_set_text(ta, initial_value.c_str());
+    if (max_length > 0) lv_textarea_set_max_length(ta, (uint32_t)max_length);
+    lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
+    c->ta = ta;
+
+    // Keyboard: a plain buttonmatrix styled like the passphrase keyboard.
+    lv_obj_t *matrix = lv_buttonmatrix_create(body);
+    lv_buttonmatrix_set_map(matrix, c->map.data());
+    lv_buttonmatrix_set_ctrl_map(matrix, c->ctrl.data());
+    kb_style_matrix(matrix, key_font);
+    c->matrix = matrix;
+
+    // Optional guidance text (e.g. the coin-flip "Heads = 1 / Tails = 0" legend),
+    // centered below the keyboard. The caller passes it already translated; embedded
+    // newlines split it into lines (Python renders these as stacked TextAreas). Its
+    // height is reserved from the keyboard's vertical budget below so it never gets
+    // pushed off-screen by the (capped, but still tall) keys.
+    std::string guidance_text = cfg.value("guidance_text", std::string());
+    int32_t guidance_h = 0;
+    if (!guidance_text.empty()) {
+        int lines = 1 + (int)std::count(guidance_text.begin(), guidance_text.end(), '\n');
+        guidance_h = lines * (int32_t)lv_font_get_line_height(&BODY_FONT)
+                     + (lines - 1) * BODY_LINE_SPACING + 2 * COMPONENT_PADDING;
+    }
+
+    // Cap the per-key size so a sparse grid stays a tidy block of comfortably large
+    // targets instead of stretching to fill the screen (e.g. the lone backspace on a
+    // coin-flip keyboard). Center the grid horizontally, just below the text entry.
+    const int32_t kb_top  = BUTTON_HEIGHT + COMPONENT_PADDING;
+    const int32_t avail_w = content_w;
+    const int32_t avail_h = content_h - kb_top - guidance_h;
+    const int32_t max_key = BUTTON_HEIGHT * 2;
+    int32_t key_w = std::min(avail_w / cols, max_key);
+    int32_t key_h = std::min(avail_h / total_rows, max_key);
+    lv_obj_set_size(matrix, key_w * cols, key_h * total_rows);
+    lv_obj_align(matrix, LV_ALIGN_TOP_MID, 0, kb_top);
+
+    lv_obj_add_event_cb(matrix, keyboard_value_changed_cb, LV_EVENT_VALUE_CHANGED, c);
+
+    if (!guidance_text.empty()) {
+        lv_obj_t *guide = lv_label_create(body);
+        lv_label_set_text(guide, guidance_text.c_str());
+        lv_obj_set_width(guide, content_w);
+        lv_obj_set_style_text_font(guide, &BODY_FONT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(guide, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_text_align(guide, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        // Match regular body text's line-to-line spacing for the multi-line legend.
+        lv_obj_set_style_text_line_space(guide, BODY_LINE_SPACING, LV_PART_MAIN);
+        lv_obj_align(guide, LV_ALIGN_TOP_MID, 0, kb_top + key_h * total_rows + COMPONENT_PADDING);
+    }
+
+    // keyboard_update_title re-stages the top-nav title for the current counter value
+    // (the initial call lays it out; subsequent keystrokes keep it correct as the
+    // counter widens). Static titles keep top_nav's own layout.
+    keyboard_update_title(c);
+
+    if (hardware) {
+        // Joystick: the matrix is the group-focused object so its own directional
+        // navigation drives key selection; the back button is the other member for
+        // the top-nav handoff (mirrors the passphrase screen, sans side panel).
+        c->group = lv_group_create();
+        lv_group_set_wrap(c->group, false);
+        lv_group_add_obj(c->group, matrix);
+        if (screen.top_back_btn) {
+            lv_group_add_obj(c->group, screen.top_back_btn);
+            lv_obj_add_event_cb(matrix, keyboard_kb_key_cb,
+                                (lv_event_code_t)(LV_EVENT_KEY | LV_EVENT_PREPROCESS), c);
+            lv_obj_add_event_cb(screen.top_back_btn, keyboard_back_key_cb, LV_EVENT_KEY, c);
+        }
+        lv_group_focus_obj(matrix);
+        kb_connect_indevs(c->group);
+
+        // Pre-select the first key so the joystick selection is visible immediately;
+        // static-render adds PRESSED so the highlight shows in screenshots.
+        lv_buttonmatrix_set_selected_button(matrix, 0);
+        if (g_static_render) lv_obj_add_state(matrix, LV_STATE_PRESSED);
+    }
+
+    lv_obj_add_event_cb(screen.screen, keyboard_cleanup_cb, LV_EVENT_DELETE, c);
     load_screen_and_cleanup_previous(screen.screen);
 }
 
