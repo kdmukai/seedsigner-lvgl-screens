@@ -43,8 +43,10 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(REPO, "components", "seedsigner", "fonts")
 
-SEEDSIGNER_RANGE = "0xE900-0xE923"          # all SeedSigner PUA icon glyphs
-FONTAWESOME_RANGE = "0xf030,0xf11c,0xf522"  # camera, keyboard, dice (used on buttons)
+SEEDSIGNER_RANGE = "0xE900-0xE923"                  # all SeedSigner PUA icon glyphs
+# camera, keyboard, die, and the six dice faces (f523-f528, used on the dice-entropy
+# keyboard_screen) — all FontAwesome glyphs that appear on buttons.
+FONTAWESOME_RANGE = "0xf030,0xf11c,0xf522-0xf528"
 
 # (lv_font_conv --size, file suffix) per display profile: base=100, 133x, 200x.
 VARIANTS = [(24, ""), (32, "_133x"), (48, "_200x")]

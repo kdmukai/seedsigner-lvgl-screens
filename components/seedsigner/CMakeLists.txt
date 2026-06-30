@@ -24,8 +24,11 @@ list(APPEND srcs
     "fonts/seedsigner_icons_26_4bpp_133x.c"
     "fonts/seedsigner_icons_26_4bpp_200x.c"
     "fonts/inconsolata_semibold_24_4bpp.c"
+    "fonts/inconsolata_semibold_22_4bpp.c"
     "fonts/inconsolata_semibold_24_4bpp_133x.c"
+    "fonts/inconsolata_semibold_22_4bpp_133x.c"
     "fonts/inconsolata_semibold_24_4bpp_200x.c"
+    "fonts/inconsolata_semibold_22_4bpp_200x.c"
     "gui_constants.cpp"
     "locale_fonts.cpp"
     "font_registry.cpp"
@@ -40,6 +43,10 @@ list(APPEND srcs
     "glyph_runs.cpp"
     "stb_glyph_metrics.c"
     "seedsigner.cpp"
+    # Shared LVGL keyboard/text-entry mechanics extracted from the passphrase
+    # screen: cursor-styled text entry, key theming + icon recolor, 240px side
+    # panel, joystick directional nav. Consumed by every keyboard-style screen.
+    "keyboard_core.cpp"
     # Shared overlay manager: the screensaver idle-watch dispatcher (and, later,
     # the toast queue). Runs on the LVGL loop via an lv_timer, so it links into
     # every host that pumps lv_timer_handler().

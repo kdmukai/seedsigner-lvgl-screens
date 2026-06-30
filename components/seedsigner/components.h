@@ -13,8 +13,19 @@
 
 // top_nav. title_icon (optional): a contextual icon glyph rendered left of the title,
 // with the icon+title group centered (Python TopNav icon_name). title_icon_color
-// defaults to the body font color.
-lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button, bool show_power_button, lv_obj_t **out_back_btn, lv_obj_t **out_power_btn, const lv_font_t *title_font = nullptr, const char *title_icon = nullptr, uint32_t title_icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT);
+// defaults to the body font color. out_title_label (optional): receives the title
+// label object so callers can update the title text in place (e.g. a keyboard
+// screen's per-keystroke counter).
+lv_obj_t* top_nav(lv_obj_t* lv_parent, const char *title, bool show_back_button, bool show_power_button, lv_obj_t **out_back_btn, lv_obj_t **out_power_btn, const lv_font_t *title_font = nullptr, const char *title_icon = nullptr, uint32_t title_icon_color = SEEDSIGNER_ICON_COLOR_DEFAULT, lv_obj_t **out_title_label = nullptr);
+
+// Lay out a top-nav title label for its CURRENT text: centered on the full bar as if
+// the back button weren't there, pinned left-justified against the back-button gap
+// once centering would intrude on it, and clipped+marquee-scrolled once it overflows
+// the region between the buttons. top_nav() calls this at creation; screens whose
+// title changes at runtime (e.g. a keyboard's "Dice Roll 47/50" counter) call it again
+// after each update so the staging is recomputed against the new (wider) text instead
+// of scrolling within the slice measured for the initial value.
+void top_nav_layout_title(lv_obj_t* top_nav, lv_obj_t* title_label, bool has_back_button, bool has_power_button, const lv_font_t* title_font = nullptr);
 
 // Contextual back button — the single source of truth for the back button's chrome
 // (icon, highlight states, instant transition) and its SEEDSIGNER_RET_BACK_BUTTON

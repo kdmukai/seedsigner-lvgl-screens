@@ -80,6 +80,7 @@ LV_FONT_DECLARE(seedsigner_icons_24_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_36_4bpp);
 LV_FONT_DECLARE(seedsigner_icons_26_4bpp);
 LV_FONT_DECLARE(inconsolata_semibold_24_4bpp);
+LV_FONT_DECLARE(inconsolata_semibold_22_4bpp);
 #endif
 
 // The "_133x" suffix matches the 320px-height profile's PX_MULTIPLIER_133
@@ -91,6 +92,7 @@ LV_FONT_DECLARE(seedsigner_icons_36_4bpp_133x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_133x);
 LV_FONT_DECLARE(seedsigner_icons_26_4bpp_133x);
 LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_133x);
+LV_FONT_DECLARE(inconsolata_semibold_22_4bpp_133x);
 #endif
 
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
@@ -99,6 +101,7 @@ LV_FONT_DECLARE(seedsigner_icons_36_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_48_4bpp_200x);
 LV_FONT_DECLARE(seedsigner_icons_26_4bpp_200x);
 LV_FONT_DECLARE(inconsolata_semibold_24_4bpp_200x);
+LV_FONT_DECLARE(inconsolata_semibold_22_4bpp_200x);
 #endif
 
 // ---------------------------------------------------------------------------
@@ -174,6 +177,16 @@ struct DisplayProfile {
     // LV_SYMBOL_* control glyphs so a single font covers letters + controls.
     const lv_font_t* keyboard_font;
 
+    // Fixed-width font (Inconsolata SemiBold, 22 px base = button_font_size + 4) for
+    // the seed-mnemonic candidate-word list. Matches Python's matches-list font,
+    // which is 2 px smaller than the 24 px keyboard keys. ASCII-only.
+    // TODO (needs hands-on testing): the 22 px base is sized for the 240 px joystick
+    // screen (Python parity). The geometrically-scaled 320/480 variants (29/44 px)
+    // are baked too, but the touch candidate list may read better at the 24 px-base
+    // keyboard font on the larger screens — confirm on real hardware and, if so, drop
+    // the _133x/_200x candidate variants and point the touch list back at keyboard_font.
+    const lv_font_t* candidate_font;
+
     // 26 px (base) seedsigner icon font for the top-nav contextual icon beside the
     // title (Python TopNav uses ICON_FONT_SIZE + 4 = 26). Scales 35px at 320 height,
     // 52px at 480.
@@ -234,6 +247,7 @@ DisplayProfile& active_profile_mutable();
 #define ICON_LARGE_BUTTON_FONT__SEEDSIGNER (*active_profile().icon_large_button_font)
 #define ICON_PRIMARY_SCREEN_FONT__SEEDSIGNER (*active_profile().icon_primary_screen_font)
 #define KEYBOARD_FONT                      (*active_profile().keyboard_font)
+#define CANDIDATE_FONT                     (*active_profile().candidate_font)
 #define TOP_NAV_ICON_FONT__SEEDSIGNER      (*active_profile().top_nav_icon_font)
 
 // ---------------------------------------------------------------------------
@@ -328,9 +342,15 @@ class SeedSignerIconConstants {
 // add its codepoint to the bake script's FontAwesome range too.
 class FontAwesomeIconConstants {
     public:
-        static constexpr const char* CAMERA   = "\uf030";
-        static constexpr const char* KEYBOARD = "\uf11c";
-        static constexpr const char* DICE     = "\uf522";
+        static constexpr const char* CAMERA     = "\uf030";
+        static constexpr const char* KEYBOARD   = "\uf11c";
+        static constexpr const char* DICE       = "\uf522";
+        static constexpr const char* DICE_ONE   = "\uf525";
+        static constexpr const char* DICE_TWO   = "\uf528";
+        static constexpr const char* DICE_THREE = "\uf527";
+        static constexpr const char* DICE_FOUR  = "\uf524";
+        static constexpr const char* DICE_FIVE  = "\uf523";
+        static constexpr const char* DICE_SIX   = "\uf526";
 };
 
 

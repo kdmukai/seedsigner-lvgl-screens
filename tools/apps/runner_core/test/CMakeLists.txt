@@ -42,7 +42,8 @@ if(SUPPORT_DISPLAY_HEIGHT_240)
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_24_4bpp.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_26_4bpp.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp.c"
-    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp.c")
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp.c"
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp.c")
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
   list(APPEND SEEDSIGNER_FONT_SOURCES
@@ -50,7 +51,8 @@ if(SUPPORT_DISPLAY_HEIGHT_320)
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_26_4bpp_133x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_133x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_133x.c"
-    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_133x.c")
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_133x.c"
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp_133x.c")
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
   list(APPEND SEEDSIGNER_FONT_SOURCES
@@ -58,7 +60,8 @@ if(SUPPORT_DISPLAY_HEIGHT_480)
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_26_4bpp_200x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_200x.c"
     "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_200x.c"
-    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_200x.c")
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_200x.c"
+    "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp_200x.c")
 endif()
 
 # Baked logo + HRF partner-logo assets, gated per display height (mirrors the
@@ -97,6 +100,7 @@ add_executable(test_runner_core
   "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
+  "${SEEDSIGNER_DIR}/keyboard_core.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"

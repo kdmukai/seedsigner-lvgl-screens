@@ -25,6 +25,7 @@ struct FontSet {
     const lv_font_t* icon_large;
     const lv_font_t* icon_primary_screen;  // 48 px base; scales with multiplier
     const lv_font_t* keyboard;             // fixed-width keyboard/text-entry font
+    const lv_font_t* candidate;            // fixed-width 22px base; mnemonic candidate list
     const lv_font_t* top_nav_icon;         // 26 px base (ICON_FONT_SIZE+4); top-nav title icon
 };
 
@@ -47,6 +48,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_36_4bpp_200x,   // icon_large unchanged
             &seedsigner_icons_48_4bpp_200x,   // icon_primary_screen = 96px
             &inconsolata_semibold_24_4bpp_200x,  // keyboard = 48px
+            &inconsolata_semibold_22_4bpp_200x,  // candidate = 44px (22 x 2)
             &seedsigner_icons_26_4bpp_200x,   // top_nav_icon = 52px (26 x 2)
         };
     }
@@ -64,6 +66,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_36_4bpp_133x,      // icon_large    = 48px (36 x 1.333)
             &seedsigner_icons_48_4bpp_133x,      // icon_primary  = 64px (48 x 1.333)
             &inconsolata_semibold_24_4bpp_133x,  // keyboard      = 32px (24 x 1.333)
+            &inconsolata_semibold_22_4bpp_133x,  // candidate     = 29px (22 x 1.333)
             &seedsigner_icons_26_4bpp_133x,      // top_nav_icon  = 35px (26 x 1.333)
         };
     }
@@ -80,6 +83,7 @@ static FontSet fonts_for_multiplier(int px_mult) {
             &seedsigner_icons_48_4bpp,         // icon_large = 48px
             &seedsigner_icons_48_4bpp,         // icon_primary_screen = 48px
             &inconsolata_semibold_24_4bpp,     // keyboard = 24px (matches Python passphrase keyboard)
+            &inconsolata_semibold_22_4bpp,     // candidate = 22px (button_font_size + 4)
             &seedsigner_icons_26_4bpp,         // top_nav_icon = 26px (ICON_FONT_SIZE+4)
         };
     }
@@ -123,7 +127,7 @@ static DisplayProfile make_profile(int width, int height) {
         px_scale(18, px_mult),   // button_font_size
         px_scale(32, px_mult),   // button_height
         px_scale(8, px_mult),    // button_radius
-        fonts.main_menu_title, fonts.title, fonts.large_button, fonts.button, fonts.body, fonts.icon, fonts.icon_large, fonts.icon_primary_screen, fonts.keyboard, fonts.top_nav_icon,
+        fonts.main_menu_title, fonts.title, fonts.large_button, fonts.button, fonts.body, fonts.icon, fonts.icon_large, fonts.icon_primary_screen, fonts.keyboard, fonts.candidate, fonts.top_nav_icon,
     };
 }
 

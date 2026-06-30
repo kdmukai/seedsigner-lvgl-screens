@@ -93,6 +93,7 @@ if(SUPPORT_DISPLAY_HEIGHT_240)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_26_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp.c"
       "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp.c"
     )
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
@@ -102,6 +103,7 @@ if(SUPPORT_DISPLAY_HEIGHT_320)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_133x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_133x.c"
       "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_133x.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp_133x.c"
     )
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
@@ -111,6 +113,7 @@ if(SUPPORT_DISPLAY_HEIGHT_480)
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_36_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/seedsigner_icons_48_4bpp_200x.c"
       "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_24_4bpp_200x.c"
+      "${SEEDSIGNER_DIR}/fonts/inconsolata_semibold_22_4bpp_200x.c"
     )
 endif()
 
@@ -145,6 +148,7 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
+  "${SEEDSIGNER_DIR}/keyboard_core.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
