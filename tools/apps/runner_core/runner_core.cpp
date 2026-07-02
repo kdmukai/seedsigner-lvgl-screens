@@ -26,6 +26,7 @@ const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"camera_preview_overlay_screen", camera_preview_overlay_screen},
     {"keyboard_screen", keyboard_screen},
     {"seed_mnemonic_entry_screen", seed_mnemonic_entry_screen},
+    {"qr_display_screen", qr_display_screen},
 };
 
 // Display / framebuffer state.
@@ -45,6 +46,36 @@ int g_pointer_y = 0;
 bool g_pointer_pressed = false;
 
 bool g_initialized = false;
+
+// Animated-QR test driver (interactive runners only). qr_display_screen is host-driven:
+// the real device pushes each frame from the encode_qr fountain/Specter sequence in Python
+// (UR fountain frames are generated on the fly and cannot be precomputed). Since the
+// runners have no Python, a scenario may carry a "test_frames" array and the runner STANDS
+// IN FOR THE HOST, pushing each frame via qr_display_set_frame() at ~6 FPS (5/30 s, matching
+// Python's QRDisplayThread). Empty => a static QR, nothing to cycle.
+std::vector<std::string> g_qr_test_frames;
+size_t   g_qr_frame_idx = 0;
+uint32_t g_qr_frame_accum_ms = 0;
+bool     g_qr_tip_was_active = false;
+constexpr uint32_t QR_FRAME_INTERVAL_MS = 167;  // 5/30 s
+
+void configure_qr_test_frames(const std::string& fn_name, const std::string& json_ctx) {
+    g_qr_test_frames.clear();
+    g_qr_frame_idx = 0;
+    g_qr_frame_accum_ms = 0;
+    g_qr_tip_was_active = false;
+    if (fn_name != "qr_display_screen" || json_ctx.empty()) return;
+    try {
+        json ctx = json::parse(json_ctx);
+        if (ctx.contains("test_frames") && ctx["test_frames"].is_array()) {
+            for (const auto& f : ctx["test_frames"]) {
+                if (f.is_string()) g_qr_test_frames.push_back(f.get<std::string>());
+            }
+        }
+    } catch (...) {
+        // invalid ctx -> treat as a static QR (nothing to cycle)
+    }
+}
 
 // LVGL flush: copy the rendered RGB565 region into our framebuffer.
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
@@ -172,6 +203,34 @@ const uint16_t* framebuffer() { return g_fb.data(); }
 
 void tick(uint32_t elapsed_ms) {
     lv_tick_inc(elapsed_ms);
+
+    // Host stand-in for animated QR: push the next frame at ~6 FPS. A no-op for every
+    // other screen (empty test_frames); qr_display_set_frame() itself no-ops if the QR
+    // screen has since been torn down. Mirrors Python QRDisplayScreen: HOLD while the
+    // brightness tip is up (on start + after a brightness change), and RESTART from frame 0
+    // when it clears (so the valuable pure first frames are re-delivered).
+    if (!g_qr_test_frames.empty()) {
+        bool tip = qr_display_is_tip_active();
+        if (tip) {
+            g_qr_frame_accum_ms = 0;          // hold on the current (first) frame
+            g_qr_tip_was_active = true;
+        } else if (g_qr_tip_was_active) {     // tip just cleared -> restart the sequence
+            g_qr_tip_was_active = false;
+            g_qr_frame_idx = 0;
+            g_qr_frame_accum_ms = 0;
+            const std::string& f0 = g_qr_test_frames[0];
+            qr_display_set_frame(f0.data(), f0.size());
+        } else {
+            g_qr_frame_accum_ms += elapsed_ms;
+            if (g_qr_frame_accum_ms >= QR_FRAME_INTERVAL_MS) {
+                g_qr_frame_accum_ms = 0;
+                g_qr_frame_idx = (g_qr_frame_idx + 1) % g_qr_test_frames.size();
+                const std::string& f = g_qr_test_frames[g_qr_frame_idx];
+                qr_display_set_frame(f.data(), f.size());
+            }
+        }
+    }
+
     lv_timer_handler();
 }
 
@@ -226,6 +285,9 @@ bool load_screen(const std::string& fn_name, const std::string& json_ctx) {
     // a clean re-render — no manual teardown required here.
     const char* ctx = (!json_ctx.empty() && json_ctx != "{}") ? json_ctx.c_str() : nullptr;
     it->second(reinterpret_cast<void*>(const_cast<char*>(ctx)));
+
+    // Arm (or clear) the animated-QR host stand-in for this screen.
+    configure_qr_test_frames(fn_name, json_ctx);
     return true;
 }
 

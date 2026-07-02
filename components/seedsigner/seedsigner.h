@@ -78,6 +78,33 @@ void seed_add_passphrase_screen(void *ctx_json);
 void camera_preview_overlay_screen(void *ctx_json);
 void keyboard_screen(void *ctx_json);
 void seed_mnemonic_entry_screen(void *ctx_json);
+void qr_display_screen(void *ctx_json);
+
+// Push the next frame into a live qr_display_screen (host-driven animation, mirroring
+// the camera-overlay set_* live-update pattern). Re-encodes + repaints the QR in place
+// reusing the screen cfg's qr_mode. `data` may be raw binary (e.g. a CompactSeedQR
+// payload). Safe no-op when no qr_display_screen is currently active. Animated QR
+// cadence lives in the host (the encode_qr fountain/Specter sequence is Python), so the
+// host calls this per frame; a static QR never calls it.
+//
+// Animation/brightness-tip contract (Python QRDisplayScreen parity): the screen shows the
+// brightness panel on START and briefly after each brightness change. The frame driver must
+// HOLD (not advance) while qr_display_is_tip_active() is true, then RESTART the sequence when
+// it clears — so the tip greets the user and, for a UR fountain, the valuable pure first
+// frames are (re)delivered from the start. A brightness change also fires
+// seedsigner_lvgl_on_qr_brightness(), the host's cue to restart the sequence.
+void qr_display_set_frame(const void *data, size_t len);
+
+// True while the brightness panel is displayed. The host's animation frame driver polls this
+// and holds (does not call qr_display_set_frame) while true; when it goes false the driver
+// restarts the sequence from its first frame. Safe (returns false) when no QR screen is active.
+bool qr_display_is_tip_active(void);
+
+// Optional host hook: qr_display_screen reports its final brightness (31..255) on exit
+// so the host can persist SETTING__QR_BRIGHTNESS. The library ships a weak no-op default
+// (same pattern as seedsigner_lvgl_on_button_selected / _on_text_entered); a host
+// provides a strong definition to persist. Desktop tools may leave it stubbed.
+void seedsigner_lvgl_on_qr_brightness(uint8_t brightness);
 
 // Text metrics (shared with components.cpp). Empty vertical space between a
 // label's box top and the VISIBLE top of its text — the font's declared ascent

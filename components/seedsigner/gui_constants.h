@@ -300,8 +300,8 @@ class SeedSignerIconConstants {
         static constexpr const char* CHEVRON_LEFT = "\ue909";
         static constexpr const char* CHEVRON_RIGHT = "\ue90a";
         static constexpr const char* CHEVRON_UP = "\ue90b";
-        // static constexpr const char* CLOSE = "\ue90c";  // Unused icons
-        // static constexpr const char* PAGE_DOWN = "\ue90d";
+        static constexpr const char* CLOSE = "\ue90c";  // qr_display touch close (top-right X)
+        // static constexpr const char* PAGE_DOWN = "\ue90d";  // Unused icons
         // static constexpr const char* PAGE_UP = "\ue90e";
         static constexpr const char* PLUS = "\ue90f";
         static constexpr const char* POWER = "\ue910";
@@ -324,7 +324,7 @@ class SeedSignerIconConstants {
         // Misc icons
         // static constexpr const char* BITCOIN = "\ue91c";
         static constexpr const char* BITCOIN_ALT = "\ue91d";
-        // static constexpr const char* BRIGHTNESS = "\ue91e";
+        static constexpr const char* BRIGHTNESS = "\ue91e";  // sun \u2014 qr_display brightness control
         static constexpr const char* MICROSD = "\ue91f";
         static constexpr const char* QRCODE = "\ue920";
         static constexpr const char* SIGN = "\ue921";

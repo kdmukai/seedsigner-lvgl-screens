@@ -9,6 +9,8 @@ This document catalogs every screen in the Python SeedSigner codebase, identifie
 > **Status update (2026-06-23):** `button_list_screen` now exposes its own intro/body `text` key (`cfg["text"]`) via the shared `upper_body` scaffold — so the Group A "body text" enhancement is **done**.
 >
 > **Status update (2026-06-23, full-parity build):** **Phase 1 and Phase 2 are now complete.** Left-aligned text, per-button inline + right icons + icon color, checkbox/checked-selection (radio) variants, and the top-nav contextual icon all shipped — so Groups A (incl. icon-bearing rows), B, and C are fully serviceable by the enhanced `button_list_screen`. See the companion doc's **Build Spec — Full Compliance Target** section for outcomes. Remaining: Phase 4 structured body content (Group D) + the dedicated Phase 5 screens, and the seedsigner-side forwarding leaf.
+>
+> **Status update (2026-07-01):** More dedicated screens have shipped since. **Phase 5a keyboards** — a general `keyboard_screen` + `seed_mnemonic_entry_screen` (split-panel keyboard + live word-match list). **Phase 5b (partial)** — a portable `camera_preview_overlay` renderer (the ScanScreen wraps it). **Opening splash** — `splash_screen`. And **Phase 5c QR display is now DONE**: a dedicated `qr_display_screen` (qrcodegen bundled in LVGL; numeric/alphanumeric/byte/auto modes; host-driven animation with a brightness-tip gate; hardware text hints + touch slider). See `docs/qr-display-screen-spec.md`. Still outstanding: Phase 4 structured body content (Group D), the SeedQR **transcription/zoom** screens (5c niche), the rest of Phase 5b (full camera ScanScreen + image-entropy), the IO-test screen (5d), and the seedsigner-side forwarding leaves.
 
 ## Source Files
 
@@ -48,6 +50,11 @@ As of 2026-06-23 the LVGL `button_list_screen` supports both a body content area
 | Basic button list menus | `button_list_screen()` | Done (incl. `is_bottom_list` + upper-body scaffold) |
 | Status / Warning / Error / Success family | `large_icon_status_screen()` | Done (icon + headline + body text + `warning_edges`) |
 | Passphrase entry (keyboard) | `seed_add_passphrase_screen()` | Done (first Phase 5a keyboard screen) |
+| General keyboard / text entry | `keyboard_screen()` | Done (Phase 5a) |
+| Seed mnemonic entry | `seed_mnemonic_entry_screen()` | Done (Phase 5a — split keyboard + live word-match) |
+| Camera live-preview overlay | `camera_preview_overlay_screen()` | Done (Phase 5b renderer; full ScanScreen wraps it) |
+| Opening splash | `splash_screen()` | Done |
+| QR display (SeedQR / xpub / PSBT / address / BBQR / animated) | `qr_display_screen()` | Done (Phase 5c — see `docs/qr-display-screen-spec.md`) |
 
 
 ## Part 2: Screens Achievable with Enhanced `button_list_screen`
@@ -238,11 +245,11 @@ These screens have fundamentally different rendering needs that cannot be handle
 
 | Screen | File | Description |
 |---|---|---|
-| `QRDisplayScreen` | screen.py | Full-screen QR code with brightness up/down controls |
-| `SeedTranscribeSeedQRWholeQRScreen` | seed_screens.py | QR code with zone highlights for transcription |
-| `SeedTranscribeSeedQRZoomedInScreen` | seed_screens.py | Zoomed QR view with 5x5/7x7 module grid, zone navigation |
+| `QRDisplayScreen` | screen.py | Full-screen QR code with brightness up/down controls — **DONE** as `qr_display_screen()` |
+| `SeedTranscribeSeedQRWholeQRScreen` | seed_screens.py | QR code with zone highlights for transcription — deferred |
+| `SeedTranscribeSeedQRZoomedInScreen` | seed_screens.py | Zoomed QR view with 5x5/7x7 module grid, zone navigation — deferred |
 
-**Recommendation**: `qr_display_screen` for basic QR rendering. The transcription zoom screens are niche and may warrant a separate `qr_transcribe_screen`.
+**Status (2026-07-01):** `QRDisplayScreen` is **implemented** as the dedicated `qr_display_screen()` — static + host-driven animated QRs, numeric/alphanumeric/byte/auto encoding, brightness-tip-gated animation, hardware text hints + touch slider. Full spec: `docs/qr-display-screen-spec.md`. The two SeedQR **transcription/zoom** screens are **deferred** (niche); if built they'd likely be a separate `qr_transcribe_screen`.
 
 ### 5d. Hardware Test Screen
 

@@ -174,6 +174,10 @@ target_compile_definitions(screenshot_gen PRIVATE
   # Both must match the font packs, which subset to the forms the shaper emits.
   LV_USE_BIDI=1
   LV_USE_ARABIC_PERSIAN_CHARS=1
+  # Native QR rendering (qr_display_screen): enable the LVGL-bundled qrcodegen +
+  # lv_qrcode sources (already in the LVGL glob, #if LV_USE_QRCODE-gated). Canvas is
+  # default-on under LV_CONF_SKIP, so no source-list edits are needed.
+  LV_USE_QRCODE=1
   DISPLAY_WIDTH=${DISPLAY_WIDTH}
   DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
   $<$<BOOL:${SUPPORT_DISPLAY_HEIGHT_240}>:SUPPORT_DISPLAY_HEIGHT_240>

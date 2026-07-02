@@ -579,5 +579,48 @@
         }
       }
     ]
+  },
+  "qr_display_screen": {
+    "context": {
+      "qr_data": "001510801625144200061775148112230622149114270829114415951129055107180638119703891805023413380455",
+      "qr_mode": "numeric",
+      "data_encoding": "utf8",
+      "border": 2,
+      "initial_brightness": 62,
+      "show_brightness_tips": true,
+      "brighter_text": "Brighter",
+      "darker_text": "Darker"
+    },
+    "variations": [
+      {
+        "name": "compactseedqr",
+        "context": {
+          "qr_data": "01f0e32cda200dbbee4cc74dd74ec9b3d8f18ee34a2759c9fa56985e1a3aa9d1",
+          "qr_mode": "byte",
+          "data_encoding": "hex"
+        }
+      },
+      {
+        "name": "xpub_export",
+        "context": {
+          "qr_data": "[aa87528a/84h/0h/0h]xpub6CkqDx98CC6bNG6dG1t7g9xaqsMg4ENmxBKKm43U54NQN9c4MHrsc2QGZemhitcs6xbFbBDTxZnup8vRqctcf2xnxUjftxyYGfBWNsURB9Y",
+          "qr_mode": "byte",
+          "data_encoding": "utf8"
+        }
+      },
+      {
+        "name": "animated_bbqr",
+        "context": {
+          "qr_data": "B$2P0300OBZWE5H7V3EPWSNR2VJKQMFHZA55FP3WU3KRM6XXAQD54CNHZ3XF6RRMWGP25SH3JGY5KUV",
+          "qr_mode": "auto",
+          "data_encoding": "utf8",
+          "test_frames": [
+            "B$2P0300OBZWE5H7V3EPWSNR2VJKQMFHZA55FP3WU3KRM6XXAQD54CNHZ3XF6RRMWGP25SH3JGY5KUV",
+            "B$2P0301IGCT4QO6SX53KNVIWPL3QIB66BGT453S7IYWLDH5OZD5UTMOVKKUDBJ6IHPJL65VG2ULHV5",
+            "B$2P0302YEA7PATJ6O5ZPUMLFRT6XMR62JWHKVFKBQU7EDXUV7O2TNKFT264CAPXQJU7HO4X2GFSYZ6"
+          ]
+        }
+      }
+    ]
   }
 }

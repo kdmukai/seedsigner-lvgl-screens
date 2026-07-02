@@ -190,6 +190,8 @@ target_compile_definitions(screen_runner PRIVATE
   # Both must match the font packs, which subset to the forms the shaper emits.
   LV_USE_BIDI=1
   LV_USE_ARABIC_PERSIAN_CHARS=1
+  # Native QR rendering (qr_display_screen) — LVGL-bundled qrcodegen, no source edits.
+  LV_USE_QRCODE=1
   DISPLAY_WIDTH=${DISPLAY_WIDTH}
   DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
   $<$<BOOL:${SUPPORT_DISPLAY_HEIGHT_240}>:SUPPORT_DISPLAY_HEIGHT_240>

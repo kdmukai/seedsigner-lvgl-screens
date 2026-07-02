@@ -158,6 +158,8 @@ target_compile_definitions(web_runner PRIVATE
   # Both must match the font packs, which subset to the forms the shaper emits.
   LV_USE_BIDI=1
   LV_USE_ARABIC_PERSIAN_CHARS=1
+  # Native QR rendering (qr_display_screen) — LVGL-bundled qrcodegen, no source edits.
+  LV_USE_QRCODE=1
   DISPLAY_WIDTH=${DISPLAY_WIDTH}
   DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
   $<$<BOOL:${SUPPORT_DISPLAY_HEIGHT_240}>:SUPPORT_DISPLAY_HEIGHT_240>
@@ -185,6 +187,14 @@ target_compile_options(web_runner PRIVATE
 target_link_options(web_runner PRIVATE
   -sUSE_SDL=2
   -sALLOW_MEMORY_GROWTH=1
+  # Modern emscripten (6.x) backs ALLOW_MEMORY_GROWTH with a *resizable* ArrayBuffer
+  # (GROWABLE_ARRAYBUFFERS=1). Browsers' TextDecoder.decode() rejects a view over a
+  # resizable ArrayBuffer ("value must not be resizable"), which aborts emscripten's
+  # UTF8ArrayToString during SDL2/WebGL shader init and kills the whole app before the
+  # UI initializes. Force the legacy copy-on-grow mechanism: memory still grows (for
+  # tiny_ttf's rasterizer) but the heap is a normal, non-resizable ArrayBuffer that
+  # TextDecoder accepts. (TEXTDECODER=0 is no longer supported in emscripten 6.x.)
+  -sGROWABLE_ARRAYBUFFERS=0
   -fexceptions
   -O2
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','HEAPU8']"
