@@ -42,6 +42,22 @@ static int32_t percent_text_width() {
     return size.x;
 }
 
+// Paint one opaque black rectangle at (x,y,w,h) in the parent's coordinate space.
+// Used to blank a gutter strip flanking the preview square. No-op for empty strips
+// so the fill-landscape case (square == full display, no gutters) adds nothing.
+static void add_gutter_fill(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h) {
+    if (w <= 0 || h <= 0) return;
+    lv_obj_t *rect = lv_obj_create(parent);
+    lv_obj_set_size(rect, w, h);
+    lv_obj_set_pos(rect, x, y);
+    lv_obj_set_style_radius(rect, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(rect, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(rect, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(rect, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rect, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_remove_flag(rect, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+}
+
 // Round-rect helper shared by the status-bar container, track, and fill.
 static void style_rounded(lv_obj_t *obj, uint32_t color, lv_opa_t opa, int32_t radius) {
     lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
@@ -86,6 +102,23 @@ camera_preview_overlay_t *camera_preview_overlay_create(lv_obj_t *parent,
     const int32_t SW = spec->square_w, SH = spec->square_h;
     const int32_t EP = EDGE_PADDING, CP = COMPONENT_PADDING, BH = BUTTON_HEIGHT;
     const int     px = active_profile().px_multiplier;
+
+    // --- Gutter blanking --------------------------------------------------
+    // The live camera preview fills only the square; the surrounding gutters are
+    // static (never refreshed per frame). On device the overlay is composited onto a
+    // parent that still holds whatever screen was up last (usually the main menu), so
+    // that stale content shows through the strips flanking the square. Paint opaque
+    // black over the parent region OUTSIDE the square — created first so these sit at
+    // the bottom of the z-order (behind the back button / status bar) and, by only
+    // covering the gutters, never touch the live square. When the preview fills the
+    // display (Pi Zero, square == screen) every strip is empty and nothing is added.
+    // Parent spans the full display (see header), so its extent is the display size.
+    const int32_t PW = lv_display_get_horizontal_resolution(NULL);
+    const int32_t PH = lv_display_get_vertical_resolution(NULL);
+    add_gutter_fill(parent, 0, 0, SX, PH);                      // left  (full height)
+    add_gutter_fill(parent, SX + SW, 0, PW - (SX + SW), PH);    // right (full height)
+    add_gutter_fill(parent, SX, 0, SW, SY);                     // top   (above square)
+    add_gutter_fill(parent, SX, SY + SH, SW, PH - (SY + SH));   // bottom (below square)
 
     // --- Back affordance --------------------------------------------------
     if (o->mode == INPUT_MODE_TOUCH) {
