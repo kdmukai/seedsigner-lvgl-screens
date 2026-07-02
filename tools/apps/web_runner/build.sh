@@ -21,7 +21,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 WIDTH="${DISPLAY_WIDTH:-240}"
 HEIGHT="${DISPLAY_HEIGHT:-240}"
-EMSDK_TAG="${EMSDK_TAG:-latest}"
+EMSDK_TAG="${EMSDK_TAG:-3.1.74}"   # pinned to match CI (.github/workflows/pages.yml)
 IMAGE="seedsigner-emsdk:${EMSDK_TAG}"
 
 CCACHE_HOST="${SCRIPT_DIR}/.ccache"

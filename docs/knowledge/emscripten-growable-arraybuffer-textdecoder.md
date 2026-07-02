@@ -30,19 +30,24 @@ aborts there — before the JS app script populates the dropdowns — so the UI 
 A browser update (Chrome/V8 making WASM growable memory use resizable ArrayBuffers) is what
 flips a previously-working bundle into this failure with the **same** emscripten/build.
 
-## Fix
-Force the **legacy copy-on-grow** memory mechanism, so the heap is a normal (non-resizable)
-`ArrayBuffer` that `TextDecoder` accepts — memory still grows (needed for tiny_ttf's
-rasterizer), just via allocate-new-buffer + `updateMemoryViews` instead of in-place resize:
+## Fix (what this repo does): pin emscripten to match CI
+The real trigger is **version drift**. CI pins emscripten to **3.1.74**
+(`.github/workflows/pages.yml`, `emscripten-core/setup-emsdk`), but the local Docker build used
+`EMSDK_TAG=latest` (→ em6). em **3.1.74 grows memory the old way** (allocate-new-buffer +
+`updateMemoryViews`, a non-resizable ArrayBuffer), so it has **no** TextDecoder problem at all.
+So the fix is to make the local build reproducible with CI, not to patch around em6:
 
-```cmake
-# tools/apps/web_runner/CMakeLists.txt  (target_link_options)
--sALLOW_MEMORY_GROWTH=1
--sGROWABLE_ARRAYBUFFERS=0
-```
+- `tools/apps/web_runner/Dockerfile` + `build.sh`: `EMSDK_TAG` pinned to **3.1.74**.
+- **No `-sGROWABLE_ARRAYBUFFERS=0` flag.** That setting only exists on em6+; passing it on
+  3.1.74 is a hard error — `Attempt to set a non-existent setting: 'GROWABLE_ARRAYBUFFERS'` —
+  which is exactly how the first attempt (adding the flag) broke CI while "working" locally on em6.
 
-**`-sTEXTDECODER=0` does NOT work on em6** — that value was removed; it must be `1` or `2`, and
-neither disables the TextDecoder path. `GROWABLE_ARRAYBUFFERS=0` is the correct lever.
+If the toolchain is ever intentionally moved to em6+ (in BOTH local and CI — keep them equal),
+*then* `-sGROWABLE_ARRAYBUFFERS=0` is the lever to force the legacy non-resizable heap that
+TextDecoder accepts. `-sTEXTDECODER=0` is NOT a valid alternative on em6 (removed; must be 1 or 2).
+
+**Lesson:** pin the WASM toolchain and keep local == CI. A flag that fixes a "latest"-only
+symptom can be invalid on the pinned CI version and turn a green local build into a red CI.
 
 ## Verify without a browser
 Grep the regenerated glue — the resizable-buffer markers must be gone:

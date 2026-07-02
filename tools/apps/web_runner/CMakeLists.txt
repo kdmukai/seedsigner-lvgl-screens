@@ -186,15 +186,12 @@ target_compile_options(web_runner PRIVATE
 # calls ss_load_staged once to drive the shared loader.
 target_link_options(web_runner PRIVATE
   -sUSE_SDL=2
+  # ALLOW_MEMORY_GROWTH lets tiny_ttf's rasterizer grow the heap. Emscripten is PINNED to
+  # 3.1.74 (Dockerfile / build.sh, matching .github/workflows/pages.yml) — on that version
+  # growable memory is a normal, non-resizable ArrayBuffer, so there's no TextDecoder abort
+  # and no GROWABLE_ARRAYBUFFERS flag (that setting only exists on em6+, and setting it on
+  # 3.1.74 is a hard error). See docs/knowledge/emscripten-growable-arraybuffer-textdecoder.md.
   -sALLOW_MEMORY_GROWTH=1
-  # Modern emscripten (6.x) backs ALLOW_MEMORY_GROWTH with a *resizable* ArrayBuffer
-  # (GROWABLE_ARRAYBUFFERS=1). Browsers' TextDecoder.decode() rejects a view over a
-  # resizable ArrayBuffer ("value must not be resizable"), which aborts emscripten's
-  # UTF8ArrayToString during SDL2/WebGL shader init and kills the whole app before the
-  # UI initializes. Force the legacy copy-on-grow mechanism: memory still grows (for
-  # tiny_ttf's rasterizer) but the heap is a normal, non-resizable ArrayBuffer that
-  # TextDecoder accepts. (TEXTDECODER=0 is no longer supported in emscripten 6.x.)
-  -sGROWABLE_ARRAYBUFFERS=0
   -fexceptions
   -O2
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','HEAPU8']"
