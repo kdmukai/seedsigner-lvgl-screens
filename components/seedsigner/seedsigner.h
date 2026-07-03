@@ -79,6 +79,7 @@ void camera_preview_overlay_screen(void *ctx_json);
 void keyboard_screen(void *ctx_json);
 void seed_mnemonic_entry_screen(void *ctx_json);
 void seed_finalize_screen(void *ctx_json);
+void loading_screen(void *ctx_json);
 void qr_display_screen(void *ctx_json);
 
 // Push the next frame into a live qr_display_screen (host-driven animation, mirroring

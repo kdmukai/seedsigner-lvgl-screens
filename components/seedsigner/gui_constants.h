@@ -118,14 +118,17 @@ LV_FONT_DECLARE(inconsolata_semibold_22_4bpp_200x);
 #ifdef SUPPORT_DISPLAY_HEIGHT_240
 LV_IMAGE_DECLARE(seedsigner_logo_img);
 LV_IMAGE_DECLARE(hrf_logo_img);
+LV_IMAGE_DECLARE(btc_logo_img);
 #endif
 #ifdef SUPPORT_DISPLAY_HEIGHT_320
 LV_IMAGE_DECLARE(seedsigner_logo_img_133x);
 LV_IMAGE_DECLARE(hrf_logo_img_133x);
+LV_IMAGE_DECLARE(btc_logo_img_133x);
 #endif
 #ifdef SUPPORT_DISPLAY_HEIGHT_480
 LV_IMAGE_DECLARE(seedsigner_logo_img_200x);
 LV_IMAGE_DECLARE(hrf_logo_img_200x);
+LV_IMAGE_DECLARE(btc_logo_img_200x);
 #endif
 
 // ---------------------------------------------------------------------------
@@ -203,6 +206,8 @@ const DisplayProfile& display_profile_at(int index);
 // screensaver (logo) and the opening splash (logo + HRF partner band).
 const lv_image_dsc_t* seedsigner_logo_for_active_profile();
 const lv_image_dsc_t* hrf_logo_for_active_profile();
+// Bitcoin logo (orange disc + white tilted B) — the loading-screen spinner center.
+const lv_image_dsc_t* btc_logo_for_active_profile();
 
 // Mutable access to the active profile, for the font-registration seam
 // (font_registry.cpp) which repoints text-font pointers to install per-locale

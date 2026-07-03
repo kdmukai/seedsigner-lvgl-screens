@@ -69,6 +69,9 @@ list(APPEND srcs
     "images/hrf_logo_img.c"
     "images/hrf_logo_img_133x.c"
     "images/hrf_logo_img_200x.c"
+    "images/btc_logo_img.c"
+    "images/btc_logo_img_133x.c"
+    "images/btc_logo_img_200x.c"
 )
 
 

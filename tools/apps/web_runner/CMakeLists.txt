@@ -93,17 +93,20 @@ set(SEEDSIGNER_IMAGE_SOURCES "")
 if(SUPPORT_DISPLAY_HEIGHT_240)
   list(APPEND SEEDSIGNER_IMAGE_SOURCES
     "${SEEDSIGNER_DIR}/images/seedsigner_logo_img.c"
-    "${SEEDSIGNER_DIR}/images/hrf_logo_img.c")
+    "${SEEDSIGNER_DIR}/images/hrf_logo_img.c"
+    "${SEEDSIGNER_DIR}/images/btc_logo_img.c")
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_320)
   list(APPEND SEEDSIGNER_IMAGE_SOURCES
     "${SEEDSIGNER_DIR}/images/seedsigner_logo_img_133x.c"
-    "${SEEDSIGNER_DIR}/images/hrf_logo_img_133x.c")
+    "${SEEDSIGNER_DIR}/images/hrf_logo_img_133x.c"
+    "${SEEDSIGNER_DIR}/images/btc_logo_img_133x.c")
 endif()
 if(SUPPORT_DISPLAY_HEIGHT_480)
   list(APPEND SEEDSIGNER_IMAGE_SOURCES
     "${SEEDSIGNER_DIR}/images/seedsigner_logo_img_200x.c"
-    "${SEEDSIGNER_DIR}/images/hrf_logo_img_200x.c")
+    "${SEEDSIGNER_DIR}/images/hrf_logo_img_200x.c"
+    "${SEEDSIGNER_DIR}/images/btc_logo_img_200x.c")
 endif()
 
 set(SEEDSIGNER_CORE_SOURCES

@@ -240,6 +240,21 @@ const lv_image_dsc_t* hrf_logo_for_active_profile() {
     abort();
 }
 
+const lv_image_dsc_t* btc_logo_for_active_profile() {
+    const int px_mult = active_profile().px_multiplier;
+#ifdef SUPPORT_DISPLAY_HEIGHT_480
+    if (px_mult == PX_MULTIPLIER_200) return &btc_logo_img_200x;  // 120px (60 x 2)
+#endif
+#ifdef SUPPORT_DISPLAY_HEIGHT_320
+    if (px_mult == PX_MULTIPLIER_133) return &btc_logo_img_133x;  // 80px (60 x 1.333)
+#endif
+#ifdef SUPPORT_DISPLAY_HEIGHT_240
+    if (px_mult == PX_MULTIPLIER_100) return &btc_logo_img;       // 60px (Python btc_logo_60x60)
+#endif
+    fprintf(stderr, "FATAL: no BTC logo for PX_MULTIPLIER=%d\n", px_mult);
+    abort();
+}
+
 // ---------------------------------------------------------------------------
 // Compiled-in OpenSans Western baseline for the five translated text roles
 // ---------------------------------------------------------------------------

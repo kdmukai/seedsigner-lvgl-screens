@@ -638,5 +638,20 @@
         }
       }
     ]
+  },
+  "loading_screen": {
+    "context": {
+      "text": "Loading…",
+      "animated": true,
+      "animation_seconds": 0.49
+    },
+    "variations": [
+      {
+        "name": "no_text",
+        "context": {
+          "text": ""
+        }
+      }
+    ]
   }
 }
