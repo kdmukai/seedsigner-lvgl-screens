@@ -356,6 +356,42 @@ static void install_western_baseline(DisplayProfile& p) {
     }
 }
 
+// Memoized regular-weight OpenSans font at an arbitrary (already-scaled) px, for
+// body-relative sizes the profile roles don't cover. Never destroyed — the cache
+// is process-lifetime, matching install_western_baseline's stable-pointer contract.
+const lv_font_t* seedsigner_latin_font(int base_px_size) {
+    const int px = px_scale(base_px_size, active_profile().px_multiplier);
+
+    struct Entry { int px; lv_font_t* font; };
+    static Entry cache[16];
+    static int   cache_count = 0;
+
+    for (int i = 0; i < cache_count; ++i) {
+        if (cache[i].px == px) return cache[i].font;
+    }
+
+    // KERNING_NONE + the shared cache size, exactly like the baseline install.
+    lv_font_t* f = lv_tiny_ttf_create_data_ex(opensans_western_regular_ttf,
+                                              opensans_western_regular_ttf_len,
+                                              px, LV_FONT_KERNING_NONE,
+                                              SEEDSIGNER_TTF_CACHE_SIZE);
+    if (!f) {
+        // Rasterization failed (should not happen); degrade to the body font so the
+        // caller still renders something rather than crashing.
+        return active_profile().body_font;
+    }
+    if (cache_count < (int)(sizeof(cache) / sizeof(cache[0]))) {
+        cache[cache_count++] = { px, f };
+    }
+    return f;
+}
+
+#else  // !LV_USE_TINY_TTF
+
+const lv_font_t* seedsigner_latin_font(int /*base_px_size*/) {
+    return active_profile().body_font;
+}
+
 #endif  // LV_USE_TINY_TTF
 
 void set_display(int width, int height) {

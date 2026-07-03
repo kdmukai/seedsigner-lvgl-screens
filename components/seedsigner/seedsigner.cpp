@@ -3308,6 +3308,134 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
 }
 
 
+// ---------------------------------------------------------------------------
+// seed_finalize_screen
+// ---------------------------------------------------------------------------
+//
+// The "Finalize Seed" step shown immediately after a seed is loaded (the LVGL port
+// of Python's SeedFinalizeScreen, seed_screens.py). Structurally it is a
+// bottom-pinned ButtonListScreen (Done / BIP-39 Passphrase, no back button); its
+// one special element is a centered fingerprint readout — the master fingerprint
+// hex beneath a small "fingerprint" label, beside a large blue fingerprint icon.
+//
+// The readout ports Python's IconTextLine(is_text_centered=True,
+// icon_name=FINGERPRINT): a horizontally-centered group of
+//     [ fingerprint icon ] [gap] [ label (top) / value (bottom) ]
+// with the label + value left-aligned to a shared x and the icon vertically
+// centered against that two-line block. Python centers the whole group vertically
+// between the top-nav and the first button; here the scaffold's flex body does that
+// (see the upper_body grow below).
+//
+// cfg:
+//   top_nav: { title (default "Finalize Seed"), show_power_button }. show_back_button
+//            is forced false (Python SeedFinalizeScreen.show_back_button = False).
+//   fingerprint (string, required): the master-fingerprint hex to display.
+//   fingerprint_label (string, optional): the small label above the value; defaults
+//            to "fingerprint" (translated upstream by the View / scenario localizer).
+//   button_list (array): the action buttons (e.g. ["Done", "BIP-39 Passphrase"]).
+//            Defaults to ["Done"] when absent.
+void seed_finalize_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // fingerprint (required); the small label defaults to the (English) Python string.
+    if (!cfg.contains("fingerprint") || !cfg["fingerprint"].is_string()) {
+        throw std::runtime_error("seed_finalize_screen requires a \"fingerprint\" string");
+    }
+    std::string fingerprint       = cfg["fingerprint"].get<std::string>();
+    std::string fingerprint_label = cfg.value("fingerprint_label", std::string("fingerprint"));
+
+    // Force the SeedFinalizeScreen shape onto the scaffold cfg: a titled,
+    // back-button-less, bottom-pinned button list. The View supplies the localized
+    // title + button_list; default both so a bare cfg still renders.
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Finalize Seed";
+    cfg["top_nav"]["show_back_button"] = false;    // Python: show_back_button = False
+    cfg["is_bottom_list"] = true;                  // Python: is_bottom_list = True
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Done" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // Python centers the fingerprint IconTextLine in the gap between the top-nav and
+    // the first button. The scaffold's bottom-list body is a flex column
+    // [upper_body][spacer grow=1][buttons]; make upper_body itself the grower and
+    // center its child on the main (vertical) axis, then zero the scaffold spacer so
+    // upper_body claims the whole gap. Result: the readout sits vertically centered
+    // above the buttons.
+    lv_obj_set_flex_grow(screen.upper_body, 1);
+    lv_obj_set_flex_align(screen.upper_body, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
+
+    // --- fingerprint readout (IconTextLine) --------------------------------
+    const int32_t icon_gap  = COMPONENT_PADDING / 2;   // Python icon_horizontal_spacer
+    const int32_t label_gap = COMPONENT_PADDING / 2;   // Python label_padding_y
+
+    // Outer group: a width-content horizontal flex row [icon][text column], cross-axis
+    // centered so the icon lines up with the vertical middle of the two-line block.
+    // upper_body's cross-axis center pins the whole row to the horizontal center.
+    lv_obj_t *row = lv_obj_create(screen.upper_body);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(row, icon_gap, LV_PART_MAIN);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Fingerprint icon — large + INFO_COLOR blue. Python icon_size = ICON_FONT_SIZE +
+    // 12 (34); the baked 36px large-button icon font is the closest available size.
+    lv_obj_t *icon = lv_label_create(row);
+    lv_label_set_text(icon, SeedSignerIconConstants::FINGERPRINT);
+    lv_obj_set_style_text_font(icon, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(icon, lv_color_hex(INFO_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(icon, 0, LV_PART_MAIN);
+
+    // Text column: label (top) over value (bottom), left-aligned to a shared x
+    // (Python left-aligns both when an icon is present).
+    lv_obj_t *col = lv_obj_create(row);
+    lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(col, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(col, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(col, label_gap, LV_PART_MAIN);
+    lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    // Small gray label ("fingerprint"). Translatable, so it takes the locale-aware
+    // BODY_FONT (Python uses body-2 = 15px; the port has no locale-aware body-2 role,
+    // so BODY is the faithful localizable choice — 2px larger than Python).
+    lv_obj_t *label = lv_label_create(col);
+    lv_label_set_text(label, fingerprint_label.c_str());
+    lv_obj_set_style_text_font(label, &BODY_FONT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(LABEL_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(label, 0, LV_PART_MAIN);
+
+    // The fingerprint hex, one size step larger. Always Latin, so an exact body+2
+    // (19px) Latin font matches Python's value size precisely.
+    lv_obj_t *value = lv_label_create(col);
+    lv_label_set_text(value, fingerprint.c_str());
+    lv_obj_set_style_text_font(value, seedsigner_latin_font(19), LV_PART_MAIN);
+    lv_obj_set_style_text_color(value, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(value, 0, LV_PART_MAIN);
+
+    bind_screen_navigation(
+        cfg,
+        screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count,
+        NAV_BODY_VERTICAL,
+        0   // default the first action button (Done) selected, like button_list_screen
+    );
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
 void main_menu_screen(void *ctx_json)
 {
     // The home menu's structure is fixed (a 2x2 grid of four icon buttons), but
