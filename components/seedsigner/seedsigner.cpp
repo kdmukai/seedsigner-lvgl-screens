@@ -2595,6 +2595,21 @@ static std::string mnemonic_prefix(const mnemonic_ctx_t *c) {
     return (end == std::string::npos) ? std::string() : s.substr(0, end + 1);
 }
 
+// The candidate-word panel stays hidden until the prefix reaches this many
+// letters. A single letter matches up to ~250 BIP-39 words; on a slower display
+// (notably the ESP32-P4) rebuilding that many candidate widgets on the very first
+// keystroke stalls the UI for a visible beat — and a 1-letter candidate list has
+// little practical value anyway (you can't meaningfully pick a word yet). So the
+// panel, and the accept affordance that reads from it, wait for a second letter to
+// narrow the field. NOTE: possible_words is still computed at every stage — the
+// keyboard's next-letter dimming (possible_alphabet) is derived from it — so only
+// the on-screen panel is deferred, not the matching itself.
+static const size_t MNEMONIC_MATCH_MIN_LETTERS = 2;
+
+static bool mnemonic_matches_shown(const mnemonic_ctx_t *c) {
+    return mnemonic_prefix(c).size() >= MNEMONIC_MATCH_MIN_LETTERS;
+}
+
 // possible_words = every wordlist entry starting with the current prefix (reset
 // the highlight to the top of the new list).
 static void mnemonic_calc_possible_words(mnemonic_ctx_t *c) {
@@ -2714,7 +2729,7 @@ static void mnemonic_touch_candidate_cb(lv_event_t *e);  // fwd
 // Hardware: refresh the fixed-slot highlight + the dimmed rows above/below it
 // from possible_words[selected_index]. Hidden entirely when there are no matches.
 static void mnemonic_render_matches_hw(mnemonic_ctx_t *c) {
-    bool any = !c->possible_words.empty();
+    bool any = mnemonic_matches_shown(c) && !c->possible_words.empty();
     mnemonic_set_hidden(c->hl_btn, !any);
     mnemonic_set_hidden(c->arrow_up, !any);
     mnemonic_set_hidden(c->arrow_down, !any);
@@ -2745,6 +2760,10 @@ static void mnemonic_render_matches_touch(mnemonic_ctx_t *c) {
     lv_obj_clean(c->cand_list);
     c->touch_selected = -1;
     mnemonic_set_check_enabled(c, false);
+
+    // Deferred until the prefix is long enough (see mnemonic_matches_shown): with a
+    // single letter this would build hundreds of candidate rows, stalling the P4.
+    if (!mnemonic_matches_shown(c)) return;
 
     const int32_t row_h = (int32_t)(BUTTON_HEIGHT * 3 / 4);
     for (int k = 0; k < (int)c->possible_words.size(); ++k) {
@@ -2835,7 +2854,7 @@ static void mnemonic_float(mnemonic_ctx_t *c, const char *txt) {
 
 // Scroll the hardware candidate highlight; flash the corresponding arrow.
 static void mnemonic_scroll(mnemonic_ctx_t *c, int dir) {
-    if (c->possible_words.empty()) return;
+    if (!mnemonic_matches_shown(c) || c->possible_words.empty()) return;  // panel hidden → nothing to scroll
     c->selected_index += dir;
     if (c->selected_index < 0) c->selected_index = 0;
     if (c->selected_index >= (int)c->possible_words.size()) c->selected_index = (int)c->possible_words.size() - 1;
@@ -2901,7 +2920,11 @@ static void mnemonic_kb_preprocess_cb(lv_event_t *e) {
     if (aux == 1) { mnemonic_scroll(c, -1); lv_event_stop_processing(e); return; }
     if (aux == 3) { mnemonic_scroll(c, +1); lv_event_stop_processing(e); return; }
     if (aux == 2) {
-        if (!c->possible_words.empty()) mnemonic_accept_word(c, c->possible_words[c->selected_index]);
+        // Only accept when the panel is actually shown — otherwise possible_words is
+        // populated (for dimming) but no highlighted candidate is visible to accept.
+        if (mnemonic_matches_shown(c) && !c->possible_words.empty()) {
+            mnemonic_accept_word(c, c->possible_words[c->selected_index]);
+        }
         lv_event_stop_processing(e);
         return;
     }
@@ -3250,6 +3273,15 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
             }
         }
     }
+
+    // Touch panels have no joystick cursor: a key is chosen by tapping it directly,
+    // so NO key is pre-selected on load (the pre-highlighted letter is purely a
+    // joystick affordance). LVGL already defaults a buttonmatrix to BUTTON_NONE, but
+    // set it explicitly so touch is guaranteed to start blank regardless of any
+    // platform default — the hardware branch below installs the cursor on
+    // initial_selected. (Mirrors button_list_screen, where initial selection is
+    // hardware-mode only.)
+    lv_buttonmatrix_set_selected_button(matrix, LV_BUTTONMATRIX_BUTTON_NONE);
 
     if (hardware) {
         c->group = lv_group_create();
