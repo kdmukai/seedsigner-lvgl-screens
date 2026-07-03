@@ -622,5 +622,21 @@
         }
       }
     ]
+  },
+  "seed_finalize_screen": {
+    "context": {
+      "top_nav": {"title": "Finalize Seed", "show_power_button": false},
+      "fingerprint": "8c65eb9f",
+      "fingerprint_label": "fingerprint",
+      "button_list": ["Done", "BIP-39 Passphrase"]
+    },
+    "variations": [
+      {
+        "name": "no_passphrase",
+        "context": {
+          "button_list": ["Done"]
+        }
+      }
+    ]
   }
 }

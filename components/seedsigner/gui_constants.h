@@ -211,6 +211,17 @@ const lv_image_dsc_t* hrf_logo_for_active_profile();
 // until seedsigner_clear_registered_fonts() restores the compiled-in fonts.
 DisplayProfile& active_profile_mutable();
 
+// A regular-weight Western/Latin (OpenSans) font at `base_px_size` (a 240-height
+// reference size, scaled by the active profile's px_multiplier). For the rare
+// screen that needs a body-relative size the profile roles don't cover — e.g.
+// SeedFinalizeScreen's fingerprint value at body+2. Instances are memoized for the
+// process lifetime (never destroyed), like the baseline text fonts, so repeated
+// calls at the same effective px share one font. LATIN-ONLY: it carries no locale
+// script coverage, so callers must guarantee the text is Latin (e.g. a hex
+// fingerprint) and use the locale-aware BODY_FONT for anything translatable. Falls
+// back to the profile body_font when tiny_ttf is unavailable.
+const lv_font_t* seedsigner_latin_font(int base_px_size);
+
 // ---------------------------------------------------------------------------
 // Macro accessors -- existing code uses these names unchanged
 // ---------------------------------------------------------------------------
@@ -258,6 +269,7 @@ const int WARNING_COLOR = 0xffd60a;
 const int DIRE_WARNING_COLOR = 0xff5700;
 const int ERROR_COLOR = 0xff1b0a;
 const int SUCCESS_COLOR = 0x30d158;
+const int INFO_COLOR = 0x409cff;   // Python GUIConstants.INFO_COLOR "#409CFF" (e.g. SeedFinalize fingerprint)
 const int BITCOIN_ORANGE = 0xff9416;
 const int ACCENT_COLOR = 0xff9f0a;
 const int TESTNET_COLOR = 0x00f100;

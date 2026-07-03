@@ -2595,6 +2595,21 @@ static std::string mnemonic_prefix(const mnemonic_ctx_t *c) {
     return (end == std::string::npos) ? std::string() : s.substr(0, end + 1);
 }
 
+// The candidate-word panel stays hidden until the prefix reaches this many
+// letters. A single letter matches up to ~250 BIP-39 words; on a slower display
+// (notably the ESP32-P4) rebuilding that many candidate widgets on the very first
+// keystroke stalls the UI for a visible beat — and a 1-letter candidate list has
+// little practical value anyway (you can't meaningfully pick a word yet). So the
+// panel, and the accept affordance that reads from it, wait for a second letter to
+// narrow the field. NOTE: possible_words is still computed at every stage — the
+// keyboard's next-letter dimming (possible_alphabet) is derived from it — so only
+// the on-screen panel is deferred, not the matching itself.
+static const size_t MNEMONIC_MATCH_MIN_LETTERS = 2;
+
+static bool mnemonic_matches_shown(const mnemonic_ctx_t *c) {
+    return mnemonic_prefix(c).size() >= MNEMONIC_MATCH_MIN_LETTERS;
+}
+
 // possible_words = every wordlist entry starting with the current prefix (reset
 // the highlight to the top of the new list).
 static void mnemonic_calc_possible_words(mnemonic_ctx_t *c) {
@@ -2714,7 +2729,7 @@ static void mnemonic_touch_candidate_cb(lv_event_t *e);  // fwd
 // Hardware: refresh the fixed-slot highlight + the dimmed rows above/below it
 // from possible_words[selected_index]. Hidden entirely when there are no matches.
 static void mnemonic_render_matches_hw(mnemonic_ctx_t *c) {
-    bool any = !c->possible_words.empty();
+    bool any = mnemonic_matches_shown(c) && !c->possible_words.empty();
     mnemonic_set_hidden(c->hl_btn, !any);
     mnemonic_set_hidden(c->arrow_up, !any);
     mnemonic_set_hidden(c->arrow_down, !any);
@@ -2745,6 +2760,10 @@ static void mnemonic_render_matches_touch(mnemonic_ctx_t *c) {
     lv_obj_clean(c->cand_list);
     c->touch_selected = -1;
     mnemonic_set_check_enabled(c, false);
+
+    // Deferred until the prefix is long enough (see mnemonic_matches_shown): with a
+    // single letter this would build hundreds of candidate rows, stalling the P4.
+    if (!mnemonic_matches_shown(c)) return;
 
     const int32_t row_h = (int32_t)(BUTTON_HEIGHT * 3 / 4);
     for (int k = 0; k < (int)c->possible_words.size(); ++k) {
@@ -2835,7 +2854,7 @@ static void mnemonic_float(mnemonic_ctx_t *c, const char *txt) {
 
 // Scroll the hardware candidate highlight; flash the corresponding arrow.
 static void mnemonic_scroll(mnemonic_ctx_t *c, int dir) {
-    if (c->possible_words.empty()) return;
+    if (!mnemonic_matches_shown(c) || c->possible_words.empty()) return;  // panel hidden → nothing to scroll
     c->selected_index += dir;
     if (c->selected_index < 0) c->selected_index = 0;
     if (c->selected_index >= (int)c->possible_words.size()) c->selected_index = (int)c->possible_words.size() - 1;
@@ -2901,7 +2920,11 @@ static void mnemonic_kb_preprocess_cb(lv_event_t *e) {
     if (aux == 1) { mnemonic_scroll(c, -1); lv_event_stop_processing(e); return; }
     if (aux == 3) { mnemonic_scroll(c, +1); lv_event_stop_processing(e); return; }
     if (aux == 2) {
-        if (!c->possible_words.empty()) mnemonic_accept_word(c, c->possible_words[c->selected_index]);
+        // Only accept when the panel is actually shown — otherwise possible_words is
+        // populated (for dimming) but no highlighted candidate is visible to accept.
+        if (mnemonic_matches_shown(c) && !c->possible_words.empty()) {
+            mnemonic_accept_word(c, c->possible_words[c->selected_index]);
+        }
         lv_event_stop_processing(e);
         return;
     }
@@ -3251,6 +3274,15 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
         }
     }
 
+    // Touch panels have no joystick cursor: a key is chosen by tapping it directly,
+    // so NO key is pre-selected on load (the pre-highlighted letter is purely a
+    // joystick affordance). LVGL already defaults a buttonmatrix to BUTTON_NONE, but
+    // set it explicitly so touch is guaranteed to start blank regardless of any
+    // platform default — the hardware branch below installs the cursor on
+    // initial_selected. (Mirrors button_list_screen, where initial selection is
+    // hardware-mode only.)
+    lv_buttonmatrix_set_selected_button(matrix, LV_BUTTONMATRIX_BUTTON_NONE);
+
     if (hardware) {
         c->group = lv_group_create();
         lv_group_set_wrap(c->group, false);
@@ -3272,6 +3304,134 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
     }
 
     lv_obj_add_event_cb(screen.screen, mnemonic_cleanup_cb, LV_EVENT_DELETE, c);
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// ---------------------------------------------------------------------------
+// seed_finalize_screen
+// ---------------------------------------------------------------------------
+//
+// The "Finalize Seed" step shown immediately after a seed is loaded (the LVGL port
+// of Python's SeedFinalizeScreen, seed_screens.py). Structurally it is a
+// bottom-pinned ButtonListScreen (Done / BIP-39 Passphrase, no back button); its
+// one special element is a centered fingerprint readout — the master fingerprint
+// hex beneath a small "fingerprint" label, beside a large blue fingerprint icon.
+//
+// The readout ports Python's IconTextLine(is_text_centered=True,
+// icon_name=FINGERPRINT): a horizontally-centered group of
+//     [ fingerprint icon ] [gap] [ label (top) / value (bottom) ]
+// with the label + value left-aligned to a shared x and the icon vertically
+// centered against that two-line block. Python centers the whole group vertically
+// between the top-nav and the first button; here the scaffold's flex body does that
+// (see the upper_body grow below).
+//
+// cfg:
+//   top_nav: { title (default "Finalize Seed"), show_power_button }. show_back_button
+//            is forced false (Python SeedFinalizeScreen.show_back_button = False).
+//   fingerprint (string, required): the master-fingerprint hex to display.
+//   fingerprint_label (string, optional): the small label above the value; defaults
+//            to "fingerprint" (translated upstream by the View / scenario localizer).
+//   button_list (array): the action buttons (e.g. ["Done", "BIP-39 Passphrase"]).
+//            Defaults to ["Done"] when absent.
+void seed_finalize_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // fingerprint (required); the small label defaults to the (English) Python string.
+    if (!cfg.contains("fingerprint") || !cfg["fingerprint"].is_string()) {
+        throw std::runtime_error("seed_finalize_screen requires a \"fingerprint\" string");
+    }
+    std::string fingerprint       = cfg["fingerprint"].get<std::string>();
+    std::string fingerprint_label = cfg.value("fingerprint_label", std::string("fingerprint"));
+
+    // Force the SeedFinalizeScreen shape onto the scaffold cfg: a titled,
+    // back-button-less, bottom-pinned button list. The View supplies the localized
+    // title + button_list; default both so a bare cfg still renders.
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Finalize Seed";
+    cfg["top_nav"]["show_back_button"] = false;    // Python: show_back_button = False
+    cfg["is_bottom_list"] = true;                  // Python: is_bottom_list = True
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Done" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // Python centers the fingerprint IconTextLine in the gap between the top-nav and
+    // the first button. The scaffold's bottom-list body is a flex column
+    // [upper_body][spacer grow=1][buttons]; make upper_body itself the grower and
+    // center its child on the main (vertical) axis, then zero the scaffold spacer so
+    // upper_body claims the whole gap. Result: the readout sits vertically centered
+    // above the buttons.
+    lv_obj_set_flex_grow(screen.upper_body, 1);
+    lv_obj_set_flex_align(screen.upper_body, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
+
+    // --- fingerprint readout (IconTextLine) --------------------------------
+    const int32_t icon_gap  = COMPONENT_PADDING / 2;   // Python icon_horizontal_spacer
+    const int32_t label_gap = COMPONENT_PADDING / 2;   // Python label_padding_y
+
+    // Outer group: a width-content horizontal flex row [icon][text column], cross-axis
+    // centered so the icon lines up with the vertical middle of the two-line block.
+    // upper_body's cross-axis center pins the whole row to the horizontal center.
+    lv_obj_t *row = lv_obj_create(screen.upper_body);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(row, icon_gap, LV_PART_MAIN);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Fingerprint icon — large + INFO_COLOR blue. Python icon_size = ICON_FONT_SIZE +
+    // 12 (34); the baked 36px large-button icon font is the closest available size.
+    lv_obj_t *icon = lv_label_create(row);
+    lv_label_set_text(icon, SeedSignerIconConstants::FINGERPRINT);
+    lv_obj_set_style_text_font(icon, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(icon, lv_color_hex(INFO_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(icon, 0, LV_PART_MAIN);
+
+    // Text column: label (top) over value (bottom), left-aligned to a shared x
+    // (Python left-aligns both when an icon is present).
+    lv_obj_t *col = lv_obj_create(row);
+    lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(col, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(col, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(col, label_gap, LV_PART_MAIN);
+    lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    // Small gray label ("fingerprint"). Translatable, so it takes the locale-aware
+    // BODY_FONT (Python uses body-2 = 15px; the port has no locale-aware body-2 role,
+    // so BODY is the faithful localizable choice — 2px larger than Python).
+    lv_obj_t *label = lv_label_create(col);
+    lv_label_set_text(label, fingerprint_label.c_str());
+    lv_obj_set_style_text_font(label, &BODY_FONT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(LABEL_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(label, 0, LV_PART_MAIN);
+
+    // The fingerprint hex, one size step larger. Always Latin, so an exact body+2
+    // (19px) Latin font matches Python's value size precisely.
+    lv_obj_t *value = lv_label_create(col);
+    lv_label_set_text(value, fingerprint.c_str());
+    lv_obj_set_style_text_font(value, seedsigner_latin_font(19), LV_PART_MAIN);
+    lv_obj_set_style_text_color(value, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(value, 0, LV_PART_MAIN);
+
+    bind_screen_navigation(
+        cfg,
+        screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count,
+        NAV_BODY_VERTICAL,
+        0   // default the first action button (Done) selected, like button_list_screen
+    );
+
     load_screen_and_cleanup_previous(screen.screen);
 }
 

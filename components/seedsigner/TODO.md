@@ -8,6 +8,15 @@
   `update_visual_focus` (or directly `button_set_active`) when a valid `initial_body_index`
   is provided, regardless of input mode.
 
+- [ ] **Locale-aware `body-2` (label) font role.** `seed_finalize_screen`'s fingerprint IconTextLine
+  (and Python's `IconTextLine` label generally) uses a label at `get_body_font_size() - 2` (15 px base).
+  The port has no locale-aware body-2 font role, so the translatable "fingerprint" label currently renders
+  in `BODY_FONT` (17 px) — 2 px larger than Python, weakening the value/label size step vs. the reference.
+  (The Latin hex *value* already renders at an exact body+2 via `seedsigner_latin_font(19)`, but that
+  helper is Latin-only and cannot serve the translatable label.) Add a body-2 role to `DisplayProfile` +
+  the `install_western_baseline` / locale-pack seam so labels match Python across locales. Also benefits
+  any future IconTextLine-style screen (SeedOptions details, xpub details, etc.).
+
 - [ ] `button_list_screen`: support per-button **icons**. `read_button_list_labels` currently keeps
   only the label (a bare string, or the string at index 0 of a `[label, …]` array) and builds each
   button via `button(body, label, NULL)` — text only. The `[label, …]` array form is the intended
@@ -69,6 +78,14 @@
     to size the pool/cache from data rather than estimates.
 
 ## Cross-screen overlays
+
+- [ ] **Camera entropy overlay screen(s)** — not yet defined. The seedsigner "new seed from camera
+  entropy" (image dice) flow needs its own live-preview overlay: a camera frame with entropy-capture
+  affordances (countdown / capture / rolls-collected feedback), distinct from `camera_preview_overlay`
+  (the QR-scan preview). Must coordinate with the ESP32 camera pipeline (frame source + poll contract) in
+  `seedsigner-micropython-builder` (see its `docs/camera-pipeline-*.md` and `ports/esp32/camera_entropy/`)
+  and the Pi Zero camera backend. Design the portable overlay here once the entropy-capture UX + the
+  frame-delivery contract are pinned down.
 
 - [ ] **SD-card insert/remove toast over any screen** — significant, still-undesigned. The seedsigner
   app shows a transient toast (icon + message strip along the bottom) when a microSD card is inserted or
