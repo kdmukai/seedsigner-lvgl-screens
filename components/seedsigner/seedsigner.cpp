@@ -5129,6 +5129,587 @@ void splash_screen(void *ctx_json) {
 }
 
 
+// ===========================================================================
+// psbt_overview_screen — animated transaction-flow diagram
+// (LVGL port of Python PSBTOverviewScreen + TxExplorerAnimationThread)
+// ===========================================================================
+//
+// The "Review Transaction" screen: a BtcAmount headline over a pictogram that fans
+// every input, through a shared center bar, out to every output (recipients, self-
+// transfers, change, OP_RETURN, and the miner fee), with an orange pulse continuously
+// chasing along the curves to signal "these funds flow this way".
+//
+// Faithful port of the Python screen, with two deliberate substitutions the user
+// approved: the diagram is drawn with native LVGL anti-aliased lines on an lv_canvas
+// (Python supersampled a PIL image 4x); the curve MATH is a verbatim port of Python's
+// custom quadratic Bezier (components.calc_bezier_curve), so the S-curve geometry is
+// identical. The pulse animation is a direct port of TxExplorerAnimationThread: a
+// segment-stepping orange head trailed by a gray eraser, driven by an lv_timer at the
+// same 20 ms cadence, repainting only the changed segments onto the canvas each frame.
+//
+// cfg:
+//   top_nav            : standard top-nav object (title defaults to "Review Transaction").
+//   btc_amount         : {primary, secondary?, unit, network|icon_color} headline (see
+//                        btc_amount_from_cfg / components.btc_amount). Optional.
+//   num_inputs         : int >= 1.
+//   destination_addresses : array of recipient address strings (may be empty).
+//   num_self_transfer_outputs, num_change_outputs : ints (default 0).
+//   has_op_return      : bool (default false).
+//   button             : bottom-button label (default "Review details").
+//   labels             : optional { input_n, one_input, recipient_1, recipient_n,
+//                        ellipsis_series, ellipsis_trunc, fee, op_return, change,
+//                        self_transfer } translated templates ({} = number slot).
+//                        English fallbacks when omitted, so the desktop tool works as-is
+//                        and per-locale scenario JSON supplies translations.
+
+// ---- Bezier helpers (port of components.linear_interp / calc_bezier_curve). The math
+// runs in FLOATING POINT and is snapped to the pixel grid only at the end (psbt_snap),
+// because integer lerps floor asymmetrically: a branch and its mirror about the
+// centerline would round to different rows and the fork would look lopsided.
+struct psbt_fpt { float x, y; };
+
+static psbt_fpt psbt_lerp(psbt_fpt a, psbt_fpt b, float t) {
+    return { (1.0f - t) * a.x + t * b.x, (1.0f - t) * a.y + t * b.y };
+}
+
+// Cubic Bezier p0..p3 over `segments` line segments (De Casteljau); segments+1 points.
+static std::vector<psbt_fpt> psbt_cubic(psbt_fpt p0, psbt_fpt p1, psbt_fpt p2, psbt_fpt p3, int segments) {
+    std::vector<psbt_fpt> pts;
+    pts.push_back(p0);
+    float step = 1.0f / (float)segments;
+    for (int i = 1; i <= segments; ++i) {
+        if (i == segments) { pts.push_back(p3); break; }
+        float t = step * (float)i;
+        psbt_fpt a = psbt_lerp(p0, p1, t), b = psbt_lerp(p1, p2, t), c = psbt_lerp(p2, p3, t);
+        psbt_fpt d = psbt_lerp(a, b, t), e = psbt_lerp(b, c, t);
+        pts.push_back(psbt_lerp(d, e, t));
+    }
+    return pts;
+}
+
+// Snap a float point to the pixel grid, rounding the y-offset ABOUT the centerline vcf
+// (lroundf is odd-symmetric, so mirror-image branches land on symmetric rows).
+static lv_point_t psbt_snap(psbt_fpt p, int32_t vc, float vcf) {
+    lv_point_t q;
+    q.x = (int32_t)lroundf(p.x);
+    q.y = vc + (int32_t)lroundf(p.y - vcf);
+    return q;
+}
+static std::vector<lv_point_t> psbt_snap_curve(const std::vector<psbt_fpt> &f, int32_t vc, float vcf) {
+    std::vector<lv_point_t> out;
+    out.reserve(f.size());
+    for (const auto &p : f) out.push_back(psbt_snap(p, vc, vcf));
+    return out;
+}
+
+// Horizontal-tangent hold at the label end (`_TIP`) and at the convergence hub (`_HUB`),
+// as fractions of the branch's horizontal span. Smaller `_HUB` lets the branch start
+// bending toward its row sooner (gentler, separates from its neighbours earlier).
+static const float PSBT_S_TIP = 0.9f;
+static const float PSBT_S_HUB = 0.72f;
+
+// A smooth S (sigmoid) branch from the label end `tip` to the convergence `hub`, HORIZONTAL
+// at both ends (Python's flow-diagram look). Built as a single cubic so it never forces a
+// vertical inflection the way the old two-quadratic did — that forced vertical was the
+// "aggressive kink" on the short inner branches (fee / OP_RETURN) that opened the black
+// negative-space gap. Returned tip-first.
+static std::vector<psbt_fpt> psbt_branch(psbt_fpt tip, psbt_fpt hub, int segments) {
+    float dx = hub.x - tip.x;   // signed span (hub right of tip for inputs, left for outputs)
+    psbt_fpt c1 = { tip.x + dx * PSBT_S_TIP, tip.y };   // horizontal at the label
+    psbt_fpt c2 = { hub.x - dx * PSBT_S_HUB, hub.y };   // horizontal at the hub
+    return psbt_cubic(tip, c1, c2, hub, segments);
+}
+
+// Diagram palette / geometry (native px; Python worked 4x-supersampled, so its
+// per-ssf values collapse to these once divided back down).
+static const uint32_t PSBT_ASSOC_COLOR   = 0x666666;         // Python association_line_color "#666"
+static const uint32_t PSBT_LABEL_COLOR   = 0xdddddd;         // Python chart_font_color "#ddd"
+static const uint32_t PSBT_PULSE_COLOR   = (uint32_t)ACCENT_COLOR;  // Python GUIConstants.ACCENT_COLOR
+// Stroke width scales with the display profile (3 px at the 240-height reference,
+// ~6 px at 480-height) so the pictogram doesn't look thin on the larger panels.
+static int32_t psbt_line_width() {
+    int32_t w = 3 * active_profile().px_multiplier / 100;
+    return w < 3 ? 3 : w;
+}
+static const int      PSBT_CURVE_STEPS   = 16;               // Python used 4 (hidden by its 4x supersample); we
+                                                             // use a finer polyline so the native-AA curve reads smooth
+// Pulse motion is WALL-CLOCK based (not per-frame), so the rate is identical whether
+// lv_timer_handler runs at 30, 60, or 120 fps. The head crosses the whole
+// input->center->output path in PSBT_PULSE_TRAVERSE_MS; the lit band trails it at
+// PSBT_PULSE_BAND_FRAC of the path length; and the tick just sets the visual update
+// cadence. A starved frame is clamped so the pulse slows rather than teleporting.
+static const uint32_t PSBT_PULSE_TICK_MS     = 16;    // ~60 fps update cadence
+static const float    PSBT_PULSE_TRAVERSE_MS = 1600;  // wall-clock for the head to cross the pictogram
+static const float    PSBT_PULSE_BAND_FRAC   = 0.45f; // lit band length as a fraction of the path
+static const float    PSBT_PULSE_GAP_FRAC    = 0.15f; // dark pause between cycles, as a fraction of the path
+static const uint32_t PSBT_PULSE_MAX_STEP_MS = 100;   // clamp per-frame advance (starved-frame guard)
+
+// One draw-line onto an already-open canvas layer, with round caps so consecutive
+// segments join smoothly (Python's draw.line joint="curve").
+static void psbt_line(lv_layer_t *layer, lv_point_t a, lv_point_t b, uint32_t color) {
+    lv_draw_line_dsc_t d;
+    lv_draw_line_dsc_init(&d);
+    d.color = lv_color_hex(color);
+    d.width = psbt_line_width();
+    d.round_start = true;
+    d.round_end = true;
+    d.p1.x = (lv_value_precise_t)a.x; d.p1.y = (lv_value_precise_t)a.y;
+    d.p2.x = (lv_value_precise_t)b.x; d.p2.y = (lv_value_precise_t)b.y;
+    lv_draw_line(layer, &d);
+}
+
+static void psbt_draw_polyline(lv_layer_t *layer, const std::vector<lv_point_t> &c, uint32_t color) {
+    for (size_t i = 1; i < c.size(); ++i) psbt_line(layer, c[i - 1], c[i], color);
+}
+
+struct psbt_anim_ctx_t {
+    lv_obj_t   *canvas;
+    void       *canvas_buf;     // the displayed RGB565 buffer
+    void       *pristine_buf;   // snapshot of the static gray diagram (fringe-free restore source)
+    size_t      buf_bytes;
+    lv_timer_t *timer;
+    std::vector<std::vector<lv_point_t>> inputs;   // every input curve (canvas-local coords)
+    std::vector<std::vector<lv_point_t>> outputs;  // every output curve
+    std::vector<lv_point_t>              center_bar;  // segmented center bar
+    int         total_segs;     // total path segments (input + center + output)
+    int         band_segs;      // lit band length, in segments
+    int         reset_at;       // head value at which a cycle restarts (total + band + dark gap)
+    float       head;           // current head position along the path, in segments (float)
+    uint32_t    last_tick;      // lv_tick at the previous update
+};
+
+// Light path-segment `s` (0-based, spanning input -> center -> output) in `color`. The
+// fan phases draw the segment across every input/output curve at once (all funds flow
+// together); the middle phase draws the single center-bar segment.
+static void psbt_draw_seg(lv_layer_t *layer, const psbt_anim_ctx_t *c, int s, uint32_t color) {
+    const int in_segs     = (int)c->inputs[0].size() - 1;
+    const int center_segs = (int)c->center_bar.size() - 1;
+    if (s < in_segs) {
+        for (const auto &curve : c->inputs) psbt_line(layer, curve[s], curve[s + 1], color);
+    } else if (s < in_segs + center_segs) {
+        const int idx = s - in_segs;
+        psbt_line(layer, c->center_bar[idx], c->center_bar[idx + 1], color);
+    } else {
+        const int idx = s - in_segs - center_segs;
+        for (const auto &curve : c->outputs) psbt_line(layer, curve[idx], curve[idx + 1], color);
+    }
+}
+
+// Wall-clock pulse: advance the head by REAL elapsed time (so the rate is identical at
+// any frame rate — the loading spinner uses the same integrator), restore the pristine
+// gray diagram, then repaint the current lit band over it. Restoring from the snapshot
+// each frame is what keeps the orange from leaving an anti-aliased fringe behind: a
+// same-width gray redraw can't fully re-cover the orange's soft edge, and a wider one
+// would permanently thicken the curve — copying back the pristine pixels is exact.
+static void psbt_pulse_timer_cb(lv_timer_t *timer) {
+    psbt_anim_ctx_t *c = (psbt_anim_ctx_t *)lv_timer_get_user_data(timer);
+    if (!c || !lv_obj_is_valid(c->canvas) || c->inputs.empty() || c->outputs.empty()) return;
+
+    uint32_t now = lv_tick_get();
+    uint32_t dt  = now - c->last_tick;
+    c->last_tick = now;
+    if (dt > PSBT_PULSE_MAX_STEP_MS) dt = PSBT_PULSE_MAX_STEP_MS;   // starved-frame clamp
+
+    // Head crosses the whole path in PSBT_PULSE_TRAVERSE_MS; loop with a dark gap.
+    float segs_per_ms = (float)c->total_segs / PSBT_PULSE_TRAVERSE_MS;
+    c->head += (float)dt * segs_per_ms;
+    if (c->head >= (float)c->reset_at) c->head -= (float)c->reset_at;
+
+    // Restore the pristine gray diagram, then paint the lit band [head-band, head].
+    memcpy(c->canvas_buf, c->pristine_buf, c->buf_bytes);
+
+    int hi = (int)c->head;
+    int lo = (int)(c->head - (float)c->band_segs);
+    if (hi > c->total_segs - 1) hi = c->total_segs - 1;   // head arrived at the outputs
+    if (lo < 0) lo = 0;
+    if (hi >= lo && hi >= 0) {
+        lv_layer_t layer;
+        lv_canvas_init_layer(c->canvas, &layer);
+        for (int s = lo; s <= hi; ++s) psbt_draw_seg(&layer, c, s, PSBT_PULSE_COLOR);
+        lv_canvas_finish_layer(c->canvas, &layer);
+    }
+    lv_obj_invalidate(c->canvas);   // reflect both the restore and the repaint
+}
+
+static void psbt_cleanup_cb(lv_event_t *e) {
+    psbt_anim_ctx_t *c = (psbt_anim_ctx_t *)lv_event_get_user_data(e);
+    if (!c) return;
+    if (c->timer) lv_timer_delete(c->timer);
+    if (c->canvas_buf) lv_free(c->canvas_buf);
+    if (c->pristine_buf) lv_free(c->pristine_buf);
+    delete c;
+}
+
+// Build a components.btc_amount from a cfg object: maps network -> icon color (an
+// explicit icon_color hex overrides) and forwards the host-formatted display strings.
+// Shared by every amount-showing screen (PSBT overview / detail / change).
+static lv_obj_t *btc_amount_from_cfg(lv_obj_t *parent, const json &j) {
+    std::string primary   = j.value("primary", std::string(""));
+    std::string secondary = j.value("secondary", std::string(""));
+    std::string unit      = j.value("unit", std::string(""));
+
+    btc_amount_opts_t o = {};
+    o.primary       = primary.c_str();
+    o.secondary     = secondary.empty() ? nullptr : secondary.c_str();
+    o.unit          = unit.empty() ? nullptr : unit.c_str();
+    o.primary_small = j.value("primary_small", false);
+
+    std::string net = j.value("network", std::string("mainnet"));
+    if (net == "testnet")      o.icon_color = (uint32_t)TESTNET_COLOR;
+    else if (net == "regtest") o.icon_color = (uint32_t)REGTEST_COLOR;
+    else                       o.icon_color = (uint32_t)ACCENT_COLOR;
+    if (j.contains("icon_color") && j["icon_color"].is_string()) {
+        o.icon_color = parse_hex_color(j["icon_color"].get<std::string>());
+    }
+    return btc_amount(parent, &o);
+}
+
+void psbt_overview_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // ---- Read the transaction structure (mirrors the Python dataclass fields).
+    int  num_inputs        = cfg.value("num_inputs", 1);
+    if (num_inputs < 1) num_inputs = 1;
+    int  num_self_transfer = cfg.value("num_self_transfer_outputs", 0);
+    int  num_change        = cfg.value("num_change_outputs", 0);
+    bool has_op_return     = cfg.value("has_op_return", false);
+    std::vector<std::string> dest_addrs;
+    if (cfg.contains("destination_addresses") && cfg["destination_addresses"].is_array()) {
+        for (const auto &a : cfg["destination_addresses"]) {
+            if (a.is_string()) dest_addrs.push_back(a.get<std::string>());
+        }
+    }
+
+    // ---- Translated labels: cfg["labels"] with English fallbacks (host owns i18n).
+    const json labels = (cfg.contains("labels") && cfg["labels"].is_object()) ? cfg["labels"] : json::object();
+    auto L = [&](const char *key, const char *dflt) -> std::string {
+        if (labels.contains(key) && labels[key].is_string()) return labels[key].get<std::string>();
+        return std::string(dflt);
+    };
+    auto fmt_n = [](const std::string &tmpl, long n) -> std::string {
+        std::string out = tmpl;
+        size_t pos = out.find("{}");
+        if (pos != std::string::npos) out.replace(pos, 2, std::to_string(n));
+        return out;
+    };
+    const std::string input_n         = L("input_n", "input {}");
+    const std::string recipient_n     = L("recipient_n", "recipient {}");
+    const std::string recipient_1     = L("recipient_1", "recipient 1");
+    const std::string recipient_sing  = L("recipient_singular", "recipient");
+    const std::string ellipsis_series = L("ellipsis_series", "[ ... ]");
+    const std::string self_transfer   = L("self_transfer", "self-transfer");
+    const std::string fee_label       = L("fee", "fee");
+    const std::string op_return_label = L("op_return", "OP_RETURN");
+    const std::string change_label    = L("change", "change");
+
+    // ---- Scaffold: a bottom-pinned single-button list (Python is_bottom_list).
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = L("title", "Review Transaction");
+    if (!cfg.contains("button_list")) {
+        cfg["button_list"] = json::array({ cfg.value("button", std::string("Review details")) });
+    }
+    cfg["is_bottom_list"] = true;
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // ---- BtcAmount headline in the upper body (Python's callout above the chart).
+    lv_obj_t *headline = nullptr;
+    if (cfg.contains("btc_amount") && cfg["btc_amount"].is_object() && screen.upper_body) {
+        // Hug the top nav: the body already sits below the nav's own bottom buffer, so a
+        // small pad here is enough. Keeping the callout high frees vertical room for the
+        // pictogram (which is otherwise cramped on the many-row scenarios).
+        lv_obj_set_style_pad_top(screen.upper_body, COMPONENT_PADDING / 4, LV_PART_MAIN);
+        headline = btc_amount_from_cfg(screen.upper_body, cfg["btc_amount"]);
+    }
+
+    // ---- Measure the gap between the headline and the pinned button — that band is
+    // the chart (Python: chart_y = below the callout; chart_height = up to the button).
+    lv_obj_update_layout(screen.screen);
+
+    const int32_t W    = lv_display_get_horizontal_resolution(NULL);
+    const int32_t comp = COMPONENT_PADDING;
+    const int32_t edge = EDGE_PADDING;
+
+    int32_t chart_top;
+    if (headline) {
+        lv_area_t a; lv_obj_get_coords(headline, &a);
+        chart_top = a.y2 + comp / 4;
+    } else {
+        chart_top = TOP_NAV_HEIGHT + comp;
+    }
+    int32_t chart_bottom = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT - comp;
+    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
+        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
+        chart_bottom = ba.y1 - comp;
+    }
+    const int32_t chart_h = chart_bottom - chart_top;
+
+    const int32_t text_h = lv_font_get_line_height(&BODY_FONT);
+
+    // Only build the diagram if there is room for at least one row.
+    if (chart_h >= text_h) {
+        auto text_w = [&](const std::string &s) -> int32_t {
+            lv_point_t sz;
+            lv_text_get_size(&sz, s.c_str(), &BODY_FONT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+            return sz.x;
+        };
+
+        // ---- Input column labels (Python inputs_column).
+        std::vector<std::string> inputs_column;
+        if (num_inputs == 1) {
+            inputs_column.push_back(L("one_input", "1 input"));
+        } else if (num_inputs > 5) {
+            inputs_column.push_back(fmt_n(input_n, 1));
+            inputs_column.push_back(fmt_n(input_n, 2));
+            inputs_column.push_back(ellipsis_series);
+            inputs_column.push_back(fmt_n(input_n, num_inputs - 1));
+            inputs_column.push_back(fmt_n(input_n, num_inputs));
+        } else {
+            for (int i = 0; i < num_inputs; ++i) inputs_column.push_back(fmt_n(input_n, i + 1));
+        }
+        int32_t max_inputs_text_width = 0;
+        for (const auto &s : inputs_column) max_inputs_text_width = std::max(max_inputs_text_width, text_w(s));
+
+        // ---- Aesthetic geometry knobs (all scale with the display via `comp`). The
+        // pictogram is kept PERFECTLY CENTERED on the screen midline: each half mirrors
+        // the other (center bar straddles W/2, equal-width curve columns), and the room
+        // per half is capped by the WIDER text column — so a long address on one side
+        // pulls the short side inward (blank space on the short side) instead of shoving
+        // the whole diagram off-center.
+        const int32_t text_gap = comp / 2;      // balanced buffer between text and curve, both sides
+        const int32_t cw_min   = 4 * comp;      // curve column min (Python's fixed width) ...
+        const int32_t cw_max   = 6 * comp;      // ... up to ~50% wider when there's room (graceful curves)
+        const int32_t cb_min   = 3 * comp / 2;  // center bar floor — kept short so the labels breathe
+        const int32_t cb_max   = 5 * comp / 2;  // ... grows only a little past the floor
+        const int32_t cb_floor = comp;          // hard floor when a tight screen can't center (below cb_min)
+        const int32_t center_x = W / 2;
+
+        // ---- Destination column. The pictogram conveys transaction STRUCTURE, not the
+        // actual addresses (those are verified on the later review screens), so recipients
+        // are shown generically: "recipient" for one, "recipient 1..N" for a few, and
+        // collapsed to "recipient 1 / [ ... ] / recipient N" when there are many. (A
+        // deliberate departure from the Python original, which truncated the addresses.)
+        std::vector<std::string> destination_column;
+        {
+            const int n_recip  = (int)dest_addrs.size();
+            const int total_rl = n_recip + num_self_transfer;   // recipient-like outputs
+            if (total_rl <= 3) {
+                if (n_recip == 1) {
+                    destination_column.push_back(recipient_sing);
+                } else {
+                    for (int i = 0; i < n_recip; ++i) destination_column.push_back(fmt_n(recipient_n, i + 1));
+                }
+                for (int i = 0; i < num_self_transfer; ++i) destination_column.push_back(self_transfer);
+            } else {
+                destination_column.push_back(recipient_1);
+                destination_column.push_back(ellipsis_series);
+                destination_column.push_back(fmt_n(recipient_n, total_rl));
+            }
+            destination_column.push_back(fee_label);
+            if (has_op_return) destination_column.push_back(op_return_label);
+            for (int i = 0; i < num_change; ++i) destination_column.push_back(change_label);
+        }
+        int32_t dest_text_width = 0;
+        for (const auto &s : destination_column) dest_text_width = std::max(dest_text_width, text_w(s));
+
+        // ---- Solve the horizontal layout. Two regimes:
+        //   Centered (the common case, and preferred): the pictogram is symmetric about
+        //   the screen midline; the per-half room is capped by the WIDER text column, so
+        //   the short side pulls in and leaves blank margin. Curves grow first (graceful),
+        //   then the center bar, then blank.
+        //   Fit fallback (tight screen / wide labels, e.g. many recipients at 240): if
+        //   even the minimum centered core won't fit, GIVE UP centering to keep the labels
+        //   on screen — anchor both text columns at the edges, shrink the center bar to its
+        //   hard floor, and split the leftover between the two (still equal-width) curves.
+        const int32_t tw_max = std::max(max_inputs_text_width, dest_text_width);
+        const int32_t room   = center_x - edge - text_gap - tw_max;   // per-half budget for (cw + cb/2)
+
+        int32_t center_bar_x, center_bar_width, dest_conj_x;
+        int32_t input_start_x, inputs_text_right, output_end_x, destination_col_x;
+
+        if (room >= cw_min + cb_min / 2) {
+            // Centered regime.
+            int32_t cw = room - cb_min / 2;
+            if (cw > cw_max) cw = cw_max;
+            if (cw < cw_min) cw = cw_min;
+            int32_t cb = 2 * (room - cw);
+            if (cb < cb_min) cb = cb_min;
+            if (cb > cb_max) cb = cb_max;
+
+            center_bar_x      = center_x - cb / 2;
+            center_bar_width  = cb;
+            dest_conj_x       = center_x + cb / 2;
+            input_start_x     = center_bar_x - cw;
+            inputs_text_right = input_start_x - text_gap;
+            output_end_x      = dest_conj_x + cw;
+            destination_col_x = output_end_x + text_gap;
+        } else {
+            // Fit fallback: labels at the edges, symmetric curves, minimal center bar.
+            inputs_text_right = edge + max_inputs_text_width;   // input text left-justified at the edge
+            destination_col_x = W - edge - dest_text_width;     // output text right-justified at the edge
+            input_start_x     = inputs_text_right + text_gap;
+            output_end_x      = destination_col_x - text_gap;
+            int32_t avail = output_end_x - input_start_x;       // = cw + cb + cw
+            int32_t cb = cb_floor;
+            if (cb > avail - 2) cb = avail - 2;                 // keep room for a sliver of curve
+            if (cb < 1) cb = 1;
+            int32_t cw = (avail - cb) / 2;
+            if (cw < 1) cw = 1;
+            center_bar_x      = input_start_x + cw;
+            center_bar_width  = cb;
+            dest_conj_x       = center_bar_x + cb;
+            output_end_x      = dest_conj_x + cw;               // re-derive so the two curves match exactly
+        }
+
+        // ---- Vertical placement: rows centered SYMMETRICALLY about the mid-line, so an
+        // ODD count puts its middle row exactly on the centerline (a straight branch, no
+        // bend). Pitch matches Python's even distribution (equal top/inter/bottom gaps);
+        // deriving each row from the center avoids the integer-truncation drift that used
+        // to nudge the whole block upward.
+        const int32_t vc  = chart_h / 2;
+        const float   vcf = (float)chart_h / 2.0f;
+        const int n_in    = (int)inputs_column.size();
+        const int n_dest  = (int)destination_column.size();
+
+        auto row_pitch = [&](int n) -> float {
+            if (n <= 1) return 0.0f;
+            float natural = (float)(chart_h - n * text_h) / (float)(n + 1) + (float)text_h;
+            // Never let the row block overflow the chart band (block = (n-1)*pitch + text_h
+            // <= chart_h): when there are more rows than fit at the natural pitch, compress
+            // so the top/bottom rows stay inside the canvas instead of poking the button.
+            float max_fit = (float)(chart_h - text_h) / (float)(n - 1);
+            return natural < max_fit ? natural : max_fit;
+        };
+        // Float row center (snapped later about vcf), symmetric about the mid-line.
+        auto row_center_yf = [&](int n, int k, float pitch) -> float {
+            return vcf + ((float)k - (float)(n - 1) / 2.0f) * pitch;
+        };
+        const float in_pitch  = row_pitch(n_in);
+        const float out_pitch = row_pitch(n_dest);
+
+        // ---- The canvas hosts the vector diagram; labels ride on top as real widgets
+        // (crisp + i18n/shaping-correct, and untouched by the per-frame repaint).
+        void *buf = lv_malloc(LV_CANVAS_BUF_SIZE(W, chart_h, 16, LV_DRAW_BUF_STRIDE_ALIGN));
+        lv_obj_t *canvas = lv_canvas_create(screen.screen);
+        lv_canvas_set_buffer(canvas, buf, W, chart_h, LV_COLOR_FORMAT_RGB565);
+        lv_canvas_fill_bg(canvas, lv_color_hex(BACKGROUND_COLOR), LV_OPA_COVER);
+        lv_obj_set_pos(canvas, 0, chart_top);
+        lv_obj_set_style_pad_all(canvas, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(canvas, 0, LV_PART_MAIN);
+        lv_obj_remove_flag(canvas, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(canvas, LV_OBJ_FLAG_CLICKABLE);
+
+        auto make_chart_label = [&](const std::string &s, int32_t x, int32_t y) {
+            lv_obj_t *lbl = lv_label_create(canvas);
+            lv_obj_set_style_pad_all(lbl, 0, LV_PART_MAIN);
+            lv_obj_set_style_text_font(lbl, &BODY_FONT, LV_PART_MAIN);
+            lv_obj_set_style_text_color(lbl, lv_color_hex(PSBT_LABEL_COLOR), LV_PART_MAIN);
+            lv_label_set_text(lbl, s.c_str());
+            lv_obj_set_pos(lbl, x, y);
+        };
+
+        // ---- Input rows: label right-justified to the balanced text gap + a two-arc
+        // S-curve to the center bar (built in float, snapped symmetric about vcf).
+        std::vector<std::vector<lv_point_t>> input_curves;
+        for (int k = 0; k < n_in; ++k) {
+            const std::string &s = inputs_column[k];
+            int32_t tw     = text_w(s);
+            float   row_cy = row_center_yf(n_in, k, in_pitch);
+            make_chart_label(s, inputs_text_right - tw, (int32_t)lroundf(row_cy) - text_h / 2);
+
+            psbt_fpt start_pt = { (float)input_start_x, row_cy };
+            psbt_fpt conj     = { (float)center_bar_x, vcf };   // input hub = left end of the center bar
+
+            std::vector<psbt_fpt> fcurve;
+            if (num_inputs == 1) {
+                // One input: a plain straight segment — no curve logic (row_cy == vcf).
+                fcurve = { start_pt, conj };
+            } else {
+                // tip = text, hub = center; stored text-first (the pulse enters at the tip).
+                fcurve = psbt_branch(start_pt, conj, 2 * PSBT_CURVE_STEPS);
+            }
+            input_curves.push_back(psbt_snap_curve(fcurve, vc, vcf));
+        }
+
+        // ---- Output rows: label left-justified past the balanced text gap + a two-arc
+        // S-curve from the center bar.
+        std::vector<std::vector<lv_point_t>> output_curves;
+        for (int k = 0; k < n_dest; ++k) {
+            const std::string &s = destination_column[k];
+            float row_cy = row_center_yf(n_dest, k, out_pitch);
+            make_chart_label(s, destination_col_x, (int32_t)lroundf(row_cy) - text_h / 2);
+
+            psbt_fpt conj   = { (float)dest_conj_x, vcf };   // output hub = right end of the center bar
+            psbt_fpt end_pt = { (float)output_end_x, row_cy };
+
+            // Mirror of the input side: radiate from the hub out to the label. Build
+            // tip-first, then reverse so the stored curve runs hub -> tip (the pulse
+            // enters at the hub and travels out to the recipient).
+            std::vector<psbt_fpt> fcurve = psbt_branch(end_pt, conj, 2 * PSBT_CURVE_STEPS);
+            std::reverse(fcurve.begin(), fcurve.end());
+            output_curves.push_back(psbt_snap_curve(fcurve, vc, vcf));
+        }
+
+        // ---- Segment the center bar so the pulse can step across it (straight, at vcf).
+        psbt_fpt cbf_start = { (float)center_bar_x, vcf };
+        psbt_fpt cbf_end   = { (float)dest_conj_x, vcf };
+        std::vector<lv_point_t> center_bar = psbt_snap_curve(
+            { cbf_start,
+              psbt_lerp(cbf_start, cbf_end, 0.25f),
+              psbt_lerp(cbf_start, cbf_end, 0.50f),
+              psbt_lerp(cbf_start, cbf_end, 0.75f),
+              cbf_end }, vc, vcf);
+
+        // ---- Paint the static gray diagram once, then snapshot it as the pristine
+        // restore source the pulse copies back each frame (fringe-free erase).
+        const size_t buf_bytes = LV_CANVAS_BUF_SIZE(W, chart_h, 16, LV_DRAW_BUF_STRIDE_ALIGN);
+        lv_layer_t layer;
+        lv_canvas_init_layer(canvas, &layer);
+        for (const auto &c : input_curves)  psbt_draw_polyline(&layer, c, PSBT_ASSOC_COLOR);
+        psbt_line(&layer, { center_bar_x, vc }, { center_bar_x + center_bar_width, vc }, PSBT_ASSOC_COLOR);
+        for (const auto &c : output_curves) psbt_draw_polyline(&layer, c, PSBT_ASSOC_COLOR);
+        lv_canvas_finish_layer(canvas, &layer);
+
+        void *pristine = lv_malloc(buf_bytes);
+        memcpy(pristine, buf, buf_bytes);
+
+        // ---- Hand the curves to the wall-clock pulse timer (torn down on screen delete).
+        psbt_anim_ctx_t *actx = new psbt_anim_ctx_t();
+        actx->canvas       = canvas;
+        actx->canvas_buf   = buf;
+        actx->pristine_buf = pristine;
+        actx->buf_bytes    = buf_bytes;
+        actx->inputs       = std::move(input_curves);
+        actx->outputs      = std::move(output_curves);
+        actx->center_bar   = std::move(center_bar);
+        const int in_segs  = (int)actx->inputs[0].size() - 1;
+        const int ctr_segs = (int)actx->center_bar.size() - 1;
+        const int out_segs = (int)actx->outputs[0].size() - 1;
+        actx->total_segs   = in_segs + ctr_segs + out_segs;
+        actx->band_segs    = std::max(1, (int)lroundf(PSBT_PULSE_BAND_FRAC * (float)actx->total_segs));
+        actx->reset_at     = actx->total_segs + actx->band_segs
+                             + std::max(1, (int)lroundf(PSBT_PULSE_GAP_FRAC * (float)actx->total_segs));
+        actx->head         = 0.0f;
+        actx->last_tick    = lv_tick_get();
+        actx->timer        = lv_timer_create(psbt_pulse_timer_cb, PSBT_PULSE_TICK_MS, actx);
+        lv_obj_add_event_cb(screen.screen, psbt_cleanup_cb, LV_EVENT_DELETE, actx);
+    }
+
+    bind_screen_navigation(
+        cfg,
+        screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count,
+        NAV_BODY_VERTICAL,
+        0
+    );
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
 void lv_seedsigner_screen_close(void)
 {
     /*Delete all animation*/

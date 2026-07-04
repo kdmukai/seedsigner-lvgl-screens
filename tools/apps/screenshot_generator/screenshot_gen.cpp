@@ -79,6 +79,7 @@ static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"seed_finalize_screen", seed_finalize_screen},
     {"loading_screen", loading_screen},
     {"qr_display_screen", qr_display_screen},
+    {"psbt_overview_screen", psbt_overview_screen},
 };
 
 static screen_fn_t lookup_screen_fn(const std::string &name) {
@@ -90,6 +91,10 @@ struct scenario_def_t {
     std::string name;
     std::string screen;
     json context = json::object();
+    // Generator-only directives (the `screenshot` namespace) — GIF capture params, etc.
+    // A sibling of `context`, so it is NEVER passed to the screen and the interactive
+    // runners (which read only `context`/`variations`) ignore it automatically.
+    json shot = json::object();
 };
 
 static std::string slugify_token(const std::string &in) {
@@ -141,10 +146,19 @@ static int load_scenarios_file(const char *path, std::vector<scenario_def_t> &sc
             base_ctx = screen_def["context"];
         }
 
+        // Generator-only directives live in a `screenshot` sibling of `context` (screen-
+        // level here; a variation may override it below).
+        json base_shot = json::object();
+        if (screen_def.contains("screenshot")) {
+            if (!screen_def["screenshot"].is_object()) return -1;
+            base_shot = screen_def["screenshot"];
+        }
+
         scenario_def_t base;
         base.name = screen_name;
         base.screen = screen_name;
         base.context = base_ctx;
+        base.shot = base_shot;
         scenarios.push_back(base);
 
         if (screen_def.contains("variations")) {
@@ -164,10 +178,19 @@ static int load_scenarios_file(const char *path, std::vector<scenario_def_t> &sc
                     merged.merge_patch(var["context"]);
                 }
 
+                // Per-variation screenshot directives override the screen-level ones
+                // (e.g. only one variation of an otherwise-static screen is animated).
+                json shot = base_shot;
+                if (var.contains("screenshot")) {
+                    if (!var["screenshot"].is_object()) return -1;
+                    shot.merge_patch(var["screenshot"]);
+                }
+
                 scenario_def_t sc;
                 sc.screen = screen_name;
                 sc.name = screen_name + "__" + slugify_token(var_name);
                 sc.context = std::move(merged);
+                sc.shot = std::move(shot);
                 scenarios.push_back(std::move(sc));
             }
         }
@@ -189,6 +212,19 @@ static bool ctx_get_bool(const json &ctx, const char *key, bool defv) {
 static double ctx_get_double(const json &ctx, const char *key, double defv) {
     if (!ctx.is_object() || !ctx.contains(key) || !ctx[key].is_number()) return defv;
     return ctx[key].get<double>();
+}
+
+// GIF capture params come from the `screenshot` namespace; for backward compatibility we
+// fall back to the legacy in-`context` keys (animated / animation_seconds) when absent.
+static bool scenario_is_animated(const scenario_def_t &sc) {
+    if (sc.shot.is_object() && sc.shot.contains("animated") && sc.shot["animated"].is_boolean())
+        return sc.shot["animated"].get<bool>();
+    return ctx_get_bool(sc.context, "animated", false);
+}
+static double scenario_gif_seconds(const scenario_def_t &sc) {
+    if (sc.shot.is_object() && sc.shot.contains("seconds") && sc.shot["seconds"].is_number())
+        return sc.shot["seconds"].get<double>();
+    return ctx_get_double(sc.context, "animation_seconds", GIF_DEFAULT_SECONDS);
 }
 
 static std::vector<std::string> ctx_get_string_array(const json &ctx, const char *key) {
@@ -706,8 +742,8 @@ int main(int argc, char **argv) {
                 }
                 printf("wrote %s\n", out_png);
 
-                bool want_gif = im_bin && ctx_get_bool(scenario.context, "animated", false);
-                double anim_seconds = ctx_get_double(scenario.context, "animation_seconds", GIF_DEFAULT_SECONDS);
+                bool want_gif = im_bin && scenario_is_animated(scenario);
+                double anim_seconds = scenario_gif_seconds(scenario);
                 if (maybe_write_scroll_gif(res_img_dir, file_base, disp, want_gif ? im_bin : NULL, anim_seconds) != 0) {
                     fprintf(stderr, "Failed writing animated GIF for scenario: %s\n", scenario.name.c_str());
                     return 1;

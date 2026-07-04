@@ -82,6 +82,7 @@ void seed_mnemonic_entry_screen(void *ctx_json);
 void seed_finalize_screen(void *ctx_json);
 void loading_screen(void *ctx_json);
 void qr_display_screen(void *ctx_json);
+void psbt_overview_screen(void *ctx_json);
 
 // Push the next frame into a live qr_display_screen (host-driven animation, mirroring
 // the camera-overlay set_* live-update pattern). Re-encodes + repaints the QR in place

@@ -48,11 +48,11 @@
       {
         "name": "long_title",
         "context": {
-          "animated": true,
           "top_nav": {
             "title": "Donaudampfschifffahrtsgesellschaftskapitaensanwaerterpruefungsordnung"
           }
-        }
+        },
+        "screenshot": { "animated": true }
       },
       {
         "name": "intro_text",
@@ -362,10 +362,9 @@
           "text": "Never photograph or scan it into a device that connects to the internet.",
           "button_list": ["I understand"],
           "is_bottom_list": true,
-          "warning_edges": true,
-          "animated": true,
-          "animation_seconds": 1.4
-        }
+          "warning_edges": true
+        },
+        "screenshot": { "animated": true, "seconds": 1.4 }
       },
       {
         "name": "long_text_overflow",
@@ -661,15 +660,84 @@
   },
   "loading_screen": {
     "context": {
-      "text": "Loading…",
-      "animated": true,
-      "animation_seconds": 0.49
+      "text": "Loading…"
     },
+    "screenshot": { "animated": true, "seconds": 0.49 },
     "variations": [
       {
         "name": "no_text",
         "context": {
           "text": ""
+        }
+      }
+    ]
+  },
+  "psbt_overview_screen": {
+    "context": {
+      "top_nav": { "title": "Review Transaction", "show_back_button": true },
+      "btc_amount": { "primary": "841,234", "unit": "sats", "network": "mainnet" },
+      "num_inputs": 3,
+      "destination_addresses": [
+        "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+        "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+      ],
+      "num_self_transfer_outputs": 0,
+      "num_change_outputs": 1,
+      "has_op_return": false,
+      "button": "Review details"
+    },
+    "screenshot": { "animated": true, "seconds": 3.0 },
+    "variations": [
+      {
+        "name": "single_input",
+        "context": {
+          "btc_amount": { "primary": "0.00841234", "unit": "btc", "network": "mainnet" },
+          "num_inputs": 1,
+          "destination_addresses": [ "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" ],
+          "num_change_outputs": 0
+        }
+      },
+      {
+        "name": "many_inputs_many_recipients",
+        "context": {
+          "btc_amount": { "primary": "12,500,000", "unit": "sats", "network": "mainnet" },
+          "num_inputs": 8,
+          "destination_addresses": [
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+            "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+            "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+            "3FZbgi29cpjq2GjdwV8eyHuJJnkLtktZc5",
+            "bc1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6ax"
+          ],
+          "num_change_outputs": 1
+        }
+      },
+      {
+        "name": "self_transfer_full_spend",
+        "context": {
+          "btc_amount": { "primary": "0.05", "unit": "btc", "network": "mainnet" },
+          "num_inputs": 2,
+          "destination_addresses": [],
+          "num_self_transfer_outputs": 1,
+          "num_change_outputs": 0
+        }
+      },
+      {
+        "name": "op_return_and_change",
+        "context": {
+          "num_inputs": 2,
+          "destination_addresses": [ "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" ],
+          "has_op_return": true,
+          "num_change_outputs": 1
+        }
+      },
+      {
+        "name": "testnet",
+        "context": {
+          "btc_amount": { "primary": "841,234", "unit": "tSats", "network": "testnet" },
+          "num_inputs": 2,
+          "destination_addresses": [ "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" ],
+          "num_change_outputs": 1
         }
       }
     ]

@@ -110,6 +110,40 @@ typedef struct {
 // size a shared icon column so left-aligned labels line up. 0 for NULL/empty.
 int32_t inline_icon_width(const char* glyph);
 
+// Reusable Bitcoin-amount readout — the LVGL port of Python components.BtcAmount.
+// Lays out, left-to-right and vertically centered: a circular Bitcoin icon (network-
+// colored) + the amount digits + the unit label. Used by the PSBT overview / detail /
+// change screens and anywhere an on-chain value is shown.
+//
+// This is a pure RENDERER: the amount is FORMATTED BY THE HOST (denomination rules,
+// Decimal quantization, digit grouping, and the unit word all live in the Python
+// business logic / Settings). The component only draws the pre-formatted pieces, so
+// the two platforms can never disagree on how a value rounds or groups.
+//
+//   primary   : the main number, already grouped/quantized (e.g. "0.00841234" or
+//               "8,412,340"). Digits are ASCII, so this renders in the Latin digit
+//               font. Required.
+//   secondary : the btcsatshybrid trailing sats run drawn after a "|" separator
+//               (Python's hybrid denomination), or NULL/empty for the plain modes.
+//   unit      : the translated unit word ("sats" / "btc" / "tBtc" / "tSats"). Locale
+//               font (may be non-Latin). Empty to omit.
+//   icon_color: the Bitcoin icon color = the network color (mainnet accent / testnet /
+//               regtest). SEEDSIGNER_ICON_COLOR_DEFAULT → mainnet ACCENT_COLOR.
+//   primary_small : render `primary` one step smaller (Python drops to font_size-2 for
+//               sats amounts above 1e9 so they still fit).
+//
+// Returns a content-sized, transparent container parented to `parent`; the caller
+// positions it (e.g. drop it into a center-aligned flex column, or lv_obj_align it).
+typedef struct {
+    const char *primary;
+    const char *secondary;
+    const char *unit;
+    uint32_t    icon_color;
+    bool        primary_small;
+} btc_amount_opts_t;
+
+lv_obj_t* btc_amount(lv_obj_t* parent, const btc_amount_opts_t* opts);
+
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);

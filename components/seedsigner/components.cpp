@@ -1253,3 +1253,78 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
     return last_button;
 }
 
+
+
+// ---------------------------------------------------------------------------
+// btc_amount — Bitcoin value readout (LVGL port of Python components.BtcAmount)
+// ---------------------------------------------------------------------------
+// See components.h for the contract. Layout mirrors Python: a network-colored Bitcoin
+// icon, then the amount digits (optionally a "|"-separated hybrid sats tail), then the
+// unit word — laid out in a row and vertically centered against the icon (the tallest
+// element). All value formatting is done by the host; this only draws the pieces.
+//
+// Fonts (Python base-240 size → LVGL; seedsigner_latin_font() rasterizes an exact px
+// size at runtime and scales it by the active profile's px_multiplier):
+//   icon   : Python icon_size 34 → the 36 px baked seedsigner icon font (nearest bake).
+//   digits : Python font_size 24 → seedsigner_latin_font(24) (22 when primary_small,
+//            matching Python's font_size-2 for very large sats amounts). Digits are
+//            ASCII, so the Latin-only font is always sufficient here.
+//   pipe   : Python icon_size-4 = 30, drawn in the network color.
+//   unit   : Python button_font_size+2 = 20 → the 20 px locale title-role font, so a
+//            translated (possibly non-Latin) unit word still shapes correctly.
+lv_obj_t* btc_amount(lv_obj_t* parent, const btc_amount_opts_t* opts) {
+    if (!parent || !opts) return nullptr;
+
+    // Icon color = the network color; the sentinel resolves to the mainnet accent.
+    uint32_t icon_color = (opts->icon_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                              ? (uint32_t)ACCENT_COLOR
+                              : opts->icon_color;
+
+    const lv_font_t* digit_font = seedsigner_latin_font(opts->primary_small ? 22 : 24);
+    const lv_font_t* small_font = seedsigner_latin_font(22);
+    const lv_font_t* pipe_font  = seedsigner_latin_font(30);
+
+    // Content-sized, transparent row; children vertically centered. A tight inter-
+    // element gap (COMPONENT_PADDING/4) matches Python's cur_x step between the icon
+    // and the first digit.
+    lv_obj_t* row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, COMPONENT_PADDING / 4, LV_PART_MAIN);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+    // Helper: a bare, unpadded label in `row` with the given font + color.
+    auto add_label = [&](const lv_font_t* font, uint32_t color, const char* text) {
+        lv_obj_t* lbl = lv_label_create(row);
+        lv_obj_set_style_pad_all(lbl, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(color), LV_PART_MAIN);
+        lv_label_set_text(lbl, text ? text : "");
+        return lbl;
+    };
+
+    // Circular Bitcoin icon, network-colored.
+    add_label(&ICON_LARGE_BUTTON_FONT__SEEDSIGNER, icon_color,
+              SeedSignerIconConstants::BITCOIN_ALT);
+
+    // Primary digits.
+    add_label(digit_font, (uint32_t)BODY_FONT_COLOR, opts->primary);
+
+    // Optional btcsatshybrid tail: "|" separator (network color) + trailing sats.
+    if (opts->secondary && opts->secondary[0]) {
+        add_label(pipe_font, icon_color, "|");
+        add_label(small_font, (uint32_t)BODY_FONT_COLOR, opts->secondary);
+    }
+
+    // Unit word (locale-aware title-role font).
+    if (opts->unit && opts->unit[0]) {
+        add_label(&TOP_NAV_TITLE_FONT, (uint32_t)BODY_FONT_COLOR, opts->unit);
+    }
+
+    return row;
+}
+

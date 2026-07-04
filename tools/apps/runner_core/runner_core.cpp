@@ -30,6 +30,7 @@ const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"seed_finalize_screen", seed_finalize_screen},
     {"loading_screen", loading_screen},
     {"qr_display_screen", qr_display_screen},
+    {"psbt_overview_screen", psbt_overview_screen},
 };
 
 // Display / framebuffer state.
