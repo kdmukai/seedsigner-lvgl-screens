@@ -34,6 +34,7 @@ const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"psbt_address_details_screen", psbt_address_details_screen},
     {"psbt_change_details_screen", psbt_change_details_screen},
     {"psbt_math_screen", psbt_math_screen},
+    {"locale_picker_screen", locale_picker_screen},
 };
 
 // Display / framebuffer state.

@@ -82,6 +82,12 @@ static lv_obj_t* find_button_text_label(lv_obj_t *btn) {
     return find_last_label_child(btn);
 }
 
+// Public accessor (see components.h): the same tagged text label, for bespoke
+// screens that overlay it (the locale picker paints an endonym image over it).
+lv_obj_t* button_text_label(lv_obj_t* btn) {
+    return find_button_text_label(btn);
+}
+
 // Per-button state for list buttons that carry inline icons. Attached to the
 // BUTTON's user_data (plain centered buttons and large_icon_buttons have none →
 // NULL) and freed on LV_EVENT_DELETE. button_set_active() reads it to restore each

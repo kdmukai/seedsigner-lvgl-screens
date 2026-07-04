@@ -42,6 +42,10 @@ list(APPEND srcs
     # root must be on the include path on this target (ESP32 footprint pass).
     "glyph_runs.cpp"
     "stb_glyph_metrics.c"
+    # Locale-picker endonym images: parse the pre-rendered A8 endonym blob and paint
+    # it (recolored to the row's live text color) over a picker row — the "list every
+    # language in its own script with no runtime font" path (locale_picker_screen).
+    "locale_picker.cpp"
     "seedsigner.cpp"
     # Shared LVGL keyboard/text-entry mechanics extracted from the passphrase
     # screen: cursor-styled text entry, key theming + icon recolor, 240px side

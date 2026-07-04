@@ -149,6 +149,7 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/locale_loader.cpp"
   "${SEEDSIGNER_DIR}/glyph_runs.cpp"
   "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
+  "${SEEDSIGNER_DIR}/locale_picker.cpp"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
   "${SEEDSIGNER_DIR}/camera_entropy_overlay.cpp"

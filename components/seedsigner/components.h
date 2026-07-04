@@ -195,6 +195,12 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
 
 void button_set_active(lv_obj_t* lv_button, bool active);
 
+// The tagged TEXT label inside a button built by button()/button_ex() (NULL if it
+// has none). Exposed so a bespoke screen (e.g. the locale picker) can suppress or
+// overlay it: icon/label siblings make child-order lookups unreliable, so this
+// resolves the text label by its internal identity tag.
+lv_obj_t* button_text_label(lv_obj_t* btn);
+
 // Hardware/joystick focus: promote a focused button's too-wide text label to a
 // marquee scroll (true) or clip it back to its start edge (false). Driven from the
 // nav layer because body buttons are kept out of the LVGL focus group, so LVGL
