@@ -11,13 +11,13 @@ and writes <dest>/assets/scenarios/locales.json, the ordered locale index
 (code + display name) the picker is built from.
 
 Font packs are gitignored / regenerable. They must exist under lang-packs/
-before staging; pass --regen-packs to (re)build them first via build_fontpacks
-(needs --gen-bin + fontTools, and, for the CJK corpus packs, the translations
-checkout build_fontpacks defaults to).
+before staging; pass --regen-packs to (re)build them first via the language-packs
+submodule's builder (deps/language-packs; needs its shaping toolchain + the
+translations checkout it carries). This repo no longer owns the pack builder.
 
 Usage:
   stage_assets.py --dest tools/apps/web_runner/build-wasm
-  stage_assets.py --dest site/play --regen-packs --gen-bin <screenshot_gen>
+  stage_assets.py --dest site/play --regen-packs
 """
 
 import argparse
@@ -51,10 +51,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dest", required=True, help="build/serve dir to stage assets/ under")
     ap.add_argument("--regen-packs", action="store_true",
-                    help="rebuild the font packs via build_fontpacks before copying")
-    ap.add_argument("--gen-bin",
-                    default=os.path.join(REPO_ROOT, "tools/apps/screenshot_generator/build/screenshot_gen"),
-                    help="screenshot_gen binary (for --regen-packs)")
+                    help="rebuild the font packs via the language-packs submodule before copying")
     args = ap.parse_args()
 
     dest = os.path.abspath(args.dest)
@@ -64,11 +61,16 @@ def main():
     os.makedirs(packs_dir, exist_ok=True)
 
     if args.regen_packs:
-        cmd = [sys.executable, os.path.join(REPO_ROOT, "tools/i18n/build_fontpacks.py"),
-               "--gen-bin", args.gen_bin]
+        # Build the font packs via the language-packs submodule (this repo no longer
+        # owns the builder). Only the script/CJK PACK_LOCALES need a font pack; the
+        # submodule reads its own locales.h (no screenshot_gen), and its lv_shape fa
+        # oracle is pointed at this repo's LVGL via LVGL_ROOT.
+        builder = os.path.join(REPO_ROOT, "deps/language-packs/tools/build_fontpacks.py")
+        cmd = [sys.executable, builder, "--out-dir", os.path.join(REPO_ROOT, "lang-packs")]
         for loc in PACK_LOCALES:
             cmd += ["--locale", loc]
-        subprocess.run(cmd, check=True)
+        env = dict(os.environ, LVGL_ROOT=os.path.join(REPO_ROOT, "third_party/lvgl"))
+        subprocess.run(cmd, check=True, env=env)
 
     # Scenario catalogs (raw localized JSON — the page expands variations itself).
     src_scen = os.path.join(REPO_ROOT, "tools/scenarios/localized")
@@ -84,7 +86,7 @@ def main():
         src = os.path.join(src_packs, code)
         if not os.path.isdir(src):
             sys.exit(f"stage_assets: missing font pack {src} "
-                     f"(run tools/i18n/build_fontpacks.py or pass --regen-packs)")
+                     f"(run `scripts/ci/ci.sh build-fontpacks`, or pass --regen-packs)")
         out = os.path.join(packs_dir, code)
         os.makedirs(out, exist_ok=True)
         for fn in sorted(os.listdir(src)):

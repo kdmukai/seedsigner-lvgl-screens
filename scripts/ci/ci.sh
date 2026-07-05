@@ -145,14 +145,13 @@ PY
     cmake --build tools/apps/web_runner/build-wasm -j"$NPROC"
 
     # Stage the runtime assets (scenario catalogs + font packs + locale index)
-    # next to the bundle. The script/CJK packs are regenerated from the
-    # translations submodule (present via `submodules: recursive`) with fontTools;
-    # the screenshot_gen built by `build-screenshots` provides the manifest.
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
+    # next to the bundle. The script/CJK packs are regenerated via the language-packs
+    # submodule's builder (reads its own locales.h; no screenshot_gen); its shaping
+    # toolchain comes from install-screenshot-deps and its translations from
+    # `submodules: recursive`.
     python3 tools/apps/web_runner/stage_assets.py \
       --dest tools/apps/web_runner/build-wasm \
-      --regen-packs \
-      --gen-bin tools/apps/screenshot_generator/build/screenshot_gen
+      --regen-packs
     ;;
 
   package-web-runner)

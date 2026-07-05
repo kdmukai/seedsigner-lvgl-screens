@@ -67,13 +67,14 @@ docker run --rm \
             && ccache --show-stats | grep -iE 'hits|misses' || true"
 
 # Stage the runtime assets (scenario catalogs + font packs + locale index) next
-# to the bundle. The packs must already exist under lang-packs/ (regenerate with
-# tools/i18n/build_fontpacks.py); pass --regen-packs below to rebuild them here.
+# to the bundle. The packs must already exist under lang-packs/ (regenerate via the
+# language-packs submodule: `scripts/ci/ci.sh build-fontpacks`); pass REGEN_PACKS=1
+# to have stage_assets rebuild them here (needs the submodule + its shaping toolchain).
 echo "==> Staging runtime assets (scenarios + font packs + locale index)"
 REGEN_PACKS="${REGEN_PACKS:-0}"
 STAGE_ARGS=(--dest "${SCRIPT_DIR}/build-wasm")
 if [ "$REGEN_PACKS" = "1" ]; then
-  STAGE_ARGS+=(--regen-packs --gen-bin "${REPO_ROOT}/tools/apps/screenshot_generator/build/screenshot_gen")
+  STAGE_ARGS+=(--regen-packs)
 fi
 python3 "${SCRIPT_DIR}/stage_assets.py" "${STAGE_ARGS[@]}"
 
