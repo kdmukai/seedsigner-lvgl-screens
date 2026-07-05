@@ -33,11 +33,13 @@ import os
 import subprocess
 import sys
 
-import hb_shaper
-import render_endonym
-import runs_bin
-import shape_inventory
+import mo_compile
 from po_catalog import corpus_chars, iter_translations
+
+# hb_shaper (uharfbuzz), render_endonym (Pillow/libraqm), runs_bin and shape_inventory
+# are imported LAZILY inside the font-building functions below. That keeps the pure
+# top-level (and the --catalogs-only fast path) free of the HarfBuzz/ICU/Pillow
+# shaping stack — a .mo recompile needs none of it.
 
 # This file lives at tools/i18n/; repo root is two levels up.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -146,6 +148,49 @@ def sha256_file(path):
     return h.hexdigest()
 
 
+def catalog_locales(translations_dir):
+    """Every locale that ships a translation catalog under
+    <translations_dir>/l10n/<locale>/LC_MESSAGES/messages.po. Superset of the
+    font-pack locales: it also includes the baked-Latin locales (es, fr, de, cs, …)
+    that need no font but DO ship translations — those get a .mo-only pack."""
+    l10n = os.path.join(translations_dir, "l10n")
+    if not os.path.isdir(l10n):
+        return []
+    out = []
+    for name in sorted(os.listdir(l10n)):
+        if os.path.exists(os.path.join(l10n, name, "LC_MESSAGES", "messages.po")):
+            out.append(name)
+    return out
+
+
+def compile_mo(translations_dir, locale, loc_out):
+    """Compile the locale's catalog into loc_out/LC_MESSAGES/messages.mo — the
+    gettext-standard path CPython stdlib gettext (Pi) and the on-device pure-Python
+    reader (seedsigner/compat/_mo.py, ESP32) both read. Co-locating it makes the
+    pack the ONE self-contained resource (script rendering + translations). Returns
+    the manifest fragment (file/bytes/sha256), or {} when the locale ships no
+    catalog. See mo_compile.py (no Babel/msgfmt dependency)."""
+    po = os.path.join(translations_dir, "l10n", locale, "LC_MESSAGES", "messages.po")
+    if not os.path.exists(po):
+        return {}
+    mo = os.path.join(loc_out, "LC_MESSAGES", "messages.mo")
+    nbytes = mo_compile.compile_po_to_mo(po, mo)
+    return {"file": "LC_MESSAGES/messages.mo", "bytes": nbytes, "sha256": sha256_file(mo)}
+
+
+def emit_catalog_only_pack(translations_dir, locale, out_dir):
+    """A baked-Latin locale (Español, Français, …) needs no font/endonym — the baked
+    Western floor renders it and its native name is live text — but DOES ship
+    translations. Emit a pack dir carrying just its catalog, so the uniform
+    lang-packs/<locale>/ layout delivers every locale's .mo (the app reads it via
+    gettext localedir=lang-packs). No manifest.json: it is not a font pack, so
+    discover_locale_packs()/list_available_locales() correctly skip it (the app
+    already knows baked-Latin locales from its own ALL_LOCALES)."""
+    loc_out = os.path.join(out_dir, locale)
+    os.makedirs(loc_out, exist_ok=True)
+    return compile_mo(translations_dir, locale, loc_out)
+
+
 def manifest_locales(gen_bin, only):
     """locale -> {source_family, chain} from the render layer's manifest,
     restricted to `only` if given (else every locale the manifest declares)."""
@@ -208,6 +253,7 @@ def emit_endonym(name, source_family, loc_out, assets_dir, endonym_text, sizes):
     role fonts: SemiBold for the OpenSans script packs, Regular for Noto."""
     if not endonym_text or not sizes:
         return {}
+    import render_endonym  # Pillow/libraqm — imported only when actually rendering
     font_path = source_ttf(source_family, assets_dir)
     if not os.path.exists(font_path):
         print(f"[{name}] endonym SKIP: source TTF not found: {font_path}", file=sys.stderr)
@@ -215,7 +261,7 @@ def emit_endonym(name, source_family, loc_out, assets_dir, endonym_text, sizes):
     return render_endonym.render_endonym_images(endonym_text, font_path, sizes, loc_out)
 
 
-def build_block_range_pack(name, entry, out_dir, assets_dir,
+def build_block_range_pack(name, entry, out_dir, assets_dir, translations_dir,
                            endonym_text="", endonym_sizes=None):
     """Build a same-size SCRIPT pack: OpenSans subset to a fixed Unicode block
     (NOT the .po corpus), two weights to match the baked Western baseline this
@@ -245,6 +291,7 @@ def build_block_range_pack(name, entry, out_dir, assets_dir,
 
     endonym_images = emit_endonym(name, entry["source_family"], loc_out, assets_dir,
                                   endonym_text, endonym_sizes or [])
+    catalog = compile_mo(translations_dir, name, loc_out)
     manifest_out = {
         "locale": name,
         "source_family": entry["source_family"],
@@ -254,6 +301,7 @@ def build_block_range_pack(name, entry, out_dir, assets_dir,
         "endonym": endonym_text,
         "endonym_images": endonym_images,
         "fonts": fonts_meta,
+        "catalog": catalog,
     }
     with open(os.path.join(loc_out, "manifest.json"), "w") as f:
         json.dump(manifest_out, f, indent=2)
@@ -288,6 +336,9 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
     glyph-id. Subset-then-shape with HarfBuzz (hb_shaper); classify each string
     into plain/segmented/unsupported (shape_inventory). Writes
     lang-packs/<name>/{<name>.ttf, runs.json, manifest.json}."""
+    import hb_shaper       # uharfbuzz + ICU shaping stack — only for complex packs
+    import runs_bin
+    import shape_inventory
     po = os.path.join(translations_dir, "l10n", name, "LC_MESSAGES", "messages.po")
     if not os.path.exists(po):
         print(f"[{name}] SKIP: no catalog at {po}", file=sys.stderr)
@@ -378,10 +429,12 @@ def build_complex_shaping_pack(name, entry, out_dir, assets_dir, translations_di
 
     endonym_images = emit_endonym(name, entry["source_family"], loc_out, assets_dir,
                                   endonym_text, endonym_sizes or [])
+    catalog = compile_mo(translations_dir, name, loc_out)
     manifest_out = {
         "locale": name,
         "source_family": entry["source_family"],
         "chain": entry["chain"],
+        "catalog": catalog,
         "shaping": True,
         "script": script,
         "rtl": bool(entry.get("rtl")),
@@ -439,7 +492,35 @@ def main():
     ap.add_argument("--shaper-bin",
                     default=os.path.join(REPO_ROOT, "tools/i18n/shaper/build/lv_shape"),
                     help="lv_shape binary (Arabic/Persian shaping oracle); built on demand if absent")
+    ap.add_argument("--catalogs-only", action="store_true",
+                    help="(re)compile just the .mo catalogs — embed into existing packs + emit "
+                         ".mo-only baked-Latin packs — WITHOUT rebuilding fonts (needs no "
+                         "HarfBuzz/ICU/screenshot_gen; translations change more often than fonts)")
     args = ap.parse_args()
+
+    # Fast path: catalogs only. Add/refresh LC_MESSAGES/messages.mo for every locale
+    # that ships a catalog — font packs (an existing lang-packs/<locale>/manifest.json)
+    # get the .mo dropped in + their manifest "catalog" refreshed; baked-Latin locales
+    # (no font pack) get a .mo-only pack. A clean full build below embeds the same .mo.
+    if args.catalogs_only:
+        n_font = n_only = 0
+        for locale in catalog_locales(args.translations_dir):
+            manifest_path = os.path.join(args.out_dir, locale, "manifest.json")
+            if os.path.exists(manifest_path):
+                cat = compile_mo(args.translations_dir, locale, os.path.join(args.out_dir, locale))
+                with open(manifest_path) as f:
+                    m = json.load(f)
+                m["catalog"] = cat
+                with open(manifest_path, "w") as f:
+                    json.dump(m, f, indent=2)
+                print(f"[{locale}] + catalog {cat.get('bytes', 0)}B  (font pack)")
+                n_font += 1
+            else:
+                cat = emit_catalog_only_pack(args.translations_dir, locale, args.out_dir)
+                print(f"[{locale}] catalog-only pack {cat.get('bytes', 0)}B")
+                n_only += 1
+        print(f"catalogs: {n_font} embedded into font packs, {n_only} .mo-only packs")
+        return 0
 
     locales = manifest_locales(args.gen_bin, args.locale)
     if not locales:
@@ -468,7 +549,7 @@ def main():
         # Script packs (Greek/Cyrillic/Vietnamese): block-range subset, no .po.
         if entry.get("unicode_range"):
             build_block_range_pack(name, entry, args.out_dir, args.assets_dir,
-                                   endonym_text, sizes)
+                                   args.translations_dir, endonym_text, sizes)
             continue
 
         po = os.path.join(args.translations_dir, "l10n", name, "LC_MESSAGES", "messages.po")
@@ -527,10 +608,12 @@ def main():
 
         endonym_images = emit_endonym(name, entry["source_family"], loc_out,
                                       args.assets_dir, endonym_text, sizes)
+        catalog = compile_mo(args.translations_dir, name, loc_out)
         manifest_out = {
             "locale": name,
             "source_family": entry["source_family"],
             "chain": entry["chain"],
+            "catalog": catalog,
             # rtl drives layout mirroring for fa (Arabic/Persian); LTR for CJK. This
             # branch previously omitted it, so fa's on-disk manifest lost its rtl —
             # now emitted so the runtime can render this pack from the manifest alone.
@@ -550,6 +633,15 @@ def main():
         with open(os.path.join(loc_out, "manifest.json"), "w") as f:
             json.dump(manifest_out, f, indent=2)
         print(f"[{name}] {name}.ttf  ({len(symbols)} glyphs, {os.path.getsize(out_ttf)} bytes)")
+
+    # Baked-Latin locales (es, fr, de, cs, …) ship translations but need no font pack
+    # (baked Western floor + live-text name): emit their .mo-only packs so every
+    # translated locale's catalog is on-device in the uniform lang-packs/<locale>/ layout.
+    for locale in catalog_locales(args.translations_dir):
+        if locale in locales:
+            continue  # already embedded above in its font pack
+        cat = emit_catalog_only_pack(args.translations_dir, locale, args.out_dir)
+        print(f"[{locale}] catalog-only pack {cat.get('bytes', 0)}B")
 
     return 0
 
