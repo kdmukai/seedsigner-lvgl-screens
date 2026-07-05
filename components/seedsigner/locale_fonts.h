@@ -86,6 +86,34 @@ struct LocaleFontEntry {
 const std::vector<LocaleFontEntry>& locale_font_table();
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale);
 
+// ---------------------------------------------------------------------------
+// Runtime-registered locales (SD-card language packs).
+// ---------------------------------------------------------------------------
+//
+// locale_font_table() above is the built-in DEFAULT set. A host can ALSO register
+// locales discovered at runtime — a language pack copied onto the SD card whose
+// code is not compiled in — so a brand-new language works with NO firmware
+// rebuild. A runtime entry is synthesized from the pack's own manifest.json (see
+// ss_register_pack_manifest in locale_loader.h) and takes precedence over a
+// compiled entry with the same code (an SD pack can override a stale baked
+// default). find_locale_font_entry() and supported_locales_json() both consult
+// these, so the whole load path (ss_load_locale / ss_locale_pack_files) works for
+// runtime locales unchanged — the smallest possible change to the proven loader.
+
+// The canonical role/size preset for a chain. A runtime pack that does not carry
+// its own role sizes inherits exactly what the compiled packs use for that chain
+// (Primary = CJK legibility bump; Fallback = same-size as the baked floor), so
+// the two sources agree.
+std::vector<LocaleRoleSize> default_locale_roles(ChainRole chain);
+
+// Add or replace (by locale code) a runtime locale entry. Returns false only when
+// the entry is unusable (empty locale). Idempotent per code: re-registering the
+// same code replaces the prior entry.
+bool register_runtime_locale_entry(const LocaleFontEntry& entry);
+
+// Drop all runtime-registered locale entries (e.g. before a fresh SD rescan).
+void clear_runtime_locale_entries();
+
 // Render px for a role under a locale entry at the given PX_MULTIPLIER (0 if the
 // locale's font does not serve that role). Both the manifest (what px the host
 // rasterizes each role at) and the registration-seam size guard use this, so the

@@ -22,6 +22,7 @@
 #include "seedsigner.h"
 #include "input_profile.h"
 #include "locale_loader.h"
+#include "locale_picker.h"   // locale_picker_set_image_provider (endonym images)
 
 #include "runner_core.h"
 #include "runner_sdl.h"
@@ -60,6 +61,26 @@ static std::string g_cur_json;
 // orchestration as every other host. Cleared after each load (the loader keeps its
 // own copies of the buffers it registers).
 static std::map<std::string, std::vector<uint8_t>> g_staged_blobs;
+
+// Endonym images for the locale picker (locale_picker_screen). Unlike the font
+// staging above — one active locale at a time, filenames unique within it — the
+// picker needs MANY locales' endonym images resident at once, and they share a
+// filename (every pack has an "endonym_<height>.bin"). So this staging is keyed by
+// "<locale>/<file>", and JS stages one per image row before rendering the picker.
+// The picker copies each blob into its own A8 buffer at attach time, so these need
+// only outlive the render call; kept cached (tiny) rather than cleared per render.
+static std::map<std::string, std::vector<uint8_t>> g_endonym_blobs;
+
+static bool endonym_provider(const char* locale, const char* file,
+                             const uint8_t** bytes, size_t* len, void* user) {
+    auto* staged = static_cast<std::map<std::string, std::vector<uint8_t>>*>(user);
+    std::string key = std::string(locale ? locale : "") + "/" + (file ? file : "");
+    auto it = staged->find(key);
+    if (it == staged->end()) return false;
+    *bytes = it->second.data();
+    *len   = it->second.size();
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // Result callbacks → JavaScript
@@ -205,6 +226,16 @@ EMSCRIPTEN_KEEPALIVE void ss_stage_blob(const char* file, const uint8_t* data, i
     g_staged_blobs[file] = std::vector<uint8_t>(data, data + len);
 }
 
+// Stage one endonym image for the picker, keyed by "<locale>/<file>" (see
+// g_endonym_blobs). JS calls this once per image row before ss_load_screen(
+// "locale_picker_screen", ...); the picker then fetches them via endonym_provider.
+EMSCRIPTEN_KEEPALIVE void ss_stage_endonym(const char* locale, const char* file,
+                                           const uint8_t* data, int len) {
+    if (!locale || !file || !data || len <= 0) return;
+    g_endonym_blobs[std::string(locale) + "/" + file] =
+        std::vector<uint8_t>(data, data + len);
+}
+
 // Provider that feeds the shared loader from the staged blobs, keyed by filename
 // (the loader requests exactly the files ss_pack_files listed).
 static bool staged_pack_provider(const char* /*locale*/, const char* file,
@@ -289,6 +320,10 @@ int main() {
 
     runner_core::init(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     create_sdl_surface(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+    // The locale picker fetches endonym images through the same provider seam as
+    // the font loader; back it with the JS-staged, locale-keyed blob store.
+    locale_picker_set_image_provider(endonym_provider, &g_endonym_blobs);
 
     // Default to hardware (keypad) mode; the page switches to touch on touch
     // devices and via the input-mode toggle.

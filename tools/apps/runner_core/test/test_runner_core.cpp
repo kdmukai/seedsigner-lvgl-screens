@@ -233,6 +233,72 @@ int main(int argc, char** argv) {
               "english baseline renders after locale reap (no dangling font)");
     }
 
+    // -----------------------------------------------------------------------
+    // Runtime (SD-card) pack registration: a language pack whose code is NOT
+    // compiled in becomes loadable from its own manifest.json alone — the
+    // "add a language by copying it onto the SD card, no firmware rebuild" path.
+    // We assert the DISCOVERY half here (which files a runtime locale needs is
+    // driven entirely by the registered manifest, so ss_load_locale would then
+    // fetch them); the byte-load half is the same provider path the real-pack
+    // tests above already exercise. Also asserts fail-closed parsing (hostile
+    // input on a user-writable partition) and compiled-default override.
+    // -----------------------------------------------------------------------
+    printf("\n-- runtime SD-pack manifest registration --\n");
+    {
+        ss_clear_pack_manifests();
+        auto reg = [](const std::string& j) {
+            return ss_register_pack_manifest(j.data(), j.size());
+        };
+        auto files = [](const char* loc) {
+            return std::string(ss_locale_pack_files(loc));  // copy: static buffer
+        };
+
+        // A code absent from BOTH the compiled table and the runtime set: no files.
+        check(files("zz_Test") == "[]",
+              "unknown locale needs no pack files before registration");
+
+        // Primary (CJK-style) pack: one <code>.ttf serves every role.
+        check(reg(R"({"locale":"zz_Test","source_family":"NotoSansSC","chain":"primary"})"),
+              "register primary runtime pack");
+        check(files("zz_Test") == "[\"zz_Test.ttf\"]",
+              "runtime primary pack drives file discovery (no recompile)");
+
+        // Fallback (block-range) pack: Regular + SemiBold weights.
+        check(reg(R"({"locale":"yy","source_family":"OpenSans","chain":"fallback","unicode_range":"U+0500-052F"})"),
+              "register fallback runtime pack");
+        check(files("yy") == "[\"yy_regular.ttf\",\"yy_semibold.ttf\"]",
+              "runtime fallback pack yields two weight files");
+
+        // Complex-script pack: also needs runs.bin.
+        check(reg(R"({"locale":"xx","source_family":"NotoSansDevanagari","chain":"primary","shaping":true,"script":"Deva"})"),
+              "register shaping runtime pack");
+        {
+            std::string f = files("xx");
+            check(f.find("xx.ttf") != std::string::npos &&
+                  f.find("runs.bin") != std::string::npos,
+                  "runtime shaping pack requests runs.bin");
+        }
+
+        // Fail closed: malformed / incomplete manifests register nothing.
+        check(!reg("{ this is not json"), "malformed JSON rejected");
+        check(!reg(R"({"source_family":"NotoSansSC","chain":"primary"})"),
+              "manifest without locale rejected");
+        check(!reg(R"({"locale":"","source_family":"X"})"), "empty locale rejected");
+        check(files("nope") == "[]", "a rejected manifest leaves no entry");
+
+        // A runtime entry OVERRIDES a compiled default of the same code.
+        check(reg(R"({"locale":"ru","source_family":"NotoSansSC","chain":"primary","shaping":true,"script":"Cyrl"})"),
+              "register runtime override for a compiled locale");
+        check(files("ru").find("runs.bin") != std::string::npos,
+              "runtime entry overrides the compiled 'ru' descriptor");
+
+        // Clear: runtime entries vanish, compiled defaults are intact.
+        ss_clear_pack_manifests();
+        check(files("zz_Test") == "[]", "clear drops runtime packs");
+        check(files("ru").find("runs.bin") == std::string::npos,
+              "compiled 'ru' descriptor restored after clear");
+    }
+
     printf("\n%s (%d failure(s))\n", failures == 0 ? "ALL OK" : "FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

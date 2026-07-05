@@ -129,6 +129,49 @@ bool ss_load_locale(const char* locale_c, ss_pack_provider_t provider, void* use
     return true;
 }
 
+bool ss_register_pack_manifest(const char* manifest_json, size_t len) {
+    if (!manifest_json || len == 0) return false;
+
+    // Fail closed on anything malformed: a user-writable cross-platform partition
+    // can hand us truncated / non-JSON / half-copied manifests. allow_exceptions
+    // = false turns a parse error into a discarded value, not a throw.
+    json m = json::parse(manifest_json, manifest_json + len, nullptr, /*allow_exceptions=*/false);
+    if (m.is_discarded() || !m.is_object()) return false;
+
+    const std::string locale = m.value("locale", std::string());
+    const std::string source_family = m.value("source_family", std::string());
+    if (locale.empty() || source_family.empty()) return false;
+
+    LocaleFontEntry entry;
+    entry.locale = locale;
+    entry.source_family = source_family;
+    entry.chain_role = (m.value("chain", std::string("primary")) == "fallback")
+                           ? ChainRole::Fallback : ChainRole::Primary;
+    entry.unicode_range = m.value("unicode_range", std::string());
+    entry.rtl = m.value("rtl", false);
+    entry.shaping = m.value("shaping", false);
+    entry.script = m.value("script", std::string());
+
+    // Role sizes: honor an explicit self-describing "roles":[{role,base_size}]
+    // array if the manifest carries one; otherwise inherit the canonical preset
+    // for the chain (identical to how the compiled packs are sized).
+    if (m.contains("roles") && m["roles"].is_array()) {
+        for (const auto& r : m["roles"]) {
+            TextRole role;
+            if (!text_role_from_name(r.value("role", std::string()), role)) continue;
+            const int base = r.value("base_size", 0);
+            if (base > 0) entry.roles.push_back({role, base});
+        }
+    }
+    if (entry.roles.empty()) entry.roles = default_locale_roles(entry.chain_role);
+
+    return register_runtime_locale_entry(entry);
+}
+
+void ss_clear_pack_manifests(void) {
+    clear_runtime_locale_entries();
+}
+
 const char* ss_locale_pack_files(const char* locale_c) {
     static std::string out;
     const std::string locale = locale_c ? locale_c : "";

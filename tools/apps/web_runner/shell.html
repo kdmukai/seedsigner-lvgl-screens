@@ -347,6 +347,8 @@
     app.packFiles  = Module.cwrap('ss_pack_files', 'string', ['string']);
     app.stageBlob  = Module.cwrap('ss_stage_blob', null, ['string', 'number', 'number']);
     app.loadStaged = Module.cwrap('ss_load_staged', 'number', ['string']);
+    // Locale picker: stage one endonym image per image row, keyed by (locale, file).
+    app.stageEndonym = Module.cwrap('ss_stage_endonym', null, ['string', 'string', 'number', 'number']);
     app.ready = true;
     relayout();
     initUI();
@@ -429,6 +431,7 @@
     var canvas    = document.getElementById('canvas');
     var catalog   = {};   // expanded catalog for the active locale (loaded async)
     var fontCache = {};   // 'locale/file' -> Uint8Array; lets re-register skip re-fetch
+    var endonymCache = {}; // 'locale/file' -> Uint8Array|null; picker endonym images (null = missing)
     var pendingState = parseUrl();   // deep-link state to restore on first load
     // Cache-bust runtime-fetched assets (scenarios, fonts, locale index) per page
     // load. GitHub Pages sends a fixed Cache-Control we can't override, so without
@@ -465,10 +468,58 @@
     function setError(msg, ok) { errBox.textContent = msg || ' '; errBox.className = ok ? 'ok' : ''; }
     function render(jsonText) {
       if (!app.ready) return;
+      // The locale picker draws each pack language's name from a pre-rendered
+      // endonym IMAGE (no runtime font); those blobs must be staged before the
+      // screen builds, so it takes the async path below.
+      if (screenSel.value === 'locale_picker_screen') { renderPicker(jsonText); return; }
       var rc = app.loadScreen(screenSel.value, jsonText);
       if (rc === 1) setError('Rendered ✓', true);
       else if (rc === 0) setError('Unknown screen: ' + screenSel.value, false);
       else setError('Screen rejected the JSON (kept previous render).', false);
+    }
+
+    // Stage the picker's endonym images, then load it. Each image row names its
+    // blob explicitly ("image":"endonym_320.bin") or asks for the active height
+    // ("image":true → endonym_<displayH>.bin — the SAME name the C screen derives
+    // from active_profile().height). Fetch every needed blob up front (await),
+    // then stage + load in one flush (mirrors applyLocaleFonts). A missing blob is
+    // cached as null and skipped — the row falls back to its live text.
+    async function renderPicker(jsonText) {
+      try {
+        var ctx = JSON.parse(jsonText);
+        var rows = (ctx && ctx.rows) || [];
+        var H = app.displayH;
+        var needed = [];  // {locale, file}
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          if (!row || !row.locale || !row.image) continue;   // live text row
+          var file = (typeof row.image === 'string') ? row.image : ('endonym_' + H + '.bin');
+          needed.push({ locale: row.locale, file: file });
+        }
+        for (var j = 0; j < needed.length; j++) {
+          var key = needed[j].locale + '/' + needed[j].file;
+          if (endonymCache[key] === undefined) {
+            var resp = await fetch('assets/lang-packs/' + needed[j].locale + '/' + needed[j].file + ASSET_BUST);
+            endonymCache[key] = resp.ok ? new Uint8Array(await resp.arrayBuffer()) : null;
+          }
+        }
+        // --- no awaits past this point (stage + load in one microtask flush) ---
+        for (var k = 0; k < needed.length; k++) {
+          var kk = needed[k].locale + '/' + needed[k].file;
+          var bytes = endonymCache[kk];
+          if (!bytes) continue;
+          var ptr = Module._malloc(bytes.length);
+          Module.HEAPU8.set(bytes, ptr);   // re-access HEAPU8 post-malloc (growth-safe)
+          app.stageEndonym(needed[k].locale, needed[k].file, ptr, bytes.length);
+          Module._free(ptr);               // C side copied the bytes
+        }
+        var rc = app.loadScreen('locale_picker_screen', jsonText);
+        if (rc === 1) setError('Rendered ✓', true);
+        else if (rc === 0) setError('Unknown screen: locale_picker_screen', false);
+        else setError('Screen rejected the JSON (kept previous render).', false);
+      } catch (e) {
+        setError('Picker: ' + (e && e.message ? e.message : e), false);
+      }
     }
     function applyEditor() {
       try { JSON.parse(editor.value); }

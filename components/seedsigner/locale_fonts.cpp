@@ -120,7 +120,40 @@ const std::vector<LocaleFontEntry>& locale_font_table() {
     return table;
 }
 
+// ---------------------------------------------------------------------------
+// Runtime-registered locales (SD-card packs). See locale_fonts.h.
+// ---------------------------------------------------------------------------
+static std::vector<LocaleFontEntry>& runtime_entries() {
+    static std::vector<LocaleFontEntry> entries;
+    return entries;
+}
+
+std::vector<LocaleRoleSize> default_locale_roles(ChainRole chain) {
+    // 1:1 with the compiled table: every Primary entry uses the CJK bump, every
+    // Fallback entry the same-size baseline preset.
+    return chain == ChainRole::Primary ? cjk_primary_roles()
+                                       : opensans_fallback_roles();
+}
+
+bool register_runtime_locale_entry(const LocaleFontEntry& entry) {
+    if (entry.locale.empty()) return false;
+    std::vector<LocaleFontEntry>& entries = runtime_entries();
+    for (LocaleFontEntry& e : entries) {
+        if (e.locale == entry.locale) { e = entry; return true; }  // replace by code
+    }
+    entries.push_back(entry);
+    return true;
+}
+
+void clear_runtime_locale_entries() {
+    runtime_entries().clear();
+}
+
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale) {
+    // Runtime (SD) entries win over the compiled default for the same code.
+    for (const LocaleFontEntry& e : runtime_entries()) {
+        if (e.locale == locale) return &e;
+    }
     for (const LocaleFontEntry& e : locale_font_table()) {
         if (e.locale == locale) return &e;
     }
@@ -156,7 +189,21 @@ std::string supported_locales_json() {
     out["profile"] = { {"width", profile.width}, {"height", profile.height} };
     out["locales"] = json::array();
 
+    // Emit runtime (SD) entries first; a compiled entry with the same code is then
+    // skipped (the runtime pack overrides it). This is what lets ss_load_locale /
+    // ss_locale_pack_files serve a not-compiled-in locale — they read this JSON.
+    std::vector<const LocaleFontEntry*> entries;
+    for (const LocaleFontEntry& e : runtime_entries()) entries.push_back(&e);
     for (const LocaleFontEntry& e : locale_font_table()) {
+        bool overridden = false;
+        for (const LocaleFontEntry& r : runtime_entries()) {
+            if (r.locale == e.locale) { overridden = true; break; }
+        }
+        if (!overridden) entries.push_back(&e);
+    }
+
+    for (const LocaleFontEntry* ep : entries) {
+        const LocaleFontEntry& e = *ep;
         json locale_obj;
         locale_obj["locale"] = e.locale;
         locale_obj["source_family"] = e.source_family;

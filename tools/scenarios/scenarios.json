@@ -876,5 +876,36 @@
         }
       }
     ]
+  },
+  "locale_picker_screen": {
+    "context": {
+      "top_nav": {"title": "Language", "show_back_button": true},
+      "active_locale": "en",
+      "rows": [
+        {"locale": "en", "english": "English", "native": "English"},
+        {"locale": "pt_BR", "english": "Brazilian Portuguese", "native": "Português do Brasil"},
+        {"locale": "ca", "english": "Catalan", "native": "Català"},
+        {"locale": "cs", "english": "Czech", "native": "Čeština"},
+        {"locale": "nl", "english": "Dutch", "native": "Nederlands"},
+        {"locale": "fr", "english": "French", "native": "Français"},
+        {"locale": "de", "english": "German", "native": "Deutsch"},
+        {"locale": "el", "english": "Greek", "native": "Ελληνικά", "image": true},
+        {"locale": "hi", "english": "Hindi", "native": "हिन्दी", "image": true},
+        {"locale": "id", "english": "Indonesian", "native": "Bahasa Indonesia"},
+        {"locale": "it", "english": "Italian", "native": "Italiano"},
+        {"locale": "ja", "english": "Japanese", "native": "日本語", "image": true},
+        {"locale": "ko", "english": "Korean", "native": "한국어", "image": true},
+        {"locale": "no", "english": "Norwegian", "native": "Norsk"},
+        {"locale": "fa", "english": "Persian", "native": "فارسی", "image": true},
+        {"locale": "pl", "english": "Polish", "native": "Polski"},
+        {"locale": "ru", "english": "Russian", "native": "Русский", "image": true},
+        {"locale": "zh_Hans_CN", "english": "Simplified Chinese", "native": "简体中文", "image": true},
+        {"locale": "es", "english": "Spanish", "native": "Español"},
+        {"locale": "th", "english": "Thai", "native": "ไทย", "image": true},
+        {"locale": "tr", "english": "Turkish", "native": "Türkçe"},
+        {"locale": "ur", "english": "Urdu", "native": "اردو", "image": true},
+        {"locale": "vi", "english": "Vietnamese", "native": "Tiếng Việt", "image": true}
+      ]
+    }
   }
 }

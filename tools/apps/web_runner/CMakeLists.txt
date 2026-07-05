@@ -128,7 +128,9 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/locale_loader.cpp"
   # Complex-script (Devanagari/Thai/Nastaliq) glyph-run render layer.
   "${SEEDSIGNER_DIR}/glyph_runs.cpp"
-  "${SEEDSIGNER_DIR}/stb_glyph_metrics.c")
+  "${SEEDSIGNER_DIR}/stb_glyph_metrics.c"
+  # Locale-picker endonym images (native-script row images, no runtime font).
+  "${SEEDSIGNER_DIR}/locale_picker.cpp")
 
 set(RUNNER_COMMON_SOURCES
   "${COMMON_DIR}/runner_core.cpp"
@@ -199,7 +201,7 @@ target_link_options(web_runner PRIVATE
   -fexceptions
   -O2
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','HEAPU8']"
-  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_pack_files','_ss_stage_blob','_ss_load_staged','_ss_reload','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_pack_files','_ss_stage_blob','_ss_stage_endonym','_ss_load_staged','_ss_reload','_malloc','_free']"
   "--shell-file" "${CMAKE_CURRENT_LIST_DIR}/shell.html")
 
 # Force a relink when the shell changes.

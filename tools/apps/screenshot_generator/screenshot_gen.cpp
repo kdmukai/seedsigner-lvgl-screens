@@ -25,6 +25,7 @@
 #include "gui_constants.h"
 #include "locale_fonts.h"
 #include "locale_loader.h"
+#include "locale_picker.h"
 #include "seedsigner.h"
 #include "input_profile.h"
 #include "shape_spike.h"
@@ -83,6 +84,7 @@ static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"psbt_address_details_screen", psbt_address_details_screen},
     {"psbt_change_details_screen", psbt_change_details_screen},
     {"psbt_math_screen", psbt_math_screen},
+    {"locale_picker_screen", locale_picker_screen},
 };
 
 static screen_fn_t lookup_screen_fn(const std::string &name) {
@@ -650,6 +652,13 @@ int main(int argc, char **argv) {
     // Static screenshots: disable animations (e.g. the text-entry cursor blink)
     // so each frame is deterministic and the cursor is always captured.
     seedsigner_lvgl_set_static_render(true);
+
+    // The locale picker fetches endonym images (endonym_<h>.bin) through the same
+    // byte-provider seam as the font loader — reuse the filesystem provider so a
+    // locale_picker_screen scenario renders its native-script rows from lang-packs/.
+    static FsPackCtx picker_fs_ctx;
+    picker_fs_ctx.font_dir = font_dir;
+    locale_picker_set_image_provider(fs_pack_provider, &picker_fs_ctx);
 
     json manifest_resolutions = json::array();
 

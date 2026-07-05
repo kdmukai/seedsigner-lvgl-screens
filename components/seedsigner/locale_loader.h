@@ -64,6 +64,25 @@ void ss_unload_locale(void);
 // to free immediately; otherwise the retired memory is reclaimed at the next swap.
 void ss_reap_retired(void);
 
+// Register a language pack discovered at runtime from its own manifest.json —
+// e.g. a pack a user copied onto the SD card whose code is not compiled in.
+// Parses the manifest BYTES (the host supplies them via its normal pack I/O;
+// this never opens a file) into a locale render descriptor and adds it to the
+// runtime locale set, so ss_load_locale() / ss_locale_pack_files() then work for
+// that locale with NO firmware rebuild. `manifest_json` need not be
+// NUL-terminated; `len` bounds it. FAILS CLOSED: returns false and registers
+// nothing on malformed JSON or a missing required field (`locale` /
+// `source_family`), so a corrupt or half-copied pack on a user-writable partition
+// is simply skipped, never crashing discovery or the picker. A runtime entry
+// overrides a compiled default with the same locale code. The runtime derives
+// per-role px from the pack's `chain` (or an explicit self-describing `roles`
+// array if the manifest carries one), reusing the same policy the compiled packs
+// use — see default_locale_roles() / locale_role_render_px().
+bool ss_register_pack_manifest(const char* manifest_json, size_t len);
+
+// Drop every runtime-registered pack (e.g. before re-scanning the SD card).
+void ss_clear_pack_manifests(void);
+
 // JSON array of the pack files `locale` needs ("["ur.ttf","runs.bin"]", or
 // "["vi_regular.ttf","vi_semibold.ttf"]", or "[]" for a baked-floor locale).
 // For hosts that must PRE-FETCH every blob before loading (e.g. the browser, whose
