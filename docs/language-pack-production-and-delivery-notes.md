@@ -45,22 +45,28 @@ Full rationale + rollout sequence: the approved plan
   builder (+ LVGL v9.5.0 for `lv_shape`), `scripts/build_packs.sh`, determinism pins
   (`--no-recalc-timestamp`, `PYTHONHASHSEED=0`, exact `Pillow`/tool pins), and CI
   (build-twice determinism gate + parity gate). Reproducibility verified.
-- **Phase 2b (screens, partial)** — vendored `locales.h` here and refactored
+- **Phase 2b (screens) — full cutover** — vendored `locales.h` here and refactored
   `locale_font_table()` to **generate** its rows from it via the `SS_LOCALE` X-macro
-  (behavior-preserving: `--dump-locales` byte-unchanged); added the knowledge doc; and
-  rewrote this note.
+  (behavior-preserving: `--dump-locales` byte-unchanged); then submoduled the pack repo
+  at `deps/language-packs` (recursive), repointed `scripts/ci/ci.sh` `build-fontpacks`
+  to build `lang-packs/` via the submodule (`LVGL_ROOT` → this repo's LVGL for the `fa`
+  oracle; no more `screenshot_gen --dump-locales`), dropped the now-needless
+  `build-screenshots` step from `runner-core-test`, repointed `gen_localized_scenarios`
+  at the submodule's translations and removed this repo's own translations submodule,
+  and **deleted all screens-owned pack-build tooling** (`build_fontpacks.py` + friends,
+  the source fonts already live in the submodule, the `lv_shape` shaper, the spikes).
+  `tools/i18n/` now holds only the gallery helpers.
 
-## What remains (deferred / blocked)
+Distribution nuance: the screens gallery/CI build **functional** packs natively (host
+toolchain); **byte-reproducible / signable** packs come from the submodule's Docker
+path and matter only for signed production delivery.
 
-Gated on the pack repo publishing **signed** packs (signing scheme is an open
-sub-design) and on the downstream consumer repos — done in their own sessions:
+## What remains (deferred)
 
-- **Screens cutover (rest of 2b):** remove `tools/i18n/` producer tooling + source
-  fonts, drop `build-fontpacks` from `scripts/ci/ci.sh`, and repoint the screenshot
-  gallery / `runner-core-test` off local pack builds onto copied signed packs / a few
-  committed fixture packs. **Blocked**: there are no published signed packs to copy
-  yet, so doing this now would break this repo's gallery/tests with no working source.
-- **Consumers:** app stage step → `src/lang-packs` (Phase 2a); Pi re-source + drop the
-  device symlink (Phase 3); ESP32 `sd_format_push.py` repoint (Phase 4).
-- **Signing scheme** (algorithm / key mgmt / content-hash format / bootloader path)
-  and **reproducible-build governance** (publish the per-release input closure).
+- **Signing scheme** (algorithm / key mgmt / content-hash format / bootloader path) and
+  **reproducible-build governance** (publish the per-release input closure). Until the
+  scheme lands, the pack repo commits no signed packs.
+- **Consumers, in their own repos:** app stage step → `src/lang-packs` (Phase 2a); Pi
+  re-source + drop the device symlink (Phase 3); ESP32 `sd_format_push.py` repoint
+  (Phase 4). These want *signed* packs (copy-step delivery), so they follow the signing
+  decision.

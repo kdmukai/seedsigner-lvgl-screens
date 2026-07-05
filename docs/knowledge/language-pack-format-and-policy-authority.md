@@ -58,13 +58,29 @@ state" below.)
 `screenshot_gen --dump-locales` is **byte-identical** before and after. Any future
 `locales.h` edit that must not change rendering can be checked the same way.
 
-## Current state (2026-07-05) — partial cutover
+## Current state (2026-07-05) — cutover done
 
-The pack repo is bootstrapped and produces reproducible packs; screens vendors
-`locales.h` and consumes the policy. **Not yet done** (deferred until the pack repo
-publishes *signed* packs, since there is nothing to copy from until then): removing
-this repo's `tools/i18n/` producer tooling + source fonts, dropping `build-fontpacks`
-from `scripts/ci/ci.sh`, and repointing the screenshot gallery / `runner-core-test`
-off local pack builds and onto copied/fixture packs. Until that cutover, this repo
-**retains** its `tools/i18n/` tooling, source fonts, and `--dump-locales` for its own
-gallery — they coexist with the vendored `locales.h` and are non-breaking.
+The screens side is fully cut over:
+
+- **`deps/language-packs`** is the pack repo, vendored as a submodule (recursive — it
+  brings its own `seedsigner-translations`). Screens no longer carries a separate
+  translations submodule.
+- **Screens owns no pack-build tooling.** `tools/i18n/` now holds only the gallery
+  helpers (`gen_localized_scenarios.py`, `po_catalog.py`, `supported_locales.json`);
+  `build_fontpacks.py` + friends + the source fonts + the `lv_shape` shaper all live in
+  the submodule.
+- **`scripts/ci/ci.sh build-fontpacks`** builds `lang-packs/` by delegating to
+  `deps/language-packs/tools/build_fontpacks.py` (reads the submodule's `locales.h`, no
+  `screenshot_gen --dump-locales`), pointing its `fa` oracle at this repo's LVGL via
+  `LVGL_ROOT`. `runner-core-test` no longer compiles `screenshot_gen` to get packs.
+
+The vendored `components/seedsigner/locales.h` (which drives `locale_font_table()`) is
+still a plain copy of the submodule's `deps/language-packs/locales.h`; keeping the C
+`#include` copy in-tree means a normal C build needs no submodule checkout, while the
+pack build reads the submodule's master. Re-vendor with:
+`cp deps/language-packs/locales.h components/seedsigner/locales.h`.
+
+`lang-packs/` is gitignored — built on demand. Screens' gallery/CI build **functional**
+packs natively (host toolchain); byte-reproducible / signable packs are the submodule's
+Docker path (`deps/language-packs/scripts/build_packs.sh`) and matter only for signed
+production delivery, not the gallery.

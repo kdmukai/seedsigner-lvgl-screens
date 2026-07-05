@@ -42,9 +42,10 @@ case "$COMMAND" in
     # libicu, which is exactly what each pack manifest's icu_version already records.
     $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3 python3-pip python3-icu
     # Remaining offline i18n shaping deps ship wheels (fast). Install them from the
-    # pinned requirements, minus the PyICU line (satisfied by python3-icu above) so
+    # language-packs submodule's pinned requirements (this repo no longer owns the
+    # pack-build tooling), minus the PyICU line (satisfied by python3-icu above) so
     # pip doesn't trigger the source rebuild.
-    grep -viE '^pyicu' tools/i18n/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    grep -viE '^pyicu' deps/language-packs/tools/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
     ;;
 
   build-screenshots)
@@ -57,26 +58,27 @@ case "$COMMAND" in
   generate-screenshots)
     # Multi-language gallery: render every supported locale into its own subdir so
     # the published gallery has a language picker. Needs the localized scenario
-    # catalogs + the font packs (regenerated here from the seedsigner-translations
-    # submodule + fontTools); the generator itself was built by build-screenshots.
+    # catalogs (gen_localized_scenarios, gallery-only, stays here) + the font packs
+    # (built by the language-packs submodule; see build-fontpacks); the generator
+    # itself was built by build-screenshots.
     OUT="${1:-tools/apps/screenshot_generator/screenshots}"
     GEN=tools/apps/screenshot_generator/build/screenshot_gen
     python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
     python3 tools/i18n/gen_localized_scenarios.py
-    python3 tools/i18n/build_fontpacks.py --gen-bin "$GEN"
+    scripts/ci/ci.sh build-fontpacks
     python3 tools/apps/screenshot_generator/gen_gallery.py --out "$OUT" --gen-bin "$GEN"
     ;;
 
   build-fontpacks)
-    # Generate the per-locale font packs under lang-packs/ — the runtime locale
-    # assets that on-device locale loading and the headless runner_core dedup test
-    # require. Builds ONLY the packs (not the screenshot gallery). screenshot_gen
-    # supplies the --dump-locales font manifest (build it first via build-screenshots);
-    # build_fontpacks builds the lv_shape shaper on demand for complex-script
-    # (Arabic / Persian / Indic) packs. Usage: ci.sh build-fontpacks [GEN_BIN]
-    GEN="${1:-tools/apps/screenshot_generator/build/screenshot_gen}"
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
-    python3 tools/i18n/build_fontpacks.py --gen-bin "$GEN"
+    # Build the per-locale font packs under lang-packs/ — the runtime locale assets
+    # the gallery, the headless runner_core dedup test, and the desktop apps consume.
+    # This repo no longer owns the pack-build tooling: it delegates to the
+    # seedsigner-language-packs submodule (deps/language-packs), which reads its own
+    # locales.h (no screenshot_gen --dump-locales) + fonts + .po. LVGL_ROOT points the
+    # submodule's lv_shape fa oracle at this repo's pinned LVGL (same v9.5.0 SHA).
+    # Usage: ci.sh build-fontpacks
+    LVGL_ROOT="$PWD/third_party/lvgl" \
+      python3 deps/language-packs/tools/build_fontpacks.py --out-dir "$PWD/lang-packs"
     ;;
 
   compare-screenshots)
@@ -177,7 +179,7 @@ PY
     # `pip install PyICU` would compile from source (>20 min wedge); the rest ship wheels.
     $SUDO apt-get update
     $SUDO apt-get install -y cmake build-essential libpng-dev python3 python3-pip python3-icu
-    grep -viE '^pyicu' tools/i18n/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    grep -viE '^pyicu' deps/language-packs/tools/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
     ;;
 
   test-runner-core)

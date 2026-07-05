@@ -63,7 +63,9 @@ def main():
     ap.add_argument("--scenarios",
                     default=os.path.join(REPO_ROOT, "tools/scenarios/scenarios.json"))
     ap.add_argument("--translations-dir",
-                    default=os.path.join(REPO_ROOT, "tools/i18n/seedsigner-translations"))
+                    # .po source now comes from the language-packs submodule's own
+                    # translations submodule (this repo no longer carries its own copy).
+                    default=os.path.join(REPO_ROOT, "deps/language-packs/seedsigner-translations"))
     ap.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "tools/scenarios/localized"))
     ap.add_argument("--locale", action="append",
                     help="only this locale (repeatable); default = en + all catalogs")
