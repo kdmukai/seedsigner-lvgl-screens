@@ -401,6 +401,32 @@
           "is_bottom_list": true,
           "warning_edges": false
         }
+      },
+      {
+        "name": "custom_psbt_finalize",
+        "context": {
+          "top_nav": { "title": "Sign Transaction", "show_back_button": true, "show_power_button": false },
+          "status_type": "custom",
+          "icon": "",
+          "icon_color": "#409cff",
+          "status_headline": "",
+          "text": "Click to approve this transaction",
+          "button_list": ["Approve transaction"],
+          "is_bottom_list": true
+        }
+      },
+      {
+        "name": "custom_microsd_notification",
+        "context": {
+          "top_nav": { "title": "microSD", "show_back_button": false, "show_power_button": false },
+          "status_type": "custom",
+          "icon": "",
+          "icon_color": "#409cff",
+          "status_headline": "microSD detected",
+          "text": "A microSD card change was detected.",
+          "button_list": ["OK"],
+          "is_bottom_list": true
+        }
       }
     ]
   },
@@ -675,7 +701,7 @@
   "psbt_overview_screen": {
     "context": {
       "top_nav": { "title": "Review Transaction", "show_back_button": true },
-      "btc_amount": { "primary": "841,234", "unit": "sats", "network": "mainnet" },
+      "btc_amount": { "primary": "841,234", "unit": "sats", "network": "M" },
       "num_inputs": 3,
       "destination_addresses": [
         "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
@@ -691,7 +717,7 @@
       {
         "name": "single_input",
         "context": {
-          "btc_amount": { "primary": "0.00841234", "unit": "btc", "network": "mainnet" },
+          "btc_amount": { "primary": "0.00841234", "unit": "btc", "network": "M" },
           "num_inputs": 1,
           "destination_addresses": [ "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" ],
           "num_change_outputs": 0
@@ -700,7 +726,7 @@
       {
         "name": "many_inputs_many_recipients",
         "context": {
-          "btc_amount": { "primary": "12,500,000", "unit": "sats", "network": "mainnet" },
+          "btc_amount": { "primary": "12,500,000", "unit": "sats", "network": "M" },
           "num_inputs": 8,
           "destination_addresses": [
             "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
@@ -715,7 +741,7 @@
       {
         "name": "self_transfer_full_spend",
         "context": {
-          "btc_amount": { "primary": "0.05", "unit": "btc", "network": "mainnet" },
+          "btc_amount": { "primary": "0.05", "unit": "btc", "network": "M" },
           "num_inputs": 2,
           "destination_addresses": [],
           "num_self_transfer_outputs": 1,
@@ -734,10 +760,119 @@
       {
         "name": "testnet",
         "context": {
-          "btc_amount": { "primary": "841,234", "unit": "tSats", "network": "testnet" },
+          "btc_amount": { "primary": "841,234", "unit": "tSats", "network": "T" },
           "num_inputs": 2,
           "destination_addresses": [ "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" ],
           "num_change_outputs": 1
+        }
+      }
+    ]
+  },
+  "psbt_address_details_screen": {
+    "context": {
+      "top_nav": { "title": "Verify Send Address", "show_back_button": true },
+      "btc_amount": { "primary": "0.00841234", "unit": "btc", "network": "M" },
+      "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "button_list": ["Next"]
+    },
+    "variations": [
+      {
+        "name": "taproot",
+        "context": {
+          "btc_amount": { "primary": "1,250,000", "unit": "sats", "network": "M" },
+          "address": "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
+        }
+      },
+      {
+        "name": "legacy_p2sh",
+        "context": {
+          "btc_amount": { "primary": "500,000", "unit": "sats", "network": "M" },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+        }
+      },
+      {
+        "name": "testnet",
+        "context": {
+          "btc_amount": { "primary": "841,234", "unit": "tSats", "network": "T" },
+          "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+        }
+      },
+      {
+        "name": "regtest",
+        "context": {
+          "btc_amount": { "primary": "841,234", "unit": "tSats", "network": "R" },
+          "address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+        }
+      }
+    ]
+  },
+  "psbt_change_details_screen": {
+    "context": {
+      "top_nav": { "title": "Your Change", "show_back_button": true },
+      "btc_amount": { "primary": "0.00123456", "unit": "btc", "network": "M" },
+      "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "address_type_label": "change address #0",
+      "is_verified": true,
+      "verified_text": "Address verified!",
+      "button_list": ["Next"]
+    },
+    "variations": [
+      {
+        "name": "unverified_multisig_change",
+        "context": {
+          "address_type_label": "change address #2",
+          "is_verified": false,
+          "button_list": ["Verify multisig change", "Skip verification"]
+        }
+      },
+      {
+        "name": "self_transfer_verified",
+        "context": {
+          "top_nav": { "title": "Self-Transfer", "show_back_button": true },
+          "btc_amount": { "primary": "2,000,000", "unit": "sats", "network": "M" },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+          "address_type_label": "receive address #5",
+          "is_verified": true
+        }
+      },
+      {
+        "name": "self_transfer_unverified_multisig",
+        "context": {
+          "top_nav": { "title": "Self-Transfer", "show_back_button": true },
+          "btc_amount": { "primary": "2,000,000", "unit": "sats", "network": "M" },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+          "address_type_label": "receive address #5",
+          "is_verified": false,
+          "button_list": ["Verify multisig addr", "Skip verification"]
+        }
+      }
+    ]
+  },
+  "psbt_math_screen": {
+    "context": {
+      "top_nav": { "title": "Transaction Math", "show_back_button": true },
+      "denomination": "sats",
+      "num_recipients": 1,
+      "amounts": { "input": "1,000,000", "spend": "841,234", "fee": "2,500", "change": "156,266" },
+      "labels": { "inputs": "inputs", "recipients": "recipients", "fee": "fee", "change": "sats change" },
+      "button_list": ["Review recipients"]
+    },
+    "variations": [
+      {
+        "name": "btc_denomination",
+        "context": {
+          "denomination": "btc",
+          "num_recipients": 2,
+          "amounts": { "input": "0.05000000", "spend": "0.04835000", "fee": "1250", "change": "0.00163750" },
+          "labels": { "inputs": "inputs", "recipients": "recipients", "fee": "fee", "change": "btc change" }
+        }
+      },
+      {
+        "name": "self_transfer",
+        "context": {
+          "num_recipients": 0,
+          "amounts": { "input": "500,000", "spend": "0", "fee": "1,800", "change": "498,200" },
+          "labels": { "inputs": "inputs", "recipients": "recipients", "fee": "fee", "change": "sats change" }
         }
       }
     ]

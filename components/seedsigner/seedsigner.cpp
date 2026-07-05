@@ -809,7 +809,7 @@ void button_list_screen(void *ctx_json)
 // text into `scaffold.upper_body`; the scaffold owns the spacer and the
 // button.
 
-enum class status_type_t { SUCCESS, WARNING, DIRE_WARNING, ERROR };
+enum class status_type_t { SUCCESS, WARNING, DIRE_WARNING, ERROR, CUSTOM };
 
 // Per-status defaults. Python keeps these as class attributes; here we keep
 // them in one place so JSON-driven configuration can override any field.
@@ -836,6 +836,13 @@ static status_type_defaults_t defaults_for_status_type(status_type_t st) {
         case status_type_t::ERROR:
             return { SeedSignerIconConstants::ERROR,   ERROR_COLOR,
                      "Error",      "I understand",  true,  2 };
+        case status_type_t::CUSTOM:
+            // The icon glyph, color, and title all come from cfg (filled in by
+            // large_icon_status_screen); these are only fallbacks for a bare cfg. No
+            // forced title (default ""), a plain "OK" button, no warning border, and the
+            // 1x text inset of a non-warning screen.
+            return { SeedSignerIconConstants::INFO, INFO_COLOR,
+                     "",           "OK",            false, 1 };
     }
     // Unreachable; silences -Wreturn-type on some compilers.
     return { SeedSignerIconConstants::SUCCESS, SUCCESS_COLOR, "", "", false, 1 };
@@ -851,8 +858,12 @@ static status_type_t parse_status_type(const json &cfg) {
     if (value == "warning")      return status_type_t::WARNING;
     if (value == "dire_warning") return status_type_t::DIRE_WARNING;
     if (value == "error")        return status_type_t::ERROR;
+    // "custom": the caller supplies the icon glyph + color at call time (Python's
+    // PSBTFinalizeScreen's SIGN icon, the microSD-notification screen, etc.), so this
+    // one screen covers any large-icon prompt without a bespoke entry point.
+    if (value == "custom")       return status_type_t::CUSTOM;
     throw std::runtime_error("status_type must be one of \"success\", "
-                             "\"warning\", \"dire_warning\", \"error\"");
+                             "\"warning\", \"dire_warning\", \"error\", \"custom\"");
 }
 
 // Inject status-type defaults into cfg before the scaffold reads it.
@@ -1119,6 +1130,21 @@ void large_icon_status_screen(void *ctx_json) {
     status_type_defaults_t defaults = defaults_for_status_type(status);
     apply_status_type_defaults(cfg, defaults);
 
+    // For a "custom" status screen the hero icon glyph + color are caller-supplied
+    // (raw glyph string + hex color, the same convention as button/top-nav icons), so
+    // one screen renders any large-icon prompt: PSBTFinalize's SIGN icon, the microSD
+    // notification, etc. custom_icon backs defaults.icon (a const char*) for the render.
+    std::string custom_icon;
+    if (status == status_type_t::CUSTOM) {
+        if (cfg.contains("icon") && cfg["icon"].is_string()) {
+            custom_icon   = cfg["icon"].get<std::string>();
+            defaults.icon = custom_icon.c_str();
+        }
+        if (cfg.contains("icon_color") && cfg["icon_color"].is_string()) {
+            defaults.color = (int)parse_hex_color(cfg["icon_color"].get<std::string>());
+        }
+    }
+
     screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, true);
 
     // Status screens use the full screen width for icon / headline / body text
@@ -1262,6 +1288,17 @@ void large_icon_status_screen(void *ctx_json) {
             // reference — both applied by apply_body_tight_line_spacing(), shared
             // with the button_list_screen intro text so the two render identically.
             apply_body_tight_line_spacing(body_label);
+
+            // A custom large-icon screen with no headline (PSBTFinalize's "Click to
+            // approve this transaction" under the SIGN icon) needs the text spaced off
+            // the icon; Python uses icon_bottom + 2*COMPONENT_PADDING. Restore that gap
+            // that apply_body_tight_line_spacing() zeroed for the headline-adjacent case.
+            bool has_headline = cfg.contains("status_headline") &&
+                                cfg["status_headline"].is_string() &&
+                                !cfg["status_headline"].get<std::string>().empty();
+            if (status == status_type_t::CUSTOM && !has_headline) {
+                lv_obj_set_style_margin_top(body_label, 2 * COMPONENT_PADDING, LV_PART_MAIN);
+            }
         }
     }
 
@@ -5340,6 +5377,59 @@ static void psbt_cleanup_cb(lv_event_t *e) {
     delete c;
 }
 
+// Map a network to its accent/highlight color: Bitcoin orange (mainnet), testnet green,
+// regtest blue. The JSON contract uses the Python SettingsConstants network codes
+// ("M"/"T"/"R"); the legacy long names are also accepted so pre-existing scenarios keep
+// working. Shared by btc_amount_from_cfg (the coin icon) and the PSBT detail screens (the
+// formatted-address head/tail highlight), so a value and its address carry one color.
+static uint32_t network_color(const std::string &net) {
+    if (net == "T" || net == "testnet") return (uint32_t)TESTNET_COLOR;
+    if (net == "R" || net == "regtest") return (uint32_t)REGTEST_COLOR;
+    return (uint32_t)ACCENT_COLOR;   // "M" / "mainnet" / default
+}
+
+// The device's configured Network ("M"/"T"/"R"), from top-level cfg["network"] or echoed
+// on cfg["btc_amount"]; empty if the host didn't provide it. (The legacy long names are
+// also honored by network_color downstream.)
+static std::string network_setting(const json &cfg) {
+    if (cfg.contains("network") && cfg["network"].is_string()) {
+        return cfg["network"].get<std::string>();
+    }
+    if (cfg.contains("btc_amount") && cfg["btc_amount"].is_object() &&
+        cfg["btc_amount"].contains("network") && cfg["btc_amount"]["network"].is_string()) {
+        return cfg["btc_amount"]["network"].get<std::string>();
+    }
+    return "";
+}
+
+// Resolve which network to COLOR a PSBT address by, as a Python network code ("M"/"T"/"R").
+// The address FORMAT is prioritized over the device's Network setting: an unambiguous
+// prefix decides outright, so a mainnet address on a regtest-configured device still reads
+// as mainnet — a useful "this isn't the network you think" signal — rather than being
+// recolored to match the setting. Only mainnet (bc1/1/3) and regtest (bcrt1) are
+// unambiguous; tb1 is testnet-or-signet (no separate signet marker → testnet). The base58
+// m/n/2 prefixes are shared by testnet/signet/regtest — knowing only that they are NOT
+// mainnet, the device setting disambiguates testnet vs regtest, and an absent (or a
+// disagreeing mainnet) setting defaults to testnet (the common case).
+static std::string resolve_address_network(const json &cfg, const std::string &address) {
+    if (address.rfind("bcrt1", 0) == 0) return "R";
+    if (address.rfind("bc1",  0) == 0)  return "M";
+    if (address.rfind("tb1",  0) == 0)  return "T";
+    if (!address.empty()) {
+        char c = address[0];
+        if (c == '1' || c == '3') return "M";
+        if (c == 'm' || c == 'n' || c == '2') {
+            std::string s = network_setting(cfg);
+            if (s == "R" || s == "regtest") return "R";
+            if (s == "T" || s == "testnet") return "T";
+            return "T";   // absent, or a mainnet setting that disagrees with the format
+        }
+    }
+    // Unrecognized format: defer to the device setting, else mainnet.
+    std::string s = network_setting(cfg);
+    return s.empty() ? "M" : s;
+}
+
 // Build a components.btc_amount from a cfg object: maps network -> icon color (an
 // explicit icon_color hex overrides) and forwards the host-formatted display strings.
 // Shared by every amount-showing screen (PSBT overview / detail / change).
@@ -5354,10 +5444,7 @@ static lv_obj_t *btc_amount_from_cfg(lv_obj_t *parent, const json &j) {
     o.unit          = unit.empty() ? nullptr : unit.c_str();
     o.primary_small = j.value("primary_small", false);
 
-    std::string net = j.value("network", std::string("mainnet"));
-    if (net == "testnet")      o.icon_color = (uint32_t)TESTNET_COLOR;
-    else if (net == "regtest") o.icon_color = (uint32_t)REGTEST_COLOR;
-    else                       o.icon_color = (uint32_t)ACCENT_COLOR;
+    o.icon_color = network_color(j.value("network", std::string("mainnet")));
     if (j.contains("icon_color") && j["icon_color"].is_string()) {
         o.icon_color = parse_hex_color(j["icon_color"].get<std::string>());
     }
@@ -5705,6 +5792,381 @@ void psbt_overview_screen(void *ctx_json) {
         NAV_BODY_VERTICAL,
         0
     );
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// ============================ PSBT detail screens ============================
+// The transaction-review leaf screens: the per-recipient / change-address readouts
+// and the fee "math". Each is a bottom-pinned ButtonListScreen (Python parity) whose
+// body composes the shared btc_amount + formatted_address components. The host formats
+// every value (denomination, digit grouping, address derivation); these screens only
+// lay the pieces out — the same host-formats / C-renders split as btc_amount, so the
+// two platforms can never disagree on how a number rounds or an address truncates.
+
+
+// PSBTAddressDetailsScreen: one recipient's amount over its full (wrapped) address,
+// vertically centered between the top nav and the action button. The View supplies the
+// title ("Verify Send Address" etc.) and the button label.
+//
+// cfg:
+//   top_nav.title            — screen title (default "Address").
+//   btc_amount { ... }       — the send amount (btc_amount_from_cfg contract).
+//   address (string, req.)   — the full destination address.
+//   button_list (array)      — action buttons (default ["Next"]).
+void psbt_address_details_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    if (!cfg.contains("address") || !cfg["address"].is_string()) {
+        throw std::runtime_error("psbt_address_details_screen requires an \"address\" string");
+    }
+    std::string address = cfg["address"].get<std::string>();
+
+    // Bottom-pinned button-list shape (Python is_bottom_list = True).
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Address";
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Next" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // Center the [amount / address] block vertically in the gap above the button, the
+    // same way seed_finalize centers its fingerprint readout: grow upper_body to claim
+    // the gap, center on both axes, collapse the scaffold spacer. The COMPONENT_PADDING
+    // row gap matches Python's amount->address spacing.
+    lv_obj_set_flex_grow(screen.upper_body, 1);
+    lv_obj_set_flex_align(screen.upper_body, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(screen.upper_body, COMPONENT_PADDING, LV_PART_MAIN);
+    if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
+
+    if (cfg.contains("btc_amount") && cfg["btc_amount"].is_object()) {
+        btc_amount_from_cfg(screen.upper_body, cfg["btc_amount"]);
+    }
+
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+    formatted_address_opts_t fo = {};
+    fo.address      = address.c_str();
+    fo.width        = W - 2 * EDGE_PADDING;
+    fo.max_lines    = 0;                                        // wrap to as many lines as needed
+    fo.accent_color = network_color(resolve_address_network(cfg, address));   // head/tail = network color
+    fo.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    formatted_address(screen.upper_body, &fo);
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// PSBTChangeDetailsScreen: the change (or self-receive) output — amount, an address-type
+// label ("change address #N"), the single-line address, and an optional "Address
+// verified!" confirmation centered in the space above the button. Top-anchored (Python
+// pins the stack under the top nav rather than centering it).
+//
+// cfg:
+//   top_nav.title              — screen title (default "Your Change").
+//   btc_amount { ... }         — the change amount.
+//   address (string, req.)     — the change/self-receive address.
+//   address_type_label (str)   — host-formatted "change address #0" / "receive address #5".
+//   is_verified (bool)         — show the "Address verified!" confirmation.
+//   verified_text (str)        — host-localized confirmation (default "Address verified!").
+//   button_list (array)        — action buttons.
+void psbt_change_details_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    if (!cfg.contains("address") || !cfg["address"].is_string()) {
+        throw std::runtime_error("psbt_change_details_screen requires an \"address\" string");
+    }
+    std::string address       = cfg["address"].get<std::string>();
+    std::string type_label    = cfg.value("address_type_label", std::string("change address #0"));
+    bool        is_verified   = cfg.value("is_verified", false);
+    std::string verified_text = cfg.value("verified_text", std::string("Address verified!"));
+
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Your Change";
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Done" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+
+    // Top-anchored stack (default upper_body flow, cross-centered). Python spacing:
+    // amount COMPONENT_PADDING below the nav, the type label COMPONENT_PADDING below the
+    // amount, and the address directly under the label. Zero the row gap and place the
+    // label's own top margin so the two gaps differ.
+    lv_obj_set_style_pad_top(screen.upper_body, COMPONENT_PADDING, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(screen.upper_body, 0, LV_PART_MAIN);
+
+    if (cfg.contains("btc_amount") && cfg["btc_amount"].is_object()) {
+        btc_amount_from_cfg(screen.upper_body, cfg["btc_amount"]);
+    }
+
+    // Small gray "change address #N" / "receive address #N" label. Body font (locale-
+    // aware) in the label color, matching the seed_finalize label precedent.
+    lv_obj_t *tlabel = lv_label_create(screen.upper_body);
+    lv_label_set_text(tlabel, type_label.c_str());
+    lv_obj_set_style_text_font(tlabel, &BODY_FONT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(tlabel, lv_color_hex(LABEL_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(tlabel, 0, LV_PART_MAIN);
+    lv_obj_set_style_margin_top(tlabel, COMPONENT_PADDING, LV_PART_MAIN);
+
+    // Single-line head…tail address (Python max_lines=1).
+    formatted_address_opts_t fo = {};
+    fo.address      = address.c_str();
+    fo.width        = W - 2 * EDGE_PADDING;
+    fo.max_lines    = 1;
+    fo.accent_color = network_color(resolve_address_network(cfg, address));   // head/tail = network color
+    fo.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    lv_obj_t *addr = formatted_address(screen.upper_body, &fo);
+
+    // Optional "Address verified!" line — a green success glyph + the confirmation text,
+    // centered in the gap between the address and the button (Python auto-centers its
+    // IconTextLine within that available height). Built on the non-flex screen root and
+    // positioned by measurement so it floats mid-gap rather than hugging the address.
+    lv_obj_t *vrow = nullptr;
+    if (is_verified) {
+        vrow = lv_obj_create(screen.screen);
+        lv_obj_remove_style_all(vrow);
+        lv_obj_set_size(vrow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_layout(vrow, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(vrow, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(vrow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(vrow, COMPONENT_PADDING / 2, LV_PART_MAIN);
+        lv_obj_remove_flag(vrow, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(vrow, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t *vic = lv_label_create(vrow);
+        lv_label_set_text(vic, SeedSignerIconConstants::SUCCESS);
+        lv_obj_set_style_text_font(vic, &ICON_FONT__SEEDSIGNER, LV_PART_MAIN);
+        lv_obj_set_style_text_color(vic, lv_color_hex(SUCCESS_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(vic, 0, LV_PART_MAIN);
+
+        lv_obj_t *vtx = lv_label_create(vrow);
+        lv_label_set_text(vtx, verified_text.c_str());
+        lv_obj_set_style_text_font(vtx, &BODY_FONT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(vtx, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(vtx, 0, LV_PART_MAIN);
+    }
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+
+    // With the scaffold + content laid out, center the verified line between the address
+    // bottom and the first button top.
+    if (vrow) {
+        lv_obj_update_layout(screen.screen);
+        lv_area_t aa; lv_obj_get_coords(addr, &aa);
+        int32_t gap_top    = aa.y2;
+        int32_t gap_bottom = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
+        if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
+            lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
+            gap_bottom = ba.y1;
+        }
+        int32_t vh = lv_obj_get_height(vrow);
+        int32_t vw = lv_obj_get_width(vrow);
+        lv_obj_set_pos(vrow, (W - vw) / 2, (gap_top + gap_bottom) / 2 - vh / 2);
+    }
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// PSBTMathScreen: the fee "math" — a right-aligned, fixed-width equation of the input
+// total minus recipients minus fee, ruled off, equalling the change. In btc mode the
+// trailing satoshi digits dim through three grays (Python's supersampled digit zones);
+// the change line's unit is called out in orange. The host passes each amount as an
+// already-formatted (unpadded) number string plus the denomination flag; this screen
+// pads them to a common width so the monospace columns line up, applies the +/- signs,
+// and colors the zones.
+//
+// cfg:
+//   amounts { input, spend, fee, change }  — host-formatted number strings (unpadded).
+//   denomination ("btc" | "sats")          — selects the 3-zone digit dimming.
+//   num_recipients (int)                    — >0 renders the "- spend" recipients row.
+//   labels { inputs, recipients, fee, change } — host-localized (already pluralized) info
+//                                            words drawn after each amount.
+//   button_list (array)                     — default ["Review recipients"].
+void psbt_math_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    const json amounts = (cfg.contains("amounts") && cfg["amounts"].is_object()) ? cfg["amounts"] : json::object();
+    std::string s_input  = amounts.value("input",  std::string("0"));
+    std::string s_spend  = amounts.value("spend",  std::string("0"));
+    std::string s_fee    = amounts.value("fee",    std::string("0"));
+    std::string s_change = amounts.value("change", std::string("0"));
+
+    bool is_btc = cfg.value("denomination", std::string("sats")) == "btc";
+    int  num_recipients = cfg.value("num_recipients", 1);
+
+    const json labels = (cfg.contains("labels") && cfg["labels"].is_object()) ? cfg["labels"] : json::object();
+    std::string l_inputs     = labels.value("inputs",     std::string("inputs"));
+    std::string l_recipients = labels.value("recipients", std::string("recipients"));
+    std::string l_fee        = labels.value("fee",        std::string("fee"));
+    std::string l_change     = labels.value("change",     std::string("change"));
+
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Transaction Math";
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Review recipients" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+    const lv_font_t *digit_font = &KEYBOARD_FONT;   // profile fixed-width (Inconsolata)
+
+    // Fixed-width metrics: one monospace advance + the digit line height.
+    lv_point_t sz10;
+    lv_text_get_size(&sz10, "0000000000", digit_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int32_t char_width = sz10.x / 10; if (char_width < 1) char_width = 1;
+    int32_t digit_h    = lv_font_get_line_height(digit_font);
+
+    // Left-pad all four amounts to a common width so the monospace digits right-align
+    // (Python pads to the longest before prefixing the +/- sign).
+    size_t longest = std::max(std::max(s_input.size(), s_spend.size()),
+                              std::max(s_fee.size(), s_change.size()));
+    auto pad = [&](const std::string &s) {
+        return s.size() >= longest ? s : std::string(longest - s.size(), ' ') + s;
+    };
+    s_input = pad(s_input); s_spend = pad(s_spend); s_fee = pad(s_fee); s_change = pad(s_change);
+
+    int32_t dgs          = LIST_ITEM_PADDING / 2; if (dgs < 1) dgs = 1;   // digit-group gap
+    int32_t digits_width = (int32_t)(longest + 1) * char_width;           // sign + digits
+    int32_t info_x       = digits_width + 3 * dgs;                        // info text column
+    int32_t row_advance  = digit_h + BODY_LINE_SPACING;
+
+    // Measure the equation's actual content width — the digits column (info_x) plus the
+    // widest info word — so a block narrower than the body is CENTERED horizontally on
+    // wide screens instead of hugging the left edge. Only the info words actually rendered
+    // are measured (the recipients row is dropped on self-transfers).
+    auto body_text_w = [&](const std::string &s) -> int32_t {
+        lv_point_t sz;
+        lv_text_get_size(&sz, s.c_str(), &BODY_FONT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        return sz.x;
+    };
+    int32_t max_info_w = std::max(body_text_w(l_inputs),
+                                  std::max(body_text_w(l_fee), body_text_w(l_change)));
+    if (num_recipients > 0) max_info_w = std::max(max_info_w, body_text_w(l_recipients));
+
+    const int32_t content_w = info_x + max_info_w;   // digits column + info column
+    const int32_t body_w    = W - 2 * EDGE_PADDING;
+
+    // Horizontal centering: mc spans the FULL body width (so the info labels always have
+    // room and a shaped script is never width-capped into a wrap), and the block is
+    // centered by shifting every element right by center_off when it fits.
+    int32_t center_off = (body_w - content_w) / 2;
+    if (center_off < 0) center_off = 0;
+
+    // Equation body container. Its y is a placeholder here — the final y is set below once
+    // the block height is known (vertical centering). It floats over the scaffold's
+    // (empty) upper_body; the button stays pinned at the bottom.
+    lv_obj_t *mc = lv_obj_create(screen.screen);
+    lv_obj_remove_style_all(mc);
+    lv_obj_set_pos(mc, EDGE_PADDING, TOP_NAV_HEIGHT + COMPONENT_PADDING);
+    lv_obj_set_width(mc, body_w);
+    lv_obj_set_height(mc, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(mc, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(mc, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(mc, LV_OBJ_FLAG_CLICKABLE);
+
+    // Fixed-width digit label (Latin monospace, exact metrics — never wraps).
+    auto add_digits = [&](uint32_t color, const std::string &text, int32_t x, int32_t y) {
+        lv_obj_t *lbl = lv_label_create(mc);
+        lv_obj_set_style_pad_all(lbl, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, digit_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(color), LV_PART_MAIN);
+        lv_label_set_text(lbl, text.c_str());
+        lv_obj_set_pos(lbl, center_off + x, y);
+    };
+
+    // Info word (locale-aware BODY_FONT). Forced SINGLE-LINE (LV_LABEL_LONG_CLIP) with an
+    // explicit width = the room to its right, so a long SHAPED translation (e.g. the Thai
+    // word for "fee") stays on one line instead of wrapping onto the rule-off line below
+    // it. It clips only in the extreme case where even the full remaining width can't hold
+    // it — a graceful failure vs. the overlapping wrap.
+    auto add_info = [&](uint32_t color, const std::string &text, int32_t y) {
+        lv_obj_t *lbl = lv_label_create(mc);
+        lv_obj_set_style_pad_all(lbl, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, &BODY_FONT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(color), LV_PART_MAIN);
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(lbl, body_w - center_off - info_x);
+        lv_label_set_text(lbl, text.c_str());
+        lv_obj_set_pos(lbl, center_off + info_x, y);
+    };
+
+    // Render one equation row: the signed amount (dimmed satoshi zones in btc mode) then
+    // the info word one column over.
+    auto render_amount = [&](int32_t y, const std::string &amount, const std::string &info, uint32_t info_color) {
+        if (is_btc && amount.size() > 6) {
+            // Split the last 6 characters into two 3-digit zones, dimming each further
+            // (Python's secondary #888 / tertiary #666 supersampled digit groups).
+            std::string main_zone = amount.substr(0, amount.size() - 6);
+            std::string mid_zone  = amount.substr(amount.size() - 6, 3);
+            std::string end_zone  = amount.substr(amount.size() - 3);
+            int32_t main_w = (int32_t)main_zone.size() * char_width;
+            add_digits((uint32_t)BODY_FONT_COLOR, main_zone, 0, y);
+            add_digits(0x888888, mid_zone, main_w + dgs, y);
+            add_digits(0x666666, end_zone, main_w + dgs + 3 * char_width + dgs, y);
+        } else {
+            add_digits((uint32_t)BODY_FONT_COLOR, amount, 0, y);
+        }
+        add_info(info_color, info, y);
+    };
+
+    int32_t cur_y = 0;
+    render_amount(cur_y, std::string(" ") + s_input, l_inputs, (uint32_t)BODY_FONT_COLOR);
+
+    // The spend line is omitted on self-transfers (no external recipient).
+    if (num_recipients > 0) {
+        cur_y += row_advance;
+        render_amount(cur_y, std::string("-") + s_spend, l_recipients, (uint32_t)BODY_FONT_COLOR);
+    }
+
+    cur_y += row_advance;
+    render_amount(cur_y, std::string("-") + s_fee, l_fee, (uint32_t)BODY_FONT_COLOR);
+
+    // Rule-off line (aligned + sized to the centered block), then the change total below.
+    cur_y += row_advance;
+    int32_t divider_h = LIST_ITEM_PADDING / 4; if (divider_h < 1) divider_h = 1;
+    lv_obj_t *divider = lv_obj_create(mc);
+    lv_obj_remove_style_all(divider);
+    lv_obj_set_size(divider, content_w, divider_h);
+    lv_obj_set_style_bg_color(divider, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_pos(divider, center_off, cur_y);
+
+    cur_y += BODY_LINE_SPACING;
+    render_amount(cur_y, std::string(" ") + s_change, l_change, 0xff8c00 /* darkorange */);
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+
+    // Vertical centering: now that the equation's height is known, center it in the gap
+    // between the top nav and the pinned button (Python top-anchors it; here the wider
+    // screens have slack to spare).
+    lv_obj_update_layout(screen.screen);
+    int32_t mc_h    = lv_obj_get_height(mc);
+    int32_t gap_top = TOP_NAV_HEIGHT;
+    int32_t gap_bot = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
+    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
+        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
+        gap_bot = ba.y1;
+    }
+    int32_t mc_y = gap_top + (gap_bot - gap_top - mc_h) / 2;
+    if (mc_y < gap_top + COMPONENT_PADDING) mc_y = gap_top + COMPONENT_PADDING;   // clear the nav
+    lv_obj_set_y(mc, mc_y);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

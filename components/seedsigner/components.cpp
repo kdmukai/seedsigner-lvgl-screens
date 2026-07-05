@@ -7,6 +7,10 @@
 
 #include <stdint.h>
 #include <stdexcept>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <cmath>
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 
@@ -1326,5 +1330,196 @@ lv_obj_t* btc_amount(lv_obj_t* parent, const btc_amount_opts_t* opts) {
     }
 
     return row;
+}
+
+
+// --- formatted_address --------------------------------------------------------
+// Length of the recognized Bitcoin address-format prefix at the start of `a` — the
+// de-emphasized "what type is this" run (0 if unrecognized). Longest match wins:
+// bech32 HRP+separator+witness-version char (bcrt1q/bcrt1p, then bc1q/bc1p/tb1q/tb1p),
+// else a single base58 version char (1/3 mainnet, m/n/2 testnet·signet·regtest). Note
+// this identifies the TYPE, not the network — m/n/2 are shared, so the highlight color
+// is caller-supplied, not inferred here.
+static int fa_prefix_len(const std::string &a) {
+    static const char *p6[] = { "bcrt1q", "bcrt1p" };
+    static const char *p4[] = { "bc1q", "bc1p", "tb1q", "tb1p" };
+    for (const char *p : p6) if (a.rfind(p, 0) == 0) return 6;
+    for (const char *p : p4) if (a.rfind(p, 0) == 0) return 4;
+    if (!a.empty()) {
+        char c = a[0];
+        if (c == '1' || c == '3' || c == 'm' || c == 'n' || c == '2') return 1;
+    }
+    return 0;
+}
+
+lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* opts) {
+    if (!parent || !opts || !opts->address) return nullptr;
+
+    // Profile fixed-width font (Inconsolata SemiBold, 24 px base). Emphasis is carried by
+    // COLOR, not weight: the head/tail highlight is the network color, the prefix + middle
+    // are a de-emphasized gray.
+    const lv_font_t *font = &KEYBOARD_FONT;
+
+    // net = network highlight (head/tail); gray = de-emphasized prefix + middle.
+    const uint32_t net  = (opts->accent_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                              ? (uint32_t)ACCENT_COLOR : opts->accent_color;
+    const uint32_t gray = (opts->base_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                              ? (uint32_t)LABEL_FONT_COLOR : opts->base_color;
+
+    const int32_t width = opts->width > 0
+                              ? opts->width
+                              : lv_display_get_horizontal_resolution(NULL);
+
+    const std::string address = opts->address;
+
+    // Fixed-width metrics. char_width = one monospace advance (measure 10 glyphs and
+    // divide, so any sub-pixel rounding averages out); char_height = a glyph's ink box
+    // (Python measures getbbox("Q")), which sets the inter-line advance.
+    lv_point_t sz10;
+    lv_text_get_size(&sz10, "0000000000", font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int32_t char_width = sz10.x / 10;
+    if (char_width < 1) char_width = 1;
+
+    int32_t char_height = 0;
+    lv_font_glyph_dsc_t gd;
+    if (lv_font_get_glyph_dsc(font, &gd, (uint32_t)'1', 0)) char_height = gd.box_h;
+    if (char_height <= 0) char_height = lv_font_get_line_height(font);
+
+    // char_height (a digit's cap-height ink box) sets the tight inter-line advance, but
+    // the container must reserve the font's FULL line height for the LAST row so its
+    // descenders (j, q, p, g, and an uppercase J) aren't clipped by the container's
+    // bottom edge. content_bottom tracks last_row_y + line_h and becomes the height.
+    const int32_t line_h = (int32_t)lv_font_get_line_height(font);
+    int32_t content_bottom = line_h;
+
+    // Content container: children are placed at absolute (x, y) relative to its top-left,
+    // so the caller positions the whole block at its screen_x (matching Python).
+    lv_obj_t *cont = lv_obj_create(parent);
+    lv_obj_remove_style_all(cont);
+    lv_obj_set_width(cont, width);
+    lv_obj_set_style_pad_all(cont, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(cont, LV_OBJ_FLAG_CLICKABLE);
+
+    // Emit one absolutely-positioned label per text run (Python's self.text_params).
+    auto emit = [&](int32_t x, int32_t y, const std::string &text, uint32_t color) {
+        lv_obj_t *lbl = lv_label_create(cont);
+        lv_obj_set_style_pad_all(lbl, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(color), LV_PART_MAIN);
+        lv_label_set_text(lbl, text.c_str());
+        lv_obj_set_pos(lbl, x, y);
+    };
+
+    const int n   = 7;   // fixed head/tail highlight length
+    const int len = (int)address.size();
+
+    // Too short to split into head/middle/tail — highlight the whole thing.
+    if (len <= 2 * n) {
+        emit(0, 0, address, net);
+        lv_obj_set_height(cont, line_h);   // full line height reserves descender room
+        return cont;
+    }
+
+    // Recognized format prefix -> gray. Fall back to no prefix if it would leave no room
+    // for a distinct first-7 and last-7 (never happens for real addresses).
+    int plen = fa_prefix_len(address);
+    if (plen + n + n > len) plen = 0;
+
+    // --- Compact single-line form (max_lines == 1): [prefix] [head] … [tail], with a
+    // space between the gray prefix and the highlighted head. Aim to show the FULL first-n
+    // chars after the prefix (so wider screens display all 7), trimming the head only as
+    // far as needed to fit a narrow screen.
+    if (opts->max_lines == 1) {
+        int sep       = (plen > 0) ? 1 : 0;   // space between prefix and head
+        int head_show = n;                    // aim for the full first-n after the prefix
+        int total = plen + sep + head_show + 3 + n;   // prefix sep head "..." tail
+        int fit   = (int)(width / char_width);
+        while (total > fit && head_show > 1) { --head_show; --total; }   // trim to fit
+
+        int32_t x = (width - char_width * total) / 2;
+        if (x < 0) x = 0;
+        if (plen > 0) { emit(x, 0, address.substr(0, plen), gray); x += char_width * plen; }
+        x += char_width * sep;                                         // gap after prefix
+        emit(x, 0, address.substr(plen, head_show), net); x += char_width * head_show;
+        emit(x, 0, "...", gray);                          x += char_width * 3;
+        emit(x, 0, address.substr(len - n, n), net);
+        lv_obj_set_height(cont, line_h);
+        return cont;
+    }
+
+    // --- Full multi-line form. Build the display string with spaces separating the prefix
+    // from the head and flanking the middle (visual rhythm) plus a parallel per-character
+    // color, so coloring is intrinsic and survives any wrapping:
+    //   [prefix (gray)]  " "  [first n (net)]  " "  [middle (gray)]  " "  [last n (net)]
+    std::string display;
+    std::vector<uint32_t> colv;
+    auto put = [&](const std::string &s, uint32_t c) {
+        for (char ch : s) { display.push_back(ch); colv.push_back(c); }
+    };
+    put(address.substr(0, plen), gray);                        // prefix
+    if (plen > 0) { display.push_back(' '); colv.push_back(gray); }  // space after prefix
+    put(address.substr(plen, n), net);                         // first n after prefix
+    display.push_back(' '); colv.push_back(gray);              // separator
+    // TODO(readability): investigate breaking the long grayed MIDDLE run into fixed blocks
+    // (e.g. groups of 4 or 5 characters separated by spaces) so it's easier to scan and
+    // cross-check against a coordinator. No obviously-correct scheme yet: bech32 vs base58
+    // differ, address lengths vary, and the gray prefix + the head/tail highlight already
+    // offset where a "natural" break would land — a single fixed block size won't align
+    // consistently across all address types. May need an adaptive grouping, or to leave
+    // the middle unbroken. Whatever we pick must stay a pure visual grouping (spaces only)
+    // so the per-character coloring and the wrapping grid still work.
+    put(address.substr(plen + n, len - n - (plen + n)), gray); // middle
+    display.push_back(' '); colv.push_back(gray);              // separator
+    put(address.substr(len - n, n), net);                      // last n
+
+    // Wrap onto a fixed characters-per-line grid, evened out so every line is the same
+    // width, and center that block horizontally. (max_lines > 1 is currently unused, so
+    // this always wraps the whole address; only the single-line form above caps height.)
+    const int dlen = (int)display.size();
+    int fit_cpl = (int)(width / char_width);
+    if (fit_cpl < 1) fit_cpl = 1;
+    int min_lines = (dlen + fit_cpl - 1) / fit_cpl;   // fewest lines that fit the width
+
+    // Prefer a balanced, portrait-ish block over one or two full-width runs on a wide
+    // screen: the target line count comes from the address LENGTH alone (resolution-
+    // independent), calibrated so a full-length address (taproot / P2WSH) lands on ~3
+    // lines like the mid-size screen. Only adds lines when the width has room to spare —
+    // narrow screens keep the larger min_lines, so their layout is unchanged.
+    int target_lines = (int)lround(std::sqrt((double)dlen / 9.0));
+    int num_lines = std::max(min_lines, target_lines);
+    if (num_lines < 1) num_lines = 1;
+    int max_cpl = (dlen + num_lines - 1) / num_lines;   // re-even so lines are equal width
+    if (max_cpl < 1) max_cpl = 1;
+
+    int32_t addr_lines_x = (width - char_width * max_cpl) / 2;
+    if (addr_lines_x < 0) addr_lines_x = 0;
+
+    const int32_t row_advance = char_height + BODY_LINE_SPACING;
+
+    // Render line by line: within each line emit one label per run of same-colored
+    // characters (positioned by column), skipping all-space runs.
+    int     pos = 0;
+    int32_t y   = 0;
+    for (int line = 0; line < num_lines && pos < dlen; ++line) {
+        int line_len = std::min(max_cpl, dlen - pos);
+        int i = 0;
+        while (i < line_len) {
+            uint32_t c = colv[pos + i];
+            int j = i;
+            while (j < line_len && colv[pos + j] == c) ++j;
+            std::string run = display.substr(pos + i, j - i);
+            if (run.find_first_not_of(' ') != std::string::npos) {
+                emit(addr_lines_x + i * char_width, y, run, c);
+            }
+            i = j;
+        }
+        content_bottom = y + line_h;   // this row's full extent incl. descenders
+        pos += line_len;
+        y   += row_advance;
+    }
+
+    lv_obj_set_height(cont, content_bottom);
+    return cont;
 }
 

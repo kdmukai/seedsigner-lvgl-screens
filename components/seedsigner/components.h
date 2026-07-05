@@ -144,6 +144,50 @@ typedef struct {
 
 lv_obj_t* btc_amount(lv_obj_t* parent, const btc_amount_opts_t* opts);
 
+// Reusable formatted Bitcoin-address readout, in a fixed-width font, that steers the
+// signer's eye to the bytes that actually need verifying:
+//
+//   [ recognized format prefix ]  gray  — de-emphasized: it's just the address type
+//                                          ("bc1q", "1", "3", "tb1p", "bcrt1q", …), not
+//                                          something to check character-by-character.
+//   [ first 7 chars after prefix ] network color — the human-verifiable head.
+//   [ middle ]                     gray  — bulk of the address.
+//   [ last 7 chars ]               network color — the human-verifiable tail.
+//
+// Long addresses wrap on a fixed characters-per-line grid so every line is the same
+// width; `max_lines` caps the height (a single line becomes a compact "head…tail").
+// Coloring is intrinsic per-character, so it survives any wrapping.
+//
+// The prefix is DETECTED here (longest match over the known base58 version chars and
+// bech32 HRP+version prefixes across mainnet/testnet/signet/regtest); unrecognized
+// input just gets a zero-length prefix and still highlights the first/last 7. But the
+// highlight COLOR is caller-supplied (from the PSBT's network), because the base58
+// `m`/`n`/`2` prefixes are shared by testnet/signet/regtest and can't be told apart
+// from the string alone. Pure renderer otherwise — the host derives the address.
+//
+//   address    : the full address string (ASCII base58 / bech32). Required.
+//   width      : layout column width in px. 0 = full display width. Children are laid
+//                out relative to the returned container's left edge, so the caller
+//                positions the container at its screen_x.
+//   max_lines  : cap on the number of lines. 1 = single-line head…tail; 0 = no cap
+//                (wrap to as many lines as the address needs).
+//   accent_color : the NETWORK highlight color for the head/tail (mainnet accent /
+//                testnet green / regtest blue). SEEDSIGNER_ICON_COLOR_DEFAULT →
+//                ACCENT_COLOR (mainnet).
+//   base_color : the de-emphasized gray for the prefix + middle. SEEDSIGNER_ICON_
+//                COLOR_DEFAULT → LABEL_FONT_COLOR.
+//
+// Returns a content-height container (width == `width`) parented to `parent`.
+typedef struct {
+    const char *address;
+    int32_t     width;
+    int         max_lines;
+    uint32_t    accent_color;
+    uint32_t    base_color;
+} formatted_address_opts_t;
+
+lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* opts);
+
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);
