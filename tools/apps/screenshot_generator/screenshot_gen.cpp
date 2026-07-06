@@ -550,6 +550,40 @@ static bool fs_pack_provider(const char *locale, const char *file,
     return true;
 }
 
+// Register every language pack found under <font_dir> from its own manifest.json, so
+// the render layer learns each locale's policy (chain / rtl / shaping / role sizes) at
+// runtime. Screens bakes only the English floor; non-English locales are self-described
+// by their pack, so a pack simply appearing under lang-packs/ makes its locale render —
+// no compiled-in locale table, no recompile. Returns the number registered. (Host-side
+// file I/O: the render layer deliberately never opens files — see locale_loader.h.)
+static int register_packs_from_dir(const std::string &font_dir) {
+    DIR *d = opendir(font_dir.c_str());
+    if (!d) return 0;
+    // Collect + sort the locale dirs so registration order (and thus the
+    // supported_locales_json ordering) is deterministic regardless of the
+    // filesystem's readdir order — CI screenshot diffs depend on it.
+    std::vector<std::string> locales;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != nullptr) {
+        std::string name = ent->d_name;
+        if (name == "." || name == "..") continue;
+        locales.push_back(name);
+    }
+    closedir(d);
+    std::sort(locales.begin(), locales.end());
+
+    int n = 0;
+    for (const std::string &name : locales) {
+        std::string manifest = font_dir + "/" + name + "/manifest.json";
+        std::ifstream in(manifest, std::ios::binary);
+        if (!in) continue;  // not a pack dir (English + catalog-only locales carry no manifest)
+        std::string bytes((std::istreambuf_iterator<char>(in)),
+                          std::istreambuf_iterator<char>());
+        if (ss_register_pack_manifest(bytes.data(), bytes.size())) ++n;
+    }
+    return n;
+}
+
 int main(int argc, char **argv) {
     const char *out_dir = DEFAULT_OUT_DIR;
     const char *scenarios_file = DEFAULT_SCENARIOS_FILE;
@@ -582,6 +616,12 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+
+    // Learn every available locale's policy from its pack manifest. There is no
+    // compiled-in locale table anymore — screens bakes only the English floor and
+    // discovers non-English locales from the packs under --font-dir. Both --dump-locales
+    // and the per-locale render path below read this registered runtime set.
+    register_packs_from_dir(font_dir);
 
     // Emit the canonical per-profile font manifest (the render layer's sole
     // outward interface) and exit. The offline font-pack tooling consumes this

@@ -75,12 +75,13 @@ def main():
         out = os.path.join(packs_dir, code)
         os.makedirs(out, exist_ok=True)
         for fn in sorted(os.listdir(src)):
-            # The browser fetches exactly the files ss_pack_files lists: the role
-            # .ttf(s) plus runs.bin for complex-script (shaping) packs. (runs.json is
-            # the repo-side debug/oracle mirror; manifest.json stays repo-side too —
-            # the WASM build reads the manifest from the render layer.) endonym_<h>.bin
-            # are the pre-rendered language names the locale picker fetches per row.
-            if (fn.endswith(".ttf") or fn == "runs.bin"
+            # manifest.json: the browser fetches + registers it (ss_register_manifest)
+            # so the render layer learns the locale's policy — screens bakes no locale
+            # table. Then it fetches exactly the files ss_pack_files lists: the role
+            # .ttf(s) plus runs.bin for complex-script (shaping) packs. (runs.json is the
+            # repo-side debug/oracle mirror — not staged.) endonym_<h>.bin are the
+            # pre-rendered language names the locale picker fetches per row.
+            if (fn == "manifest.json" or fn.endswith(".ttf") or fn == "runs.bin"
                     or fn.startswith("endonym_")):
                 shutil.copyfile(os.path.join(src, fn), os.path.join(out, fn))
 

@@ -210,9 +210,21 @@ EMSCRIPTEN_KEEPALIVE int ss_get_height() { return runner_core::height(); }
 // — which keeps the clear-old + register-new burst atomic (no frame redraws with a
 // freed font or the baked baseline mid-switch).
 
+// Register a language pack from its manifest.json so the render layer learns the
+// locale's policy (chain / rtl / shaping / role sizes). Screens bakes NO locale table,
+// so JS must call this once per available pack (fetch assets/lang-packs/<loc>/manifest.json)
+// BEFORE ss_pack_files / ss_load_staged — a locale is described entirely by its pack.
+// Returns 1 on success, 0 if the manifest is rejected (fail-closed). This is the browser
+// equivalent of the device's SD-card pack discovery.
+EMSCRIPTEN_KEEPALIVE int ss_register_manifest(const char* json, int len) {
+    if (!json || len <= 0) return 0;
+    return ss_register_pack_manifest(json, static_cast<size_t>(len)) ? 1 : 0;
+}
+
 // The list of files JS must fetch + stage for `locale` ("["ur.ttf","runs.bin"]",
-// or "[]" for a baked-floor locale). Comes from the render layer's manifest via
-// the shared loader, so the web host never duplicates that policy.
+// or "[]" for a baked-floor / unregistered locale). Comes from the render layer's
+// manifest via the shared loader, so the web host never duplicates that policy.
+// Requires the locale's manifest to have been registered (ss_register_manifest) first.
 EMSCRIPTEN_KEEPALIVE const char* ss_pack_files(const char* locale) {
     return ss_locale_pack_files(locale);
 }

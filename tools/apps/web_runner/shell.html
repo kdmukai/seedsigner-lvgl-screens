@@ -344,6 +344,7 @@
     // Locale packs (option B): the shared loader tells us which files to fetch
     // (ss_pack_files); JS stages each fetched blob (ss_stage_blob) then calls
     // ss_load_staged once to drive the same loader every host uses.
+    app.registerManifest = Module.cwrap('ss_register_manifest', 'number', ['number', 'number']);
     app.packFiles  = Module.cwrap('ss_pack_files', 'string', ['string']);
     app.stageBlob  = Module.cwrap('ss_stage_blob', null, ['string', 'number', 'number']);
     app.loadStaged = Module.cwrap('ss_load_staged', 'number', ['string']);
@@ -432,6 +433,7 @@
     var catalog   = {};   // expanded catalog for the active locale (loaded async)
     var fontCache = {};   // 'locale/file' -> Uint8Array; lets re-register skip re-fetch
     var endonymCache = {}; // 'locale/file' -> Uint8Array|null; picker endonym images (null = missing)
+    var manifestDone = {}; // locale -> true once its manifest.json has been fetched+registered (or 404'd)
     var pendingState = parseUrl();   // deep-link state to restore on first load
     // Cache-bust runtime-fetched assets (scenarios, fonts, locale index) per page
     // load. GitHub Pages sends a fixed Cache-Control we can't override, so without
@@ -599,6 +601,24 @@
       //    cache (no await), so stage→load→reload land in one microtask flush before
       //    the next frame, instead of drawing one frame in the baked baseline (which
       //    shows pack glyphs — Greek/Cyrillic/CJK/Devanagari — as .notdef boxes).
+      // Screens bakes no locale table: a locale only reports pack files once its
+      // manifest.json is registered (ss_register_manifest). Fetch + register it first —
+      // English + baked-Latin locales carry no manifest, so a 404 just means "baked
+      // floor" (files stays []). Registration is idempotent by code; do it at most once
+      // per locale. This precedes the no-await staging region and never touches live fonts.
+      if (!manifestDone[locale]) {
+        try {
+          var mresp = await fetch('assets/lang-packs/' + locale + '/manifest.json' + ASSET_BUST);
+          if (mresp.ok) {
+            var mbytes = new Uint8Array(await mresp.arrayBuffer());
+            var mptr = Module._malloc(mbytes.length);
+            Module.HEAPU8.set(mbytes, mptr);   // re-access HEAPU8 post-malloc (growth-safe)
+            app.registerManifest(mptr, mbytes.length);
+            Module._free(mptr);
+          }
+        } catch (e) { /* no manifest => baked-floor locale */ }
+        manifestDone[locale] = true;
+      }
       var files;
       try { files = JSON.parse(app.packFiles(locale)); } catch (e) { files = []; }
       for (var i = 0; i < files.length; i++) {

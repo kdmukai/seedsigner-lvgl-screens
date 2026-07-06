@@ -40,6 +40,19 @@ static bool fs_pack_provider(const char* locale, const char* file,
     return true;
 }
 
+// Register a pack from its on-disk manifest.json so the render layer learns the locale's
+// policy (chain/rtl/shaping/roles). Screens bakes no locale table — every non-English
+// locale is self-described by its pack — so a host must register it before ss_load_locale.
+// Mirrors what each production host does at pack discovery.
+static bool register_pack(const char* locale) {
+    std::string path = std::string("lang-packs/") + locale + "/manifest.json";
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::string bytes((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+    return ss_register_pack_manifest(bytes.data(), bytes.size());
+}
+
 static int count_nonzero(const uint16_t* fb, int n) {
     int c = 0;
     for (int i = 0; i < n; ++i)
@@ -206,6 +219,7 @@ int main(int argc, char** argv) {
         // double-frees a shared script if reap destroys per-registration.
         auto load_render_reap = [&](const char* loc, int w, int h) -> bool {
             runner_core::resize(w, h);
+            register_pack(loc);  // learn the locale's policy from its manifest (no baked table)
             bool loaded = ss_load_locale(loc, fs_pack_provider, nullptr);
             runner_core::load_screen("button_list_screen", loc_ctx);
             for (int i = 0; i < 3; ++i) runner_core::tick(16);
@@ -234,14 +248,14 @@ int main(int argc, char** argv) {
     }
 
     // -----------------------------------------------------------------------
-    // Runtime (SD-card) pack registration: a language pack whose code is NOT
-    // compiled in becomes loadable from its own manifest.json alone — the
-    // "add a language by copying it onto the SD card, no firmware rebuild" path.
-    // We assert the DISCOVERY half here (which files a runtime locale needs is
-    // driven entirely by the registered manifest, so ss_load_locale would then
-    // fetch them); the byte-load half is the same provider path the real-pack
-    // tests above already exercise. Also asserts fail-closed parsing (hostile
-    // input on a user-writable partition) and compiled-default override.
+    // Runtime pack registration: screens bakes NO locale table, so a language pack
+    // becomes loadable purely from its own manifest.json — the "add a language by
+    // copying it onto the SD card / into lang-packs, no firmware rebuild" path.
+    // We assert the DISCOVERY half here (which files a locale needs is driven entirely
+    // by the registered manifest, so ss_load_locale would then fetch them); the
+    // byte-load half is the same provider path the real-pack tests above already
+    // exercise. Also asserts fail-closed parsing (hostile input on a user-writable
+    // partition) and that clearing the registry leaves a locale unknown (no baked fallback).
     // -----------------------------------------------------------------------
     printf("\n-- runtime SD-pack manifest registration --\n");
     {
@@ -253,7 +267,7 @@ int main(int argc, char** argv) {
             return std::string(ss_locale_pack_files(loc));  // copy: static buffer
         };
 
-        // A code absent from BOTH the compiled table and the runtime set: no files.
+        // A code absent from the runtime set: no files (there is no compiled table).
         check(files("zz_Test") == "[]",
               "unknown locale needs no pack files before registration");
 
@@ -286,17 +300,20 @@ int main(int argc, char** argv) {
         check(!reg(R"({"locale":"","source_family":"X"})"), "empty locale rejected");
         check(files("nope") == "[]", "a rejected manifest leaves no entry");
 
-        // A runtime entry OVERRIDES a compiled default of the same code.
-        check(reg(R"({"locale":"ru","source_family":"NotoSansSC","chain":"primary","shaping":true,"script":"Cyrl"})"),
-              "register runtime override for a compiled locale");
-        check(files("ru").find("runs.bin") != std::string::npos,
-              "runtime entry overrides the compiled 'ru' descriptor");
+        // Re-registering a code REPLACES the prior runtime entry (idempotent by code) —
+        // e.g. an SD rescan picking up an updated pack. zz_Test was a Primary above; make
+        // it a shaping pack and confirm discovery now reflects the new manifest.
+        check(reg(R"({"locale":"zz_Test","source_family":"NotoSansDevanagari","chain":"primary","shaping":true,"script":"Deva"})"),
+              "re-register zz_Test as a shaping pack");
+        check(files("zz_Test").find("runs.bin") != std::string::npos,
+              "re-registered zz_Test now requests runs.bin (replace by code)");
 
-        // Clear: runtime entries vanish, compiled defaults are intact.
+        // Clear: every runtime entry vanishes. Screens has no baked fallback, so the
+        // locale is simply unknown again (no compiled descriptor to fall back to).
         ss_clear_pack_manifests();
-        check(files("zz_Test") == "[]", "clear drops runtime packs");
-        check(files("ru").find("runs.bin") == std::string::npos,
-              "compiled 'ru' descriptor restored after clear");
+        check(files("zz_Test") == "[]", "clear drops runtime packs (no baked fallback)");
+        check(files("ru") == "[]",
+              "a real locale like 'ru' is unknown until its pack is registered");
     }
 
     printf("\n%s (%d failure(s))\n", failures == 0 ? "ALL OK" : "FAILED", failures);

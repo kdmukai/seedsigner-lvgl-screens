@@ -201,7 +201,7 @@ target_link_options(web_runner PRIVATE
   -fexceptions
   -O2
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','HEAPU8']"
-  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_pack_files','_ss_stage_blob','_ss_stage_endonym','_ss_load_staged','_ss_reload','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_main','_ss_load_screen','_ss_set_resolution','_ss_set_input_mode','_ss_send_key','_ss_scroll','_ss_get_width','_ss_get_height','_ss_register_manifest','_ss_pack_files','_ss_stage_blob','_ss_stage_endonym','_ss_load_staged','_ss_reload','_malloc','_free']"
   "--shell-file" "${CMAKE_CURRENT_LIST_DIR}/shell.html")
 
 # Force a relink when the shell changes.

@@ -45,20 +45,19 @@ bool text_role_from_name(const std::string& name, TextRole& out) {
 }
 
 // ---------------------------------------------------------------------------
-// The canonical table.
+// Role/size presets per chain.
 //
-// CJK (Primary): legibility-bumped base sizes follow the production Python
-// per-locale size tables (gui/components.py): body 17->18, button 18->20,
-// title 20->23. LargeButton (native 20) tracks the title bump to 23;
-// MainMenuTitle (26) is already large enough and is left un-bumped.
+// These are the only baked locale policy left in screens: the per-role base sizes a
+// registered pack inherits from its `chain` when its manifest does not carry explicit
+// role sizes (default_locale_roles). Everything else about a locale (which locales
+// exist, their font family / rtl / shaping / script) now travels in each pack's
+// manifest.json — there is no compiled-in locale table. Policy is owned by the
+// seedsigner-language-packs repo; see docs/knowledge/language-pack-format-and-policy-authority.md.
 //
-// The ROWS are NOT hand-written here anymore: locale_font_table() generates them
-// by #include-ing the vendored master policy config (locales.h) with the SS_LOCALE
-// X-macro defined. locales.h is owned by the seedsigner-language-packs repo (the
-// single source of truth for locale->font policy) and vendored here verbatim; the
-// render layer is now a CONSUMER of that policy, not its author. To add/change a
-// locale, edit locales.h upstream and re-vendor the copy — never hand-edit rows.
-// See docs/knowledge/language-pack-format-and-policy-authority.md.
+// CJK (Primary): legibility-bumped base sizes follow the production Python per-locale
+// size tables (gui/components.py): body 17->18, button 18->20, title 20->23.
+// LargeButton (native 20) tracks the title bump to 23; MainMenuTitle (26) is already
+// large enough and is left un-bumped.
 // ---------------------------------------------------------------------------
 static std::vector<LocaleRoleSize> cjk_primary_roles() {
     return {
@@ -85,22 +84,10 @@ static std::vector<LocaleRoleSize> opensans_fallback_roles() {
     };
 }
 
-// Expand each SS_LOCALE(...) row from the vendored locales.h into a LocaleFontEntry
-// aggregate. The roles vector is derived from the chain (default_locale_roles():
-// Primary = CJK legibility bump, Fallback = same-size baseline), so the endonym is
-// the only SS_LOCALE arg this expansion ignores (screens gets endonyms elsewhere).
-#define SS_LOCALE(id, family, chain, range, rtl, shaping, script, endonym) \
-    { id, family, chain, default_locale_roles(chain), range, rtl, shaping, script },
-
-const std::vector<LocaleFontEntry>& locale_font_table() {
-    static const std::vector<LocaleFontEntry> table = {
-        #include "locales.h"   // SS_LOCALE rows → entries; locales.h #undefs SS_LOCALE
-    };
-    return table;
-}
-
 // ---------------------------------------------------------------------------
-// Runtime-registered locales (SD-card packs). See locale_fonts.h.
+// Runtime-registered locales (language packs). See locale_fonts.h. These are the
+// ONLY source of locale entries — every non-English locale is synthesized from its
+// pack's manifest.json via ss_register_pack_manifest; screens bakes no locale table.
 // ---------------------------------------------------------------------------
 static std::vector<LocaleFontEntry>& runtime_entries() {
     static std::vector<LocaleFontEntry> entries;
@@ -129,11 +116,9 @@ void clear_runtime_locale_entries() {
 }
 
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale) {
-    // Runtime (SD) entries win over the compiled default for the same code.
+    // Only runtime-registered packs exist now; an unregistered locale (English, or a
+    // locale whose pack was not scanned) returns nullptr and renders on the baked floor.
     for (const LocaleFontEntry& e : runtime_entries()) {
-        if (e.locale == locale) return &e;
-    }
-    for (const LocaleFontEntry& e : locale_font_table()) {
         if (e.locale == locale) return &e;
     }
     return nullptr;
@@ -168,18 +153,11 @@ std::string supported_locales_json() {
     out["profile"] = { {"width", profile.width}, {"height", profile.height} };
     out["locales"] = json::array();
 
-    // Emit runtime (SD) entries first; a compiled entry with the same code is then
-    // skipped (the runtime pack overrides it). This is what lets ss_load_locale /
-    // ss_locale_pack_files serve a not-compiled-in locale — they read this JSON.
+    // Every entry is a runtime-registered pack (ss_register_pack_manifest); the English
+    // floor is baked separately and needs no descriptor here. This JSON is what lets
+    // ss_load_locale / ss_locale_pack_files serve each discovered locale.
     std::vector<const LocaleFontEntry*> entries;
     for (const LocaleFontEntry& e : runtime_entries()) entries.push_back(&e);
-    for (const LocaleFontEntry& e : locale_font_table()) {
-        bool overridden = false;
-        for (const LocaleFontEntry& r : runtime_entries()) {
-            if (r.locale == e.locale) { overridden = true; break; }
-        }
-        if (!overridden) entries.push_back(&e);
-    }
 
     for (const LocaleFontEntry* ep : entries) {
         const LocaleFontEntry& e = *ep;
