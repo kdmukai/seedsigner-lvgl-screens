@@ -35,17 +35,11 @@ case "$COMMAND" in
   # ---------------------------------------------------------------------------
 
   install-screenshot-deps)
+    # The gallery renders from COMMITTED fixtures (lang-packs/ + tools/scenarios/localized/),
+    # so screens builds no packs here — no shaping toolchain (uharfbuzz/PyICU) needed. Just
+    # the screenshot_gen build deps (cmake/libpng) + imagemagick (screenshot compare).
     $SUDO apt-get update
-    # python3-icu: distro-prebuilt PyICU (ICU dictionary line-breaker). Installed via
-    # apt, NOT pip, because PyICU ships no wheels — `pip install PyICU` compiles from
-    # source (a slow build that wedged CI for >20 min). The binding tracks the system
-    # libicu, which is exactly what each pack manifest's icu_version already records.
-    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3 python3-pip python3-icu
-    # Remaining offline i18n shaping deps ship wheels (fast). Install them from the
-    # language-packs submodule's pinned requirements (this repo no longer owns the
-    # pack-build tooling), minus the PyICU line (satisfied by python3-icu above) so
-    # pip doesn't trigger the source rebuild.
-    grep -viE '^pyicu' deps/language-packs/tools/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3 python3-pip
     ;;
 
   build-screenshots)
@@ -56,29 +50,31 @@ case "$COMMAND" in
     ;;
 
   generate-screenshots)
-    # Multi-language gallery: render every supported locale into its own subdir so
-    # the published gallery has a language picker. Needs the localized scenario
-    # catalogs (gen_localized_scenarios, gallery-only, stays here) + the font packs
-    # (built by the language-packs submodule; see build-fontpacks); the generator
-    # itself was built by build-screenshots.
+    # Multi-language gallery: render every supported locale into its own subdir. Reads the
+    # COMMITTED fixtures — localized scenarios (tools/scenarios/localized/) + font packs
+    # (lang-packs/) — so it neither localizes nor builds packs here. (Screens tests
+    # presentation, not the corpus; refresh fixtures out-of-band via build-fontpacks.)
     OUT="${1:-tools/apps/screenshot_generator/screenshots}"
     GEN=tools/apps/screenshot_generator/build/screenshot_gen
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
-    python3 tools/i18n/gen_localized_scenarios.py
-    scripts/ci/ci.sh build-fontpacks
     python3 tools/apps/screenshot_generator/gen_gallery.py --out "$OUT" --gen-bin "$GEN"
     ;;
 
   build-fontpacks)
-    # Build the per-locale font packs under lang-packs/ — the runtime locale assets
-    # the gallery, the headless runner_core dedup test, and the desktop apps consume.
-    # This repo no longer owns the pack-build tooling: it delegates to the
-    # seedsigner-language-packs submodule (deps/language-packs), which reads its own
-    # locales.h (no screenshot_gen --dump-locales) + fonts + .po. LVGL_ROOT points the
-    # submodule's lv_shape fa oracle at this repo's pinned LVGL (same v9.5.0 SHA).
-    # Usage: ci.sh build-fontpacks
-    LVGL_ROOT="$PWD/third_party/lvgl" \
-      python3 deps/language-packs/tools/build_fontpacks.py --out-dir "$PWD/lang-packs"
+    # LOCAL fixture-refresh helper — NOT run in CI (CI reads the committed lang-packs/
+    # fixtures). Regenerates the curated pack_locales in lang-packs/ from a language-packs
+    # checkout: point SS_LANGPACKS_REPO_DIR at one (default: sibling ../seedsigner-language-packs).
+    # It builds via that repo's build_packs.sh, then copies the fixture locales in (minus the
+    # runs.json debug mirror). Also refresh localized scenarios with gen_localized_scenarios.py.
+    REPO="${SS_LANGPACKS_REPO_DIR:-../seedsigner-language-packs}"
+    [ -x "$REPO/scripts/build_packs.sh" ] || { echo "ERROR: no language-packs checkout at '$REPO' (set SS_LANGPACKS_REPO_DIR)" >&2; exit 1; }
+    LOCS="${LANGPACK_FIXTURE_LOCALES:-zh_Hans_CN ja ko fa hi th ur el ru vi}"
+    # shellcheck disable=SC2046
+    "$REPO/scripts/build_packs.sh" $(for l in $LOCS; do printf ' --locale %s' "$l"; done)
+    for l in $LOCS; do
+      rm -rf "lang-packs/$l"
+      rsync -a --exclude='runs.json' "$REPO/build/$l/" "lang-packs/$l/"
+    done
+    echo "regenerated fixture packs ($LOCS) in lang-packs/"
     ;;
 
   compare-screenshots)
@@ -144,14 +140,11 @@ PY
       ${@+"$@"}
     cmake --build tools/apps/web_runner/build-wasm -j"$NPROC"
 
-    # Stage the runtime assets (scenario catalogs + font packs + locale index)
-    # next to the bundle. The script/CJK packs are regenerated via the language-packs
-    # submodule's builder (reads its own locales.h; no screenshot_gen); its shaping
-    # toolchain comes from install-screenshot-deps and its translations from
-    # `submodules: recursive`.
+    # Stage the runtime assets (scenario catalogs + font packs + locale index) next to
+    # the bundle by COPYING the committed fixtures (lang-packs/ + tools/scenarios/localized/).
+    # No pack build here — screens tests presentation from fixtures.
     python3 tools/apps/web_runner/stage_assets.py \
-      --dest tools/apps/web_runner/build-wasm \
-      --regen-packs
+      --dest tools/apps/web_runner/build-wasm
     ;;
 
   package-web-runner)
@@ -170,15 +163,11 @@ PY
   # ---------------------------------------------------------------------------
 
   install-runner-core-test-deps)
-    # The runner_core test loads real per-locale font packs (lang-packs/) to exercise
-    # the font dedup + retire/reap lifecycle across scripts, so the job builds those
-    # packs first (see build-fontpacks). That needs the i18n toolchain (PyICU +
-    # fontTools + HarfBuzz) plus the build deps for screenshot_gen (libpng) and the
-    # lv_shape shaper (cmake + compiler). PyICU comes from apt — it ships no wheels, so
-    # `pip install PyICU` would compile from source (>20 min wedge); the rest ship wheels.
+    # The runner_core test loads the COMMITTED fixture packs (lang-packs/) to exercise the
+    # font dedup + retire/reap lifecycle across scripts — no pack build, so no i18n shaping
+    # toolchain. Just cmake + compiler to build the test.
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libpng-dev python3 python3-pip python3-icu
-    grep -viE '^pyicu' deps/language-packs/tools/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    $SUDO apt-get install -y cmake build-essential libpng-dev python3 python3-pip
     ;;
 
   test-runner-core)

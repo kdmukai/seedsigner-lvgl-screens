@@ -1,0 +1,52 @@
+{
+  "locale": "hi",
+  "source_family": "NotoSansDevanagari",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 29838,
+    "sha256": "071ed97bb675b63f2a328468140df146afd4ba6ebe1a532fabf4c0b2916806b9"
+  },
+  "shaping": true,
+  "script": "Deva",
+  "rtl": false,
+  "endonym": "\u0939\u093f\u0928\u094d\u0926\u0940",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 39,
+      "h": 21,
+      "bytes": 831
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 50,
+      "h": 28,
+      "bytes": 1412
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 76,
+      "h": 42,
+      "bytes": 3204
+    }
+  },
+  "corpus_glyphs": 543,
+  "font": {
+    "file": "hi.ttf",
+    "source_ttf": "fonts/NotoSansDevanagari-Regular.ttf",
+    "bytes": 142380,
+    "sha256": "7fd86cb6e1f8aa04e4612904df13b36ddb2aed8767608367787c0bad05fd7eea"
+  },
+  "runs": {
+    "file": "runs.bin",
+    "sha256": "f742f8dfdb22da3b2514ee89474de8981191156d12d072b475ac7625948db082",
+    "bytes": 63099,
+    "debug_json": "runs.json",
+    "plain": 291,
+    "segmented": 26,
+    "ascii_passthrough": 12,
+    "unsupported": 1
+  },
+  "harfbuzz_version": "14.2.1"
+}

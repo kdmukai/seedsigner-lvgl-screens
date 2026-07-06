@@ -1,0 +1,49 @@
+{
+  "locale": "el",
+  "source_family": "OpenSans",
+  "chain": "fallback",
+  "rtl": false,
+  "unicode_range": "U+0370-03FF",
+  "endonym": "\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 79,
+      "h": 19,
+      "bytes": 1513
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 101,
+      "h": 25,
+      "bytes": 2537
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 158,
+      "h": 38,
+      "bytes": 6016
+    }
+  },
+  "fonts": [
+    {
+      "weight": "regular",
+      "file": "el_regular.ttf",
+      "source_ttf": "fonts/OpenSans-Regular.ttf",
+      "bytes": 14864,
+      "sha256": "465258973976d96f27979073e4d39e777b8d8ba10adae564d5e4e91d8c766458"
+    },
+    {
+      "weight": "semibold",
+      "file": "el_semibold.ttf",
+      "source_ttf": "fonts/OpenSans-SemiBold.ttf",
+      "bytes": 14912,
+      "sha256": "42f38ef383c13e4dc94fb98318a2c6fc4a376518f2691c6911873b2c9fefa7ed"
+    }
+  ],
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 21407,
+    "sha256": "8481483c691db3665dbf3cb62951a65286ba641e375a017d7f4ec9a192ef0117"
+  }
+}

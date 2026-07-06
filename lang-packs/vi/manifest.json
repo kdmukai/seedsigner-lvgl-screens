@@ -1,0 +1,49 @@
+{
+  "locale": "vi",
+  "source_family": "OpenSans",
+  "chain": "fallback",
+  "rtl": false,
+  "unicode_range": "U+01A0-01A1,U+01AF-01B0,U+0300-036F,U+1E00-1EFF",
+  "endonym": "Ti\u1ebfng Vi\u1ec7t",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 85,
+      "h": 19,
+      "bytes": 1627
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 109,
+      "h": 26,
+      "bytes": 2846
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 171,
+      "h": 39,
+      "bytes": 6681
+    }
+  },
+  "fonts": [
+    {
+      "weight": "regular",
+      "file": "vi_regular.ttf",
+      "source_ttf": "fonts/OpenSans-Regular.ttf",
+      "bytes": 32012,
+      "sha256": "dca29fa1939e0e99e2a4fed32e966ca1543d3f56bb84b2ad0fda7f50c0a1e0af"
+    },
+    {
+      "weight": "semibold",
+      "file": "vi_semibold.ttf",
+      "source_ttf": "fonts/OpenSans-SemiBold.ttf",
+      "bytes": 31920,
+      "sha256": "391e59b7a7fd159e479903cbd1673ecf44d08bb1aebd14407a43cf09ae70c46d"
+    }
+  ],
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 21705,
+    "sha256": "d188512756a993a65ea386c66499858d99cd0afc9953adaa7090ea59179b4f02"
+  }
+}

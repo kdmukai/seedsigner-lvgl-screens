@@ -1,0 +1,52 @@
+{
+  "locale": "th",
+  "source_family": "NotoSansTH",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 29754,
+    "sha256": "76eade4cacd5ab660112a426786649d7ada70648a7ea2f8d4babd0028afb6b50"
+  },
+  "shaping": true,
+  "script": "Thai",
+  "rtl": false,
+  "endonym": "\u0e44\u0e17\u0e22",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 30,
+      "h": 18,
+      "bytes": 552
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 39,
+      "h": 23,
+      "bytes": 909
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 59,
+      "h": 35,
+      "bytes": 2077
+    }
+  },
+  "corpus_glyphs": 151,
+  "font": {
+    "file": "th.ttf",
+    "source_ttf": "fonts/NotoSansTH-Regular.ttf",
+    "bytes": 20320,
+    "sha256": "470d106609e94bdca362d252944bd784f214eda06c76ad0e8fcbcabecdcf9b5f"
+  },
+  "runs": {
+    "file": "runs.bin",
+    "sha256": "7cc898475db3407b33e1d70bff8c36cc9443d9e48d82d8689586c56957367383",
+    "bytes": 65574,
+    "debug_json": "runs.json",
+    "plain": 279,
+    "segmented": 24,
+    "ascii_passthrough": 18,
+    "unsupported": 3
+  },
+  "harfbuzz_version": "14.2.1"
+}

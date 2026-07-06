@@ -15,16 +15,18 @@ before staging; pass --regen-packs to (re)build them first via the language-pack
 submodule's builder (deps/language-packs; needs its shaping toolchain + the
 translations checkout it carries). This repo no longer owns the pack builder.
 
+Font packs + localized scenarios are COMMITTED fixtures (lang-packs/,
+tools/scenarios/localized/); this just copies them. Regenerate the fixtures out-of-band
+via `scripts/ci/ci.sh build-fontpacks` + `tools/i18n/gen_localized_scenarios.py`.
+
 Usage:
   stage_assets.py --dest tools/apps/web_runner/build-wasm
-  stage_assets.py --dest site/play --regen-packs
 """
 
 import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -50,8 +52,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dest", required=True, help="build/serve dir to stage assets/ under")
-    ap.add_argument("--regen-packs", action="store_true",
-                    help="rebuild the font packs via the language-packs submodule before copying")
     args = ap.parse_args()
 
     dest = os.path.abspath(args.dest)
@@ -59,18 +59,6 @@ def main():
     packs_dir = os.path.join(dest, "assets", "lang-packs")
     os.makedirs(scen_dir, exist_ok=True)
     os.makedirs(packs_dir, exist_ok=True)
-
-    if args.regen_packs:
-        # Build the font packs via the language-packs submodule (this repo no longer
-        # owns the builder). Only the script/CJK PACK_LOCALES need a font pack; the
-        # submodule reads its own locales.h (no screenshot_gen), and its lv_shape fa
-        # oracle is pointed at this repo's LVGL via LVGL_ROOT.
-        builder = os.path.join(REPO_ROOT, "deps/language-packs/tools/build_fontpacks.py")
-        cmd = [sys.executable, builder, "--out-dir", os.path.join(REPO_ROOT, "lang-packs")]
-        for loc in PACK_LOCALES:
-            cmd += ["--locale", loc]
-        env = dict(os.environ, LVGL_ROOT=os.path.join(REPO_ROOT, "third_party/lvgl"))
-        subprocess.run(cmd, check=True, env=env)
 
     # Scenario catalogs (raw localized JSON — the page expands variations itself).
     src_scen = os.path.join(REPO_ROOT, "tools/scenarios/localized")

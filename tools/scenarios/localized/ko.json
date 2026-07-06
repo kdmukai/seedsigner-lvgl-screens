@@ -1,0 +1,1405 @@
+{
+  "main_menu_screen": {
+    "context": {
+      "top_nav": {
+        "title": "메뉴",
+        "show_back_button": false,
+        "show_power_button": true
+      },
+      "button_list": [
+        "스캔",
+        "시드",
+        "도구",
+        "설정"
+      ]
+    }
+  },
+  "button_list_screen": {
+    "context": {
+      "button_list": [
+        "언어",
+        "설정 유지",
+        "카메라 회전",
+        "비트코인 네트워크"
+      ],
+      "top_nav": {
+        "title": "설정",
+        "show_back_button": true,
+        "show_power_button": false
+      }
+    },
+    "variations": [
+      {
+        "name": "1_item",
+        "context": {
+          "button_list": [
+            "계속"
+          ]
+        }
+      },
+      {
+        "name": "scroll_many",
+        "context": {
+          "button_list": [
+            "언어",
+            "설정 유지",
+            "카메라 회전",
+            "비트코인 네트워크",
+            "스크립트 유형",
+            "서명 유형",
+            "메시지 서명",
+            "고급",
+            "기부하기",
+            "입출력 테스트"
+          ]
+        }
+      },
+      {
+        "name": "long_title",
+        "context": {
+          "top_nav": {
+            "title": "Donaudampfschifffahrtsgesellschaftskapitaensanwaerterpruefungsordnung"
+          }
+        },
+        "screenshot": {
+          "animated": true
+        }
+      },
+      {
+        "name": "intro_text",
+        "context": {
+          "top_nav": {
+            "title": "Export Wallet",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Choose how to export this wallet's public descriptor. The QR option encodes the descriptor for an air-gapped transfer; the file options write it to the SD card. Review the coordinator's requirements before you continue, then pick the format it expects.",
+          "button_list": [
+            "QR code",
+            "JSON file",
+            "Text file",
+            "Specter desktop",
+            "Sparrow",
+            "BlueWallet"
+          ]
+        }
+      },
+      {
+        "name": "intro_text_fits",
+        "context": {
+          "top_nav": {
+            "title": "Export Wallet",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Pick an export format.",
+          "button_list": [
+            "QR code",
+            "JSON file",
+            "Text file"
+          ]
+        }
+      },
+      {
+        "name": "intro_text_restore",
+        "context": {
+          "top_nav": {
+            "title": "Export Wallet",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Choose how to export this wallet's public descriptor. The QR option encodes the descriptor for an air-gapped transfer; the file options write it to the SD card. Review the coordinator's requirements before you continue, then pick the format it expects.",
+          "button_list": [
+            "QR code",
+            "JSON file",
+            "Text file",
+            "Specter desktop",
+            "Sparrow",
+            "BlueWallet"
+          ],
+          "initial_selected_index": 4
+        }
+      },
+      {
+        "name": "intro_text_marginal",
+        "context": {
+          "top_nav": {
+            "title": "시드QR 확인할까요?",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Scan your transcribed SeedQR to confirm it was copied correctly.",
+          "button_list": [
+            "스캔",
+            "건너뛰기",
+            "완료"
+          ]
+        }
+      },
+      {
+        "name": "left_aligned",
+        "context": {
+          "top_nav": {
+            "title": "Seed Options",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            "QR 코드 스캔",
+            "Xpub 내보내기",
+            "Backup this very long seed-options label that overflows the button",
+            {
+              "label": "시드 폐기",
+              "label_color": "#ff0000"
+            }
+          ]
+        }
+      },
+      {
+        "name": "icons",
+        "context": {
+          "top_nav": {
+            "title": "Button Icons",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            {
+              "label": "CAMERA",
+              "icon": ""
+            },
+            {
+              "label": "DICE",
+              "icon": ""
+            },
+            {
+              "label": "FINGERPRINT",
+              "icon": ""
+            },
+            {
+              "label": "KEYBOARD",
+              "icon": ""
+            },
+            {
+              "label": "PLUS",
+              "icon": ""
+            },
+            {
+              "label": "QRCODE",
+              "icon": ""
+            },
+            {
+              "label": "CHEVRON_RIGHT",
+              "right_icon": ""
+            }
+          ]
+        }
+      },
+      {
+        "name": "icons_centered",
+        "context": {
+          "top_nav": {
+            "title": "Confirm action",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_list": [
+            {
+              "label": "Approve",
+              "icon": "",
+              "icon_color": "#30d158"
+            },
+            {
+              "label": "취소",
+              "icon": "",
+              "icon_color": "#ff5555"
+            }
+          ]
+        }
+      },
+      {
+        "name": "checkbox_multi",
+        "context": {
+          "top_nav": {
+            "title": "Script Types",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Select which script types to enable.",
+          "button_style": "checkbox",
+          "checked_buttons": [
+            0,
+            2
+          ],
+          "button_list": [
+            "Native SegWit",
+            "Nested SegWit",
+            "탭루트",
+            "레거시"
+          ]
+        }
+      },
+      {
+        "name": "checkbox_multi_restore",
+        "context": {
+          "top_nav": {
+            "title": "Script Types",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "text": "Select which script types to enable.",
+          "button_style": "checkbox",
+          "checked_buttons": [
+            0,
+            3,
+            5
+          ],
+          "initial_selected_index": 5,
+          "button_list": [
+            "Native SegWit",
+            "Nested SegWit",
+            "탭루트",
+            "레거시",
+            "Custom derivation",
+            "Coordinator default",
+            "Advanced override"
+          ]
+        }
+      },
+      {
+        "name": "radio_single",
+        "context": {
+          "top_nav": {
+            "title": "Coordinator",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_style": "checked_selection",
+          "checked_buttons": [
+            1
+          ],
+          "button_list": [
+            "Sparrow",
+            "Specter Desktop",
+            "BlueWallet",
+            "Nunchuk"
+          ]
+        }
+      },
+      {
+        "name": "top_nav_icon",
+        "context": {
+          "top_nav": {
+            "title": "6a4f e1b8",
+            "icon_color": "#409cff",
+            "icon": "",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            {
+              "label": "QR 코드 스캔",
+              "icon": ""
+            },
+            {
+              "label": "Xpub 내보내기",
+              "icon": "",
+              "right_icon": ""
+            },
+            {
+              "label": "Sign a PSBT",
+              "icon": ""
+            }
+          ]
+        }
+      },
+      {
+        "name": "i18n_radio",
+        "context": {
+          "top_nav": {
+            "title": "Display density",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "button_style": "checked_selection",
+          "checked_buttons": [
+            1
+          ],
+          "is_button_text_centered": false,
+          "button_list": [
+            "콤팩트",
+            "중간",
+            "고정 QR"
+          ]
+        }
+      },
+      {
+        "name": "i18n_icons",
+        "context": {
+          "top_nav": {
+            "title": "검증",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "is_button_text_centered": false,
+          "button_list": [
+            {
+              "label": "스캔",
+              "icon": ""
+            },
+            {
+              "label": "검증",
+              "icon": ""
+            },
+            {
+              "label": "기부하기",
+              "icon": "",
+              "right_icon": ""
+            },
+            {
+              "label": "취소",
+              "icon": "",
+              "label_color": "#ff0000"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "screensaver_screen": {},
+  "splash_screen": {
+    "context": {
+      "version": "v0.8.7",
+      "show_partner_logos": true,
+      "sponsor_text": "후원에 감사드립니다",
+      "logo_already_shown": false
+    },
+    "variations": [
+      {
+        "name": "boot_logo",
+        "context": {
+          "boot_logo_only": true
+        }
+      },
+      {
+        "name": "cpython_no_partners",
+        "context": {
+          "show_partner_logos": false
+        }
+      },
+      {
+        "name": "micropython_partners",
+        "context": {
+          "logo_already_shown": true
+        }
+      },
+      {
+        "name": "micropython_no_partners",
+        "context": {
+          "logo_already_shown": true,
+          "show_partner_logos": false
+        }
+      }
+    ]
+  },
+  "large_icon_status_screen": {
+    "context": {
+      "top_nav": {
+        "title": "백업 검증",
+        "show_back_button": false,
+        "show_power_button": false
+      },
+      "status_type": "success",
+      "status_headline": "성공!",
+      "text": "니모닉 백업 단어가 모두 올바르게 확인되었습니다!",
+      "button_list": [
+        "확인"
+      ],
+      "is_bottom_list": true,
+      "warning_edges": false
+    },
+    "variations": [
+      {
+        "name": "warning",
+        "context": {
+          "top_nav": {
+            "title": "주의",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "warning",
+          "status_headline": "전액 사용!",
+          "text": "입력 값 전액을 사용하며, 잔돈은 없습니다.",
+          "button_list": [
+            "계속"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "dire_warning",
+        "context": {
+          "top_nav": {
+            "title": "주의",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "dire_warning",
+          "status_headline": "시드QR은 곧 개인키입니다!",
+          "text": "인터넷에 연결되는 기기로는 절대 촬영하거나 스캔하지 마세요",
+          "button_list": [
+            "알겠습니다"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "error",
+        "context": {
+          "top_nav": {
+            "title": "하드웨어 오류",
+            "show_back_button": false,
+            "show_power_button": false
+          },
+          "status_type": "error",
+          "status_headline": "카메라 접근 불가",
+          "text": "전원을 끄고 카메라 연결 상태를 확인하세요.",
+          "button_list": [
+            "메뉴로 돌아가기"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "dire_warning_animated",
+        "context": {
+          "top_nav": {
+            "title": "주의",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "dire_warning",
+          "status_headline": "시드QR은 곧 개인키입니다!",
+          "text": "인터넷에 연결되는 기기로는 절대 촬영하거나 스캔하지 마세요",
+          "button_list": [
+            "알겠습니다"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": true
+        },
+        "screenshot": {
+          "animated": true,
+          "seconds": 1.4
+        }
+      },
+      {
+        "name": "long_text_overflow",
+        "context": {
+          "top_nav": {
+            "title": "주의",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "dire_warning",
+          "status_headline": "시드QR은 곧 개인키입니다!",
+          "text": "Anyone who sees this QR code can steal all of your funds. Never photograph it, never scan it into a device that connects to the internet, and never store it digitally. Treat it exactly like the seed phrase itself: write it on paper or steel, keep it offline, and store it somewhere only you can reach. If you are not certain this environment is private and air-gapped, go back now and do not display the code.",
+          "button_list": [
+            "알겠습니다"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": true
+        }
+      },
+      {
+        "name": "long_text_overflow_plain",
+        "context": {
+          "top_nav": {
+            "title": "주의",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "dire_warning",
+          "status_headline": "시드QR은 곧 개인키입니다!",
+          "text": "Anyone who sees this QR code can steal all of your funds. Never photograph it, never scan it into a device that connects to the internet, and never store it digitally. Treat it exactly like the seed phrase itself: write it on paper or steel, keep it offline, and store it somewhere only you can reach. If you are not certain this environment is private and air-gapped, go back now and do not display the code.",
+          "button_list": [
+            "알겠습니다"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "newline",
+        "context": {
+          "top_nav": {
+            "title": "백업 검증",
+            "show_back_button": false,
+            "show_power_button": false
+          },
+          "status_type": "success",
+          "status_headline": "성공!",
+          "text": "First line stands alone.\nThe second paragraph is longer, so it wraps onto more than one line by itself.",
+          "button_list": [
+            "확인"
+          ],
+          "is_bottom_list": true,
+          "warning_edges": false
+        }
+      },
+      {
+        "name": "custom_psbt_finalize",
+        "context": {
+          "top_nav": {
+            "title": "트랜잭션 서명",
+            "show_back_button": true,
+            "show_power_button": false
+          },
+          "status_type": "custom",
+          "icon": "",
+          "icon_color": "#409cff",
+          "status_headline": "",
+          "text": "클릭하여 거래에 서명하세요.",
+          "button_list": [
+            "트랜잭션 승인"
+          ],
+          "is_bottom_list": true
+        }
+      },
+      {
+        "name": "custom_microsd_notification",
+        "context": {
+          "top_nav": {
+            "title": "microSD",
+            "show_back_button": false,
+            "show_power_button": false
+          },
+          "status_type": "custom",
+          "icon": "",
+          "icon_color": "#409cff",
+          "status_headline": "microSD detected",
+          "text": "A microSD card change was detected.",
+          "button_list": [
+            "확인"
+          ],
+          "is_bottom_list": true
+        }
+      }
+    ]
+  },
+  "seed_add_passphrase_screen": {
+    "context": {
+      "top_nav": {
+        "title": "BIP-39 패스프레이즈",
+        "show_back_button": true,
+        "show_power_button": false
+      }
+    },
+    "variations": [
+      {
+        "name": "prefilled",
+        "context": {
+          "initial_text": "satoshi"
+        }
+      },
+      {
+        "name": "uppercase",
+        "context": {
+          "initial_mode": "upper"
+        }
+      },
+      {
+        "name": "digits",
+        "context": {
+          "initial_mode": "digits"
+        }
+      },
+      {
+        "name": "symbols",
+        "context": {
+          "initial_mode": "symbols"
+        }
+      }
+    ]
+  },
+  "camera_preview_overlay_screen": {
+    "context": {
+      "instructions_text": "< back  |  Scan a QR code"
+    },
+    "variations": [
+      {
+        "name": "scanning_early",
+        "context": {
+          "scanning": true,
+          "progress": 25,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "scanning_late",
+        "context": {
+          "progress": 75,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "frame_repeated",
+        "context": {
+          "progress": 60,
+          "frame_status": 2
+        }
+      },
+      {
+        "name": "force_square",
+        "context": {
+          "fill_landscape": false,
+          "progress": 50,
+          "frame_status": 1
+        }
+      },
+      {
+        "name": "fill_landscape",
+        "context": {
+          "fill_landscape": true,
+          "progress": 50,
+          "frame_status": 1
+        }
+      }
+    ]
+  },
+  "camera_entropy_overlay_screen": {
+    "context": {
+      "phase": "preview",
+      "preview_instructions": "< back  |  click a button",
+      "confirm_instructions": "< reshoot  |  accept >",
+      "capturing_text": "이미지 캡처 중...",
+      "capture_icon": "",
+      "accept_label": "Accept"
+    },
+    "variations": [
+      {
+        "name": "capturing",
+        "context": {
+          "phase": "capturing"
+        }
+      },
+      {
+        "name": "confirm",
+        "context": {
+          "phase": "confirm"
+        }
+      }
+    ]
+  },
+  "keyboard_screen": {
+    "context": {
+      "top_nav": {
+        "title": "BIP-85 인덱스",
+        "show_back_button": true,
+        "show_power_button": false
+      },
+      "cols": 5,
+      "keys": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "0"
+      ],
+      "show_save_button": true
+    },
+    "variations": [
+      {
+        "name": "derivation",
+        "context": {
+          "top_nav": {
+            "title": "파생 경로"
+          },
+          "cols": 6,
+          "keys": [
+            "/",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "'",
+            "6",
+            "7",
+            "8",
+            "9",
+            "0"
+          ],
+          "initial_value": "m/",
+          "show_save_button": true
+        }
+      },
+      {
+        "name": "coin_flip",
+        "context": {
+          "top_nav": {
+            "title": "Coin Flip 1/99"
+          },
+          "cols": 2,
+          "keys": [
+            "1",
+            "0"
+          ],
+          "show_save_button": false,
+          "return_after_n_chars": 99,
+          "title_keystroke_template": "Coin Flip {n}/{total}",
+          "guidance_text": "Heads = 1\nTails = 0"
+        }
+      },
+      {
+        "name": "dice",
+        "context": {
+          "top_nav": {
+            "title": "Dice Roll 1/50"
+          },
+          "cols": 3,
+          "keys": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "keys_to_values": {
+            "": "1",
+            "": "2",
+            "": "3",
+            "": "4",
+            "": "5",
+            "": "6"
+          },
+          "keyboard_font": "icon",
+          "show_save_button": false,
+          "return_after_n_chars": 50,
+          "title_keystroke_template": "Dice Roll {n}/{total}"
+        }
+      }
+    ]
+  },
+  "seed_mnemonic_entry_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Seed Word #1",
+        "show_back_button": true,
+        "show_power_button": false
+      },
+      "wordlist": [
+        "abandon",
+        "ability",
+        "able",
+        "about",
+        "above",
+        "absent",
+        "absorb",
+        "abstract",
+        "absurd",
+        "abuse",
+        "access",
+        "accident",
+        "account",
+        "accuse",
+        "cabin",
+        "cable",
+        "cactus",
+        "cage",
+        "cake",
+        "call",
+        "muffin",
+        "mule",
+        "multiply",
+        "muscle",
+        "museum",
+        "mushroom",
+        "music",
+        "must",
+        "mutual",
+        "myself",
+        "mystery",
+        "myth",
+        "navy",
+        "near",
+        "neck",
+        "need",
+        "negative",
+        "oak",
+        "obey",
+        "object"
+      ]
+    },
+    "variations": [
+      {
+        "name": "partial",
+        "context": {
+          "top_nav": {
+            "title": "Seed Word #3"
+          },
+          "initial_letters": "mu"
+        }
+      },
+      {
+        "name": "narrowed",
+        "context": {
+          "top_nav": {
+            "title": "Seed Word #7"
+          },
+          "initial_letters": "mus"
+        }
+      },
+      {
+        "name": "single_match",
+        "context": {
+          "top_nav": {
+            "title": "Seed Word #12"
+          },
+          "initial_letters": "mush"
+        }
+      },
+      {
+        "name": "word_selected",
+        "context": {
+          "top_nav": {
+            "title": "Seed Word #5"
+          },
+          "initial_letters": "mu",
+          "initial_selected_word": "muscle"
+        }
+      }
+    ]
+  },
+  "qr_display_screen": {
+    "context": {
+      "qr_data": "001510801625144200061775148112230622149114270829114415951129055107180638119703891805023413380455",
+      "qr_mode": "numeric",
+      "data_encoding": "utf8",
+      "border": 2,
+      "initial_brightness": 62,
+      "show_brightness_tips": true,
+      "brighter_text": "밝게",
+      "darker_text": "어둡게"
+    },
+    "variations": [
+      {
+        "name": "compactseedqr",
+        "context": {
+          "qr_data": "01f0e32cda200dbbee4cc74dd74ec9b3d8f18ee34a2759c9fa56985e1a3aa9d1",
+          "qr_mode": "byte",
+          "data_encoding": "hex"
+        }
+      },
+      {
+        "name": "xpub_export",
+        "context": {
+          "qr_data": "[aa87528a/84h/0h/0h]xpub6CkqDx98CC6bNG6dG1t7g9xaqsMg4ENmxBKKm43U54NQN9c4MHrsc2QGZemhitcs6xbFbBDTxZnup8vRqctcf2xnxUjftxyYGfBWNsURB9Y",
+          "qr_mode": "byte",
+          "data_encoding": "utf8"
+        }
+      },
+      {
+        "name": "animated_bbqr",
+        "context": {
+          "qr_data": "B$2P0300OBZWE5H7V3EPWSNR2VJKQMFHZA55FP3WU3KRM6XXAQD54CNHZ3XF6RRMWGP25SH3JGY5KUV",
+          "qr_mode": "auto",
+          "data_encoding": "utf8",
+          "test_frames": [
+            "B$2P0300OBZWE5H7V3EPWSNR2VJKQMFHZA55FP3WU3KRM6XXAQD54CNHZ3XF6RRMWGP25SH3JGY5KUV",
+            "B$2P0301IGCT4QO6SX53KNVIWPL3QIB66BGT453S7IYWLDH5OZD5UTMOVKKUDBJ6IHPJL65VG2ULHV5",
+            "B$2P0302YEA7PATJ6O5ZPUMLFRT6XMR62JWHKVFKBQU7EDXUV7O2TNKFT264CAPXQJU7HO4X2GFSYZ6"
+          ]
+        }
+      }
+    ]
+  },
+  "seed_finalize_screen": {
+    "context": {
+      "top_nav": {
+        "title": " 시드 확정",
+        "show_power_button": false
+      },
+      "fingerprint": "8c65eb9f",
+      "fingerprint_label": "지갑 ID",
+      "button_list": [
+        "완료",
+        "BIP-39 패스프레이즈"
+      ]
+    },
+    "variations": [
+      {
+        "name": "no_passphrase",
+        "context": {
+          "button_list": [
+            "완료"
+          ]
+        }
+      }
+    ]
+  },
+  "loading_screen": {
+    "context": {
+      "text": "Loading…"
+    },
+    "screenshot": {
+      "animated": true,
+      "seconds": 0.49
+    },
+    "variations": [
+      {
+        "name": "no_text",
+        "context": {
+          "text": ""
+        }
+      }
+    ]
+  },
+  "psbt_overview_screen": {
+    "context": {
+      "top_nav": {
+        "title": "트랜잭션 확인",
+        "show_back_button": true
+      },
+      "btc_amount": {
+        "primary": "841,234",
+        "unit": "sats",
+        "network": "M"
+      },
+      "num_inputs": 3,
+      "destination_addresses": [
+        "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+        "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+      ],
+      "num_self_transfer_outputs": 0,
+      "num_change_outputs": 1,
+      "has_op_return": false,
+      "button": "세부내용 확인"
+    },
+    "screenshot": {
+      "animated": true,
+      "seconds": 3.0
+    },
+    "variations": [
+      {
+        "name": "single_input",
+        "context": {
+          "btc_amount": {
+            "primary": "0.00841234",
+            "unit": "btc",
+            "network": "M"
+          },
+          "num_inputs": 1,
+          "destination_addresses": [
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+          ],
+          "num_change_outputs": 0
+        }
+      },
+      {
+        "name": "many_inputs_many_recipients",
+        "context": {
+          "btc_amount": {
+            "primary": "12,500,000",
+            "unit": "sats",
+            "network": "M"
+          },
+          "num_inputs": 8,
+          "destination_addresses": [
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+            "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+            "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+            "3FZbgi29cpjq2GjdwV8eyHuJJnkLtktZc5",
+            "bc1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6ax"
+          ],
+          "num_change_outputs": 1
+        }
+      },
+      {
+        "name": "self_transfer_full_spend",
+        "context": {
+          "btc_amount": {
+            "primary": "0.05",
+            "unit": "btc",
+            "network": "M"
+          },
+          "num_inputs": 2,
+          "destination_addresses": [],
+          "num_self_transfer_outputs": 1,
+          "num_change_outputs": 0
+        }
+      },
+      {
+        "name": "op_return_and_change",
+        "context": {
+          "num_inputs": 2,
+          "destination_addresses": [
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+          ],
+          "has_op_return": true,
+          "num_change_outputs": 1
+        }
+      },
+      {
+        "name": "testnet",
+        "context": {
+          "btc_amount": {
+            "primary": "841,234",
+            "unit": "tSats",
+            "network": "T"
+          },
+          "num_inputs": 2,
+          "destination_addresses": [
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+          ],
+          "num_change_outputs": 1
+        }
+      }
+    ]
+  },
+  "psbt_address_details_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Verify Send Address",
+        "show_back_button": true
+      },
+      "btc_amount": {
+        "primary": "0.00841234",
+        "unit": "btc",
+        "network": "M"
+      },
+      "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "button_list": [
+        "다음"
+      ]
+    },
+    "variations": [
+      {
+        "name": "taproot",
+        "context": {
+          "btc_amount": {
+            "primary": "1,250,000",
+            "unit": "sats",
+            "network": "M"
+          },
+          "address": "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"
+        }
+      },
+      {
+        "name": "legacy_p2sh",
+        "context": {
+          "btc_amount": {
+            "primary": "500,000",
+            "unit": "sats",
+            "network": "M"
+          },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+        }
+      },
+      {
+        "name": "testnet",
+        "context": {
+          "btc_amount": {
+            "primary": "841,234",
+            "unit": "tSats",
+            "network": "T"
+          },
+          "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+        }
+      },
+      {
+        "name": "regtest",
+        "context": {
+          "btc_amount": {
+            "primary": "841,234",
+            "unit": "tSats",
+            "network": "R"
+          },
+          "address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+        }
+      }
+    ]
+  },
+  "psbt_change_details_screen": {
+    "context": {
+      "top_nav": {
+        "title": "잔돈",
+        "show_back_button": true
+      },
+      "btc_amount": {
+        "primary": "0.00123456",
+        "unit": "btc",
+        "network": "M"
+      },
+      "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "address_type_label": "change address #0",
+      "is_verified": true,
+      "verified_text": "주소 검증 완료! ",
+      "button_list": [
+        "다음"
+      ]
+    },
+    "variations": [
+      {
+        "name": "unverified_multisig_change",
+        "context": {
+          "address_type_label": "change address #2",
+          "is_verified": false,
+          "button_list": [
+            "다중 서명 잔돈 검증",
+            "검증 건너뛰기"
+          ]
+        }
+      },
+      {
+        "name": "self_transfer_verified",
+        "context": {
+          "top_nav": {
+            "title": "나에게 송금",
+            "show_back_button": true
+          },
+          "btc_amount": {
+            "primary": "2,000,000",
+            "unit": "sats",
+            "network": "M"
+          },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+          "address_type_label": "receive address #5",
+          "is_verified": true
+        }
+      },
+      {
+        "name": "self_transfer_unverified_multisig",
+        "context": {
+          "top_nav": {
+            "title": "나에게 송금",
+            "show_back_button": true
+          },
+          "btc_amount": {
+            "primary": "2,000,000",
+            "unit": "sats",
+            "network": "M"
+          },
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+          "address_type_label": "receive address #5",
+          "is_verified": false,
+          "button_list": [
+            "다중 서명 주소 검증",
+            "검증 건너뛰기"
+          ]
+        }
+      }
+    ]
+  },
+  "psbt_math_screen": {
+    "context": {
+      "top_nav": {
+        "title": "트랜잭션 계산",
+        "show_back_button": true
+      },
+      "denomination": "sats",
+      "num_recipients": 1,
+      "amounts": {
+        "input": "1,000,000",
+        "spend": "841,234",
+        "fee": "2,500",
+        "change": "156,266"
+      },
+      "labels": {
+        "inputs": "inputs",
+        "recipients": "recipients",
+        "fee": "수수료",
+        "change": "sats change"
+      },
+      "button_list": [
+        "수신자 확인"
+      ]
+    },
+    "variations": [
+      {
+        "name": "btc_denomination",
+        "context": {
+          "denomination": "btc",
+          "num_recipients": 2,
+          "amounts": {
+            "input": "0.05000000",
+            "spend": "0.04835000",
+            "fee": "1250",
+            "change": "0.00163750"
+          },
+          "labels": {
+            "inputs": "inputs",
+            "recipients": "recipients",
+            "fee": "수수료",
+            "change": "btc change"
+          }
+        }
+      },
+      {
+        "name": "self_transfer",
+        "context": {
+          "num_recipients": 0,
+          "amounts": {
+            "input": "500,000",
+            "spend": "0",
+            "fee": "1,800",
+            "change": "498,200"
+          },
+          "labels": {
+            "inputs": "inputs",
+            "recipients": "recipients",
+            "fee": "수수료",
+            "change": "sats change"
+          }
+        }
+      }
+    ]
+  },
+  "locale_picker_screen": {
+    "context": {
+      "top_nav": {
+        "title": "언어",
+        "show_back_button": true
+      },
+      "active_locale": "en",
+      "rows": [
+        {
+          "locale": "en",
+          "english": "English",
+          "native": "English"
+        },
+        {
+          "locale": "pt_BR",
+          "english": "Brazilian Portuguese",
+          "native": "Português do Brasil"
+        },
+        {
+          "locale": "ca",
+          "english": "Catalan",
+          "native": "Català"
+        },
+        {
+          "locale": "cs",
+          "english": "Czech",
+          "native": "Čeština"
+        },
+        {
+          "locale": "nl",
+          "english": "Dutch",
+          "native": "Nederlands"
+        },
+        {
+          "locale": "fr",
+          "english": "French",
+          "native": "Français"
+        },
+        {
+          "locale": "de",
+          "english": "German",
+          "native": "Deutsch"
+        },
+        {
+          "locale": "el",
+          "english": "Greek",
+          "native": "Ελληνικά",
+          "image": true
+        },
+        {
+          "locale": "hi",
+          "english": "Hindi",
+          "native": "हिन्दी",
+          "image": true
+        },
+        {
+          "locale": "id",
+          "english": "Indonesian",
+          "native": "Bahasa Indonesia"
+        },
+        {
+          "locale": "it",
+          "english": "Italian",
+          "native": "Italiano"
+        },
+        {
+          "locale": "ja",
+          "english": "Japanese",
+          "native": "日本語",
+          "image": true
+        },
+        {
+          "locale": "ko",
+          "english": "Korean",
+          "native": "한국어",
+          "image": true
+        },
+        {
+          "locale": "no",
+          "english": "Norwegian",
+          "native": "Norsk"
+        },
+        {
+          "locale": "fa",
+          "english": "Persian",
+          "native": "فارسی",
+          "image": true
+        },
+        {
+          "locale": "pl",
+          "english": "Polish",
+          "native": "Polski"
+        },
+        {
+          "locale": "ru",
+          "english": "Russian",
+          "native": "Русский",
+          "image": true
+        },
+        {
+          "locale": "zh_Hans_CN",
+          "english": "Simplified Chinese",
+          "native": "简体中文",
+          "image": true
+        },
+        {
+          "locale": "es",
+          "english": "Spanish",
+          "native": "Español"
+        },
+        {
+          "locale": "th",
+          "english": "Thai",
+          "native": "ไทย",
+          "image": true
+        },
+        {
+          "locale": "tr",
+          "english": "Turkish",
+          "native": "Türkçe"
+        },
+        {
+          "locale": "ur",
+          "english": "Urdu",
+          "native": "اردو",
+          "image": true
+        },
+        {
+          "locale": "vi",
+          "english": "Vietnamese",
+          "native": "Tiếng Việt",
+          "image": true
+        }
+      ]
+    }
+  }
+}

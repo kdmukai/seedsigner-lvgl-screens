@@ -1,0 +1,40 @@
+{
+  "locale": "fa",
+  "source_family": "NotoSansAR",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 26972,
+    "sha256": "fd1bc143daf7ace29af906b61807d1ac96735fbea89077115a5432c6fd666669"
+  },
+  "rtl": true,
+  "shaped": true,
+  "endonym": "\u0641\u0627\u0631\u0633\u06cc",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 52,
+      "h": 20,
+      "bytes": 1052
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 67,
+      "h": 26,
+      "bytes": 1754
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 102,
+      "h": 39,
+      "bytes": 3990
+    }
+  },
+  "corpus_glyphs": 105,
+  "font": {
+    "file": "fa.ttf",
+    "source_ttf": "fonts/NotoSansAR-Regular.ttf",
+    "bytes": 13828,
+    "sha256": "02454ccd1acd38ca8ec3e7616e88fbe32313e1e14d733eb45d0a8459abcd7f42"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "locale": "zh_Hans_CN",
+  "source_family": "NotoSansSC",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 19817,
+    "sha256": "e117b10a690707a2c6ae4a11efc2a327c746e6cb6f7ac068c737bd15e1784143"
+  },
+  "rtl": false,
+  "shaped": false,
+  "endonym": "\u7b80\u4f53\u4e2d\u6587",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 79,
+      "h": 19,
+      "bytes": 1513
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 103,
+      "h": 25,
+      "bytes": 2587
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 157,
+      "h": 38,
+      "bytes": 5978
+    }
+  },
+  "corpus_glyphs": 391,
+  "font": {
+    "file": "zh_Hans_CN.ttf",
+    "source_ttf": "fonts/NotoSansSC-Regular.ttf",
+    "bytes": 100652,
+    "sha256": "05404462742d49ca3edc4942116544b486346163bdbc0ef57ac74d2c4d7a07ac"
+  }
+}

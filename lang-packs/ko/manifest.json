@@ -1,0 +1,40 @@
+{
+  "locale": "ko",
+  "source_family": "NotoSansKR",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 21058,
+    "sha256": "43751be058eb3b80e8316d87d0d0ec85009041e6fff9b376619e32e57586f202"
+  },
+  "rtl": false,
+  "shaped": false,
+  "endonym": "\ud55c\uad6d\uc5b4",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 52,
+      "h": 19,
+      "bytes": 1000
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 68,
+      "h": 25,
+      "bytes": 1712
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 104,
+      "h": 38,
+      "bytes": 3964
+    }
+  },
+  "corpus_glyphs": 297,
+  "font": {
+    "file": "ko.ttf",
+    "source_ttf": "fonts/NotoSansKR-Regular.ttf",
+    "bytes": 44248,
+    "sha256": "c9a0ca6d31f7bdefde950aed6f4d6d21d4b63421b35a57501885311a06e72d5f"
+  }
+}

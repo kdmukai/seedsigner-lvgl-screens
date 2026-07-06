@@ -1,0 +1,52 @@
+{
+  "locale": "ur",
+  "source_family": "NotoNastaliqUrdu",
+  "chain": "primary",
+  "catalog": {
+    "file": "LC_MESSAGES/messages.mo",
+    "bytes": 1330,
+    "sha256": "592da9df23d0d36fc837c1efb8d98f50fcf0ed8c5808c11b49ec38a70012d069"
+  },
+  "shaping": true,
+  "script": "Arab",
+  "rtl": true,
+  "endonym": "\u0627\u0631\u062f\u0648",
+  "endonym_images": {
+    "240": {
+      "file": "endonym_240.bin",
+      "w": 28,
+      "h": 20,
+      "bytes": 572
+    },
+    "320": {
+      "file": "endonym_320.bin",
+      "w": 36,
+      "h": 25,
+      "bytes": 912
+    },
+    "480": {
+      "file": "endonym_480.bin",
+      "w": 55,
+      "h": 39,
+      "bytes": 2157
+    }
+  },
+  "corpus_glyphs": 686,
+  "font": {
+    "file": "ur.ttf",
+    "source_ttf": "fonts/NotoNastaliqUrdu-Regular.ttf",
+    "bytes": 321396,
+    "sha256": "ac6985d3732ffd8b1b475bef67d2d266b17cc8b3326095cfb61f3c9c369625dc"
+  },
+  "runs": {
+    "file": "runs.bin",
+    "sha256": "d9250e8ce2475bbb84fb2b3faff940a462a086b3963a9687951bf0105081c4c4",
+    "bytes": 3549,
+    "debug_json": "runs.json",
+    "plain": 13,
+    "segmented": 0,
+    "ascii_passthrough": 0,
+    "unsupported": 0
+  },
+  "harfbuzz_version": "14.2.1"
+}

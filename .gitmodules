@@ -1,6 +1,3 @@
 [submodule "third_party/lvgl"]
 	path = third_party/lvgl
 	url = https://github.com/lvgl/lvgl.git
-[submodule "deps/language-packs"]
-	path = deps/language-packs
-	url = https://github.com/kdmukAI-bot/seedsigner-language-packs.git
