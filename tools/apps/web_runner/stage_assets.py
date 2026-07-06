@@ -10,14 +10,11 @@ supported locale:
 and writes <dest>/assets/scenarios/locales.json, the ordered locale index
 (code + display name) the picker is built from.
 
-Font packs are gitignored / regenerable. They must exist under lang-packs/
-before staging; pass --regen-packs to (re)build them first via the language-packs
-submodule's builder (deps/language-packs; needs its shaping toolchain + the
-translations checkout it carries). This repo no longer owns the pack builder.
-
-Font packs + localized scenarios are COMMITTED fixtures (lang-packs/,
-tools/scenarios/localized/); this just copies them. Regenerate the fixtures out-of-band
-via `scripts/ci/ci.sh build-fontpacks` + `tools/i18n/gen_localized_scenarios.py`.
+Font packs + localized scenarios are gitignored and built from the
+seedsigner-language-packs repo (not committed). They must already exist under lang-packs/
++ tools/scenarios/localized/ before staging — build them with
+`scripts/ci/ci.sh build-fontpacks` + `scripts/ci/ci.sh gen-localized-scenarios` (or
+REGEN_PACKS=1 build.sh). This just copies them; this repo does not own the pack builder.
 
 Usage:
   stage_assets.py --dest tools/apps/web_runner/build-wasm
@@ -74,7 +71,7 @@ def main():
         src = os.path.join(src_packs, code)
         if not os.path.isdir(src):
             sys.exit(f"stage_assets: missing font pack {src} "
-                     f"(run `scripts/ci/ci.sh build-fontpacks`, or pass --regen-packs)")
+                     f"(build it with `scripts/ci/ci.sh build-fontpacks`)")
         out = os.path.join(packs_dir, code)
         os.makedirs(out, exist_ok=True)
         for fn in sorted(os.listdir(src)):
