@@ -18,12 +18,43 @@ correctness comes from the font corpus, not from these scenarios.
 import argparse
 import json
 import os
+import re
 import sys
 
 from po_catalog import parse_catalog
 
 # This file lives at tools/i18n/; repo root is two levels up.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+_DIGIT_RUN = re.compile(r"\d+")
+
+
+def translate_string(text, catalog):
+    """Translate one display string against the catalog.
+
+    First an exact-content match (the common case). Failing that, a Python str.format
+    template fallback: the Python view formats some titles like
+    ``_("Seed Words: {}/{}").format(page, total)``, so the scenario's PRE-formatted string
+    ("Seed Words: 1/3") never equals the msgid template ("Seed Words: {}/{}") and would
+    otherwise pass through untranslated. So abstract each maximal digit run to "{}" and, if
+    THAT is a catalog msgid, translate the template and re-insert the original numbers in
+    order. It only fires when the abstracted form is a real msgid, so strings that merely
+    contain digits (addresses, derivation paths, passphrases, amounts) are untouched.
+    """
+    if text in catalog:
+        return catalog[text]
+
+    nums = _DIGIT_RUN.findall(text)
+    if nums:
+        template = _DIGIT_RUN.sub("{}", text)
+        translated = catalog.get(template)
+        if translated is not None and translated.count("{}") == len(nums):
+            try:
+                return translated.format(*nums)
+            except (IndexError, KeyError, ValueError):
+                pass
+    return text
+
 
 def localize(node, catalog):
     """Recursively translate display-text leaves by CONTENT, not by key name.
@@ -43,7 +74,7 @@ def localize(node, catalog):
     if isinstance(node, list):
         return [localize(item, catalog) for item in node]
     if isinstance(node, str):
-        return catalog.get(node, node)
+        return translate_string(node, catalog)
     return node
 
 
