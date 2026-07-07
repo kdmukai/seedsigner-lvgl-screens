@@ -3538,65 +3538,21 @@ void seed_finalize_screen(void *ctx_json) {
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
 
-    // --- fingerprint readout (IconTextLine) --------------------------------
-    const int32_t icon_gap  = COMPONENT_PADDING / 2;   // Python icon_horizontal_spacer
-    const int32_t label_gap = COMPONENT_PADDING / 2;   // Python label_padding_y
-
-    // Outer group: a width-content horizontal flex row [icon][text column], cross-axis
-    // centered so the icon lines up with the vertical middle of the two-line block.
-    // upper_body's cross-axis center pins the whole row to the horizontal center.
-    lv_obj_t *row = lv_obj_create(screen.upper_body);
-    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(row, icon_gap, LV_PART_MAIN);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    // Fingerprint icon — large + INFO_COLOR blue. Python icon_size = ICON_FONT_SIZE +
-    // 12 (34); the baked 36px large-button icon font is the closest available size.
-    lv_obj_t *icon = lv_label_create(row);
-    lv_label_set_text(icon, SeedSignerIconConstants::FINGERPRINT);
-    lv_obj_set_style_text_font(icon, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(icon, lv_color_hex(INFO_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(icon, 0, LV_PART_MAIN);
-
-    // Text column: label (top) over value (bottom), left-aligned to a shared x
-    // (Python left-aligns both when an icon is present).
-    lv_obj_t *col = lv_obj_create(row);
-    lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(col, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(col, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(col, label_gap, LV_PART_MAIN);
-    lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-
-    // Small gray label ("fingerprint"). Translatable, so it takes the locale-aware
-    // BODY_FONT (Python uses body-2 = 15px; the port has no locale-aware body-2 role,
-    // so BODY is the faithful localizable choice — 2px larger than Python).
-    lv_obj_t *label = lv_label_create(col);
-    lv_label_set_text(label, fingerprint_label.c_str());
-    lv_obj_set_style_text_font(label, &BODY_FONT, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lv_color_hex(LABEL_FONT_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(label, 0, LV_PART_MAIN);
-    // Single-line, so force CLIP: this label sits in a tight LV_SIZE_CONTENT col/row,
-    // where the default LV_LABEL_LONG_WRAP lets the shaped-locale run layer wrap a wide
-    // translation to the narrow content width and collapse it to line 0 (same failure as
-    // the psbt_change_details verified line — see glyph-run-single-line-label-wrap-collapse.md).
-    // The current translations fit at every profile; this guards against a longer one.
-    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-
-    // The fingerprint hex, one size step larger. Always Latin, so an exact body+2
-    // (19px) Latin font matches Python's value size precisely.
-    lv_obj_t *value = lv_label_create(col);
-    lv_label_set_text(value, fingerprint.c_str());
-    lv_obj_set_style_text_font(value, seedsigner_latin_font(19), LV_PART_MAIN);
-    lv_obj_set_style_text_color(value, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(value, 0, LV_PART_MAIN);
+    // Fingerprint readout via the shared IconTextLine component — the SAME widget the
+    // xpub-details / review-passphrase screens use, so labeled-value spacing (gap, leading
+    // reclaim) is identical across every screen. Large blue fingerprint glyph, gray label
+    // over the Latin body+2 hex; upper_body's center alignment centers the whole block.
+    icon_text_line_opts_t fp = {};
+    fp.icon_glyph   = SeedSignerIconConstants::FINGERPRINT;
+    fp.icon_font    = &ICON_LARGE_BUTTON_FONT__SEEDSIGNER;   // Python icon_size = ICON_FONT_SIZE+12 (~36)
+    fp.icon_color   = INFO_COLOR;
+    fp.label_text   = fingerprint_label.c_str();
+    fp.value_text   = fingerprint.c_str();
+    fp.value_font   = seedsigner_latin_font(19);             // Python value = body+2, always Latin
+    fp.label_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    fp.value_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    fp.is_text_centered = true;
+    icon_text_line(screen.upper_body, &fp);
 
     bind_screen_navigation(
         cfg,
@@ -6317,6 +6273,455 @@ void psbt_math_screen(void *ctx_json) {
     int32_t mc_y = gap_top + (gap_bot - gap_top - mc_h) / 2;
     if (mc_y < gap_top + COMPONENT_PADDING) mc_y = gap_top + COMPONENT_PADDING;   // clear the nav
     lv_obj_set_y(mc, mc_y);
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// SeedExportXpubDetailsScreen: the xpub-export summary — fingerprint, derivation path,
+// and the (truncated) xpub, each an IconTextLine, stacked top-anchored under the nav.
+// WarningEdgesMixin frames it in pulsing YELLOW (WARNING_COLOR): an xpub leaks viewable
+// transaction history — a privacy caution, not a key-material dire warning.
+//
+// cfg:
+//   top_nav.title             — default "Xpub Details".
+//   fingerprint (str, req.)   — BIP-32 master fingerprint (hex).
+//   derivation_path (str)     — default "m/84'/0'/0'".
+//   xpub (str, req.)          — the extended pubkey; truncated here to one line.
+//   fingerprint_label / derivation_label / xpub_label (str) — host-localized field labels.
+//   button_list (array)       — default ["Export xpub"].
+void seed_export_xpub_details_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    if (!cfg.contains("fingerprint") || !cfg["fingerprint"].is_string()) {
+        throw std::runtime_error("seed_export_xpub_details_screen requires a \"fingerprint\" string");
+    }
+    if (!cfg.contains("xpub") || !cfg["xpub"].is_string()) {
+        throw std::runtime_error("seed_export_xpub_details_screen requires an \"xpub\" string");
+    }
+    std::string fingerprint       = cfg["fingerprint"].get<std::string>();
+    std::string derivation_path   = cfg.value("derivation_path", std::string("m/84'/0'/0'"));
+    std::string xpub              = cfg["xpub"].get<std::string>();
+    std::string fingerprint_label = cfg.value("fingerprint_label", std::string("Fingerprint"));
+    std::string derivation_label  = cfg.value("derivation_label",  std::string("Derivation"));
+    std::string xpub_label        = cfg.value("xpub_label",        std::string("Xpub"));
+
+    // Bottom-pinned button-list shape (Python is_bottom_list = True).
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Xpub Details";
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Export xpub" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // Top-anchored, LEFT-aligned column of the three lines (Python: screen_x =
+    // COMPONENT_PADDING, first line COMPONENT_PADDING below the nav). Grow upper_body to
+    // claim the whole gap above the button and collapse the scaffold spacer, so the block
+    // sits in a container sized to fit rather than a shrink-wrapped one that scrolls its top
+    // under the nav. icon_text_line reclaims the LVGL line-height leading so three lines pack
+    // at PIL density; the inter-line gap is COMPONENT_PADDING (Python's 1.5x would leave the
+    // xpub line hugging the button on the 240 body).
+    lv_obj_set_flex_grow(screen.upper_body, 1);
+    lv_obj_set_flex_align(screen.upper_body, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_top(screen.upper_body, COMPONENT_PADDING, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(screen.upper_body, COMPONENT_PADDING, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(screen.upper_body, COMPONENT_PADDING, LV_PART_MAIN);
+    if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
+
+    // Fingerprint line — seedsigner FINGERPRINT glyph, body-font value.
+    icon_text_line_opts_t fp = {};
+    fp.icon_glyph   = SeedSignerIconConstants::FINGERPRINT;
+    fp.icon_color   = INFO_COLOR;
+    fp.label_text   = fingerprint_label.c_str();
+    fp.value_text   = fingerprint.c_str();
+    fp.label_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> LABEL_FONT_COLOR (gray)
+    fp.value_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> BODY_FONT_COLOR
+    fp.icon_width   = ICON_FONT_SIZE;                  // shared icon column -> aligned text
+    icon_text_line(screen.upper_body, &fp);
+
+    // Derivation line — seedsigner DERIVATION glyph, body-font value.
+    icon_text_line_opts_t dv = {};
+    dv.icon_glyph   = SeedSignerIconConstants::DERIVATION;
+    dv.icon_color   = INFO_COLOR;
+    dv.label_text   = derivation_label.c_str();
+    dv.value_text   = derivation_path.c_str();
+    dv.label_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    dv.value_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    dv.icon_width   = ICON_FONT_SIZE;
+    icon_text_line(screen.upper_body, &dv);
+
+    // Xpub line. Python's icon is FontAwesomeIconConstants.X == the ASCII letter "X" drawn
+    // in the bold FontAwesome font; render it as a bold monospace "X". The value is the
+    // xpub in the fixed-width font (Python FIXED_WIDTH at body+2; the baked 22 px monospace
+    // here), truncated to fill one line. Truncation is measured HERE so it tracks each
+    // display profile's char width — Python's num_chars math.
+    const lv_font_t *xpub_font = &CANDIDATE_FONT;   // Inconsolata SemiBold, 22 px @240
+    lv_point_t sz10;
+    lv_text_get_size(&sz10, "0000000000", xpub_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int32_t char_w = sz10.x / 10;
+    if (char_w < 1) char_w = 1;
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+    int num_chars = (int)((W - ICON_FONT_SIZE - 2 * COMPONENT_PADDING) / char_w) - 3;  // -3 = "..."
+    if (num_chars < 1) num_chars = 1;
+    if (num_chars > (int)xpub.size()) num_chars = (int)xpub.size();
+    std::string xpub_display = xpub.substr(0, (size_t)num_chars) + "...";
+
+    icon_text_line_opts_t xp = {};
+    xp.icon_glyph   = "X";                 // Python FontAwesomeIconConstants.X = U+0058
+    xp.icon_font    = &KEYBOARD_FONT;      // bold 24 px monospace X
+    xp.icon_color   = INFO_COLOR;
+    xp.label_text   = xpub_label.c_str();
+    xp.value_text   = xpub_display.c_str();
+    xp.value_font   = xpub_font;
+    xp.label_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    xp.value_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    xp.icon_width   = ICON_FONT_SIZE;      // same column as fingerprint/derivation -> "X" centers, text aligns
+    icon_text_line(screen.upper_body, &xp);
+
+    // WarningEdgesMixin — pulsing yellow border.
+    add_warning_edges_overlay(screen.screen, WARNING_COLOR);
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// Wrap a passphrase into up to `max_lines` lines of at most `max_cpl` monospace chars.
+// Two goals beyond Python's naive fixed-width char split:
+//   1. Break right AFTER a special (non-alphanumeric) character — dash, punctuation,
+//      space — when one sits near the balanced break point, so a human-readable passphrase
+//      wraps at its natural separators ("correct-horse-" / ...) instead of mid-word.
+//   2. Balance the line lengths (each break targets k*len/num_lines), like the body-text
+//      balanced wrap.
+// A random or all-alphabetic passphrase has no special-char breakpoints, so it falls back
+// to a balanced hard split by length. EVERY character is preserved — the break character
+// stays at the end of its line — since the whole point is to show the exact passphrase.
+static std::vector<std::string> wrap_passphrase(const std::string& p, int max_cpl, int max_lines) {
+    const int len = (int)p.size();
+    if (max_cpl < 1 || len <= max_cpl) return { p };
+
+    int num_lines = (len + max_cpl - 1) / max_cpl;   // ceil: fewest lines that can fit
+    if (num_lines > max_lines) num_lines = max_lines;
+    if (num_lines < 1) num_lines = 1;
+
+    auto is_special = [](char c) {
+        return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
+    };
+    auto dist = [](int a, int b) { int d = a - b; return d < 0 ? -d : d; };
+
+    std::vector<int> cuts;   // start index of each new line
+    int prev = 0;
+    for (int k = 1; k < num_lines; ++k) {
+        const int ideal = (int)((long)len * k / num_lines);   // balanced target cut
+        int lo = prev + 1;                                    // ≥1 char on this line
+        int hi = prev + max_cpl;                              // this line ≤ max_cpl
+        // Leave room: the remaining text must fit the remaining lines, ≥1 char each.
+        const int rem_lines = num_lines - k;
+        if (hi > len - rem_lines)            hi = len - rem_lines;
+        if (lo < len - rem_lines * max_cpl)  lo = len - rem_lines * max_cpl;
+        if (lo < prev + 1)                   lo = prev + 1;
+        if (hi < lo)                         hi = lo;
+
+        // Prefer a break just after a special char, closest to `ideal`, within [lo, hi].
+        int best = -1;
+        for (int pos = lo; pos <= hi && pos < len; ++pos) {
+            if (is_special(p[pos - 1]) && (best < 0 || dist(pos, ideal) < dist(best, ideal))) {
+                best = pos;
+            }
+        }
+        int cut = (best >= 0) ? best : std::min(std::max(ideal, lo), hi);   // else balanced hard cut
+        cuts.push_back(cut);
+        prev = cut;
+    }
+
+    std::vector<std::string> lines;
+    int start = 0;
+    for (int c : cuts) { lines.push_back(p.substr((size_t)start, (size_t)(c - start))); start = c; }
+    lines.push_back(p.substr((size_t)start));
+    return lines;
+}
+
+
+// SeedReviewPassphraseScreen: shows the entered BIP-39 passphrase (orange, fixed-width,
+// centered, up to 3 lines) above a fingerprint IconTextLine that spells out how the
+// passphrase CHANGES the seed's fingerprint (without >> with). No warning edges.
+//
+// cfg:
+//   top_nav.title                 — default "Verify Passphrase".
+//   passphrase (str, req.)        — the passphrase to review.
+//   fingerprint_without (str,req) — fingerprint before the passphrase.
+//   fingerprint_with (str, req.)  — fingerprint after the passphrase.
+//   changes_fingerprint_label(str)— host-localized "changes fingerprint" label.
+//   button_list (array)           — default ["Done"].
+void seed_review_passphrase_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    if (!cfg.contains("passphrase") || !cfg["passphrase"].is_string()) {
+        throw std::runtime_error("seed_review_passphrase_screen requires a \"passphrase\" string");
+    }
+    std::string passphrase = cfg["passphrase"].get<std::string>();
+    std::string fp_without = cfg.value("fingerprint_without", std::string(""));
+    std::string fp_with    = cfg.value("fingerprint_with",    std::string(""));
+    std::string changes_label = cfg.value("changes_fingerprint_label",
+                                          std::string("changes fingerprint"));
+
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Verify Passphrase";
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Done" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+
+    // The fingerprint readout: FINGERPRINT glyph + "changes fingerprint" over
+    // "<without> >> <with>", centered as a block (positioned by measurement below).
+    std::string fp_value = fp_without + " >> " + fp_with;
+    icon_text_line_opts_t fo = {};
+    fo.icon_glyph   = SeedSignerIconConstants::FINGERPRINT;
+    fo.icon_color   = INFO_COLOR;
+    fo.label_text   = changes_label.c_str();
+    fo.value_text   = fp_value.c_str();
+    fo.label_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    fo.value_color  = SEEDSIGNER_ICON_COLOR_DEFAULT;
+    fo.is_text_centered = true;
+    lv_obj_t *fp_line = icon_text_line(screen.screen, &fo);
+
+    // The passphrase itself: orange, fixed-width, centered, up to 3 balanced lines. The
+    // user fixed the size at the baked 24 px monospace (Python auto-fits a range; we don't).
+    // If the passphrase has leading/trailing or doubled spaces, ALL spaces become the block
+    // glyph ▉ (Python ▉) so they can't hide — matched on the raw (ASCII) string, then
+    // substituted per line so the line split stays byte-safe.
+    const lv_font_t *pp_font = &KEYBOARD_FONT;      // Inconsolata SemiBold, 24 px @240
+    const bool show_spaces =
+        (!passphrase.empty() && (passphrase.front() == ' ' || passphrase.back() == ' ')) ||
+        (passphrase.find("  ") != std::string::npos);
+
+    lv_point_t ppsz;
+    lv_text_get_size(&ppsz, "0000000000", pp_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int32_t pp_char_w = ppsz.x / 10;
+    if (pp_char_w < 1) pp_char_w = 1;
+
+    int max_cpl = (int)((W - 2 * EDGE_PADDING) / pp_char_w);
+    if (max_cpl < 1) max_cpl = 1;
+    std::vector<std::string> lines = wrap_passphrase(passphrase, max_cpl, 3);  // Python max_lines = 3
+
+    // Join the wrapped lines into one '\n'-separated string, substituting the block glyph ▉
+    // for spaces when the passphrase has hidden edge/doubled spaces. A SINGLE multi-line
+    // label (vs one label per line) lets tight_line_space() set a uniform, Python-tight line
+    // advance; per-line labels stacked at the font's loose declared line_height left too
+    // much air between the wrapped lines.
+    std::string joined;
+    for (std::string line : lines) {
+        if (show_spaces) {
+            std::string sub;
+            for (char c : line) sub += (c == ' ') ? "\xE2\x96\x89" /* ▉ U+2589 */ : std::string(1, c);
+            line = sub;
+        }
+        if (!joined.empty()) joined += "\n";
+        joined += line;
+    }
+
+    // Centered container holding the passphrase block (positioned by measurement below).
+    lv_obj_t *pp_col = lv_obj_create(screen.screen);
+    lv_obj_remove_style_all(pp_col);
+    lv_obj_set_size(pp_col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(pp_col, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(pp_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(pp_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(pp_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *pp_lbl = lv_label_create(pp_col);
+    lv_label_set_text(pp_lbl, joined.c_str());
+    lv_obj_set_style_text_font(pp_lbl, pp_font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(pp_lbl, lv_color_hex(0xFFA500), LV_PART_MAIN);  // PIL "orange"
+    lv_obj_set_style_text_align(pp_lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);    // center each line
+    lv_obj_set_style_pad_all(pp_lbl, 0, LV_PART_MAIN);
+    // Uniform, Python-tight inter-line advance (ink height + 2) instead of the font's loose
+    // declared line_height. Measured across the whole block, so descenders never clip.
+    lv_obj_set_style_text_line_space(pp_lbl, tight_line_space(pp_font, joined.c_str(), 2),
+                                     LV_PART_MAIN);
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+
+    // Position both blocks now that sizes are known. The fingerprint line sits just above
+    // the button (Python: button_top - COMPONENT_PADDING - body_font_size*2.5); the
+    // passphrase centers in the gap between the top nav and the fingerprint line.
+    lv_obj_update_layout(screen.screen);
+    int32_t button_top = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
+    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
+        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
+        button_top = ba.y1;
+    }
+
+    int32_t fp_h = lv_obj_get_height(fp_line);
+    int32_t fp_w = lv_obj_get_width(fp_line);
+    int32_t fp_y = button_top - COMPONENT_PADDING - (int32_t)(BODY_FONT_SIZE * 2.5);
+    lv_obj_set_pos(fp_line, (W - fp_w) / 2, fp_y);
+
+    int32_t pp_h = lv_obj_get_height(pp_col);
+    int32_t pp_w = lv_obj_get_width(pp_col);
+    int32_t region_top = TOP_NAV_HEIGHT;
+    int32_t pp_y = region_top + (fp_y - region_top - pp_h) / 2;
+    if (pp_y < region_top) pp_y = region_top;
+    lv_obj_set_pos(pp_col, (W - pp_w) / 2, pp_y);
+
+    load_screen_and_cleanup_previous(screen.screen);
+}
+
+
+// SeedWordsScreen: one page of a seed's words, each numbered in a rounded chip. Paginated
+// by the host (one screen render per page). WarningEdgesMixin frames it in pulsing ORANGE
+// (DIRE_WARNING_COLOR) — the seed itself is on screen, the most sensitive material there is.
+//
+// cfg:
+//   top_nav.title      — default "Seed Words: {page_index+1}/{num_pages}".
+//   words (array, req) — the words shown on THIS page.
+//   page_index (int)   — 0-based page number (default 0), for the default numbering.
+//   num_pages (int)    — total pages (default 1), for the default title.
+//   start_number (int) — 1-based number of the first word on this page. Default
+//                        page_index*len(words)+1 (Python's page_index*words_per_page+...).
+//   button_list (array)— default ["Done"].
+void seed_words_screen(void *ctx_json) {
+    const char *json_str = (const char *)ctx_json;
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    if (!cfg.contains("words") || !cfg["words"].is_array() || cfg["words"].empty()) {
+        throw std::runtime_error("seed_words_screen requires a non-empty \"words\" array");
+    }
+    std::vector<std::string> words;
+    for (const auto &w : cfg["words"]) words.push_back(w.get<std::string>());
+
+    int page_index   = cfg.value("page_index", 0);
+    int num_pages    = cfg.value("num_pages", 1);
+    int start_number = cfg.value("start_number", page_index * (int)words.size() + 1);
+
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
+    if (!cfg["top_nav"].contains("title")) {
+        cfg["top_nav"]["title"] = "Seed Words: " + std::to_string(page_index + 1) +
+                                  "/" + std::to_string(num_pages);
+    }
+    cfg["is_bottom_list"] = true;
+    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Done" });
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+
+    // Fonts: word = body font at top_nav_title+2 (Python get_top_nav_title_font_size()+2);
+    // number = body font at button size. Seed words are BIP-39 wordlist tokens (ASCII), so
+    // the Latin body font is an exact match to Python's body font for this content.
+    // seedsigner_latin_font() takes an UNSCALED base px and applies the profile multiplier
+    // itself, so pass the 240-base sizes (20+2, 18) — NOT the already-scaled *_FONT_SIZE
+    // macros, which would double-scale (84 px words at the 800x480 profile).
+    const lv_font_t *word_font   = seedsigner_latin_font(20 + 2);
+    const lv_font_t *number_font = seedsigner_latin_font(18);
+
+    // Square number chip sized to the widest number ("24"), like Python.
+    lv_point_t nsz;
+    lv_text_get_size(&nsz, "24", number_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int32_t box = nsz.x + COMPONENT_PADDING / 2;
+
+    // The word list is one content-sized column, centered horizontally in the body and
+    // top-anchored (Python top-anchors the block under the nav). Rows are LEFT-aligned so
+    // every chip shares a left edge and every word starts at the same x; the block as a
+    // whole centers on the widest word. Grow upper_body to claim the whole gap above the
+    // button and collapse the scaffold spacer, so the block is top-anchored in a container
+    // sized to fit — otherwise four rows overflow the shrink-wrapped upper_body on the 240
+    // body and scroll the first word up under the nav.
+    lv_obj_set_flex_grow(screen.upper_body, 1);
+    lv_obj_set_flex_align(screen.upper_body, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_top(screen.upper_body, COMPONENT_PADDING / 2, LV_PART_MAIN);
+    if (screen.button_list_spacer) lv_obj_set_flex_grow(screen.button_list_spacer, 0);
+
+    lv_obj_t *list = lv_obj_create(screen.upper_body);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_size(list, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    // Compressed inter-row gap (Python's 1.5*COMPONENT_PADDING reads too loose here, and
+    // four rows must fit the 240 body); the word-leading reclaim below makes each row pack
+    // to the chip height rather than the taller word line box.
+    lv_obj_set_style_pad_row(list, COMPONENT_PADDING, LV_PART_MAIN);
+    lv_obj_remove_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Collected per row so we can baseline-align the words to their numbers after layout.
+    std::vector<lv_obj_t*> num_labels, word_labels;
+
+    for (size_t i = 0; i < words.size(); ++i) {
+        // Row: [number chip][word], vertically centered on each other.
+        lv_obj_t *row = lv_obj_create(list);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(row, COMPONENT_PADDING, LV_PART_MAIN);
+        lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        // Rounded number chip — dark button-fill, radius 5, the (INFO_COLOR) number centered.
+        lv_obj_t *chip = lv_obj_create(row);
+        lv_obj_remove_style_all(chip);
+        lv_obj_set_size(chip, box, box);
+        lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(chip, lv_color_hex(BUTTON_BACKGROUND_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_radius(chip, 5, LV_PART_MAIN);
+        lv_obj_set_layout(chip, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_remove_flag(chip, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *num = lv_label_create(chip);
+        lv_label_set_text(num, std::to_string(start_number + (int)i).c_str());
+        lv_obj_set_style_text_font(num, number_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(num, lv_color_hex(INFO_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(num, 0, LV_PART_MAIN);
+        num_labels.push_back(num);
+
+        // The word. Reclaim the FONT's line-height leading (uniform, not per-word) so the
+        // row packs to the chip height AND every word gets the same box/baseline — a per-
+        // word reclaim would align descender words (ridge, oyster) differently from plain
+        // ones (muffin) against the number chip.
+        lv_obj_t *word = lv_label_create(row);
+        lv_label_set_text(word, words[i].c_str());
+        lv_obj_set_style_text_font(word, word_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(word, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(word, 0, LV_PART_MAIN);
+        reclaim_line_leading_uniform(word, word_font);
+        word_labels.push_back(word);
+    }
+
+    // WarningEdgesMixin — pulsing orange border (seed on screen).
+    add_warning_edges_overlay(screen.screen, DIRE_WARNING_COLOR);
+
+    bind_screen_navigation(cfg, screen,
+        screen.button_list_count > 0 ? screen.button_list : NULL,
+        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+
+    // Baseline-align each word to its number: Python draws both at the same baseline_y
+    // (word anchor "ls", number "ms"), so descenders drop below a shared baseline. Cross-
+    // centering above aligns the BOXES, not the baselines, leaving the words sitting high;
+    // shift each word down by the gap between the two text baselines (a label's baseline is
+    // its box top + the font ascent = line_height - base_line).
+    lv_obj_update_layout(screen.screen);
+    const int32_t num_ascent  = (int32_t)lv_font_get_line_height(number_font) - number_font->base_line;
+    const int32_t word_ascent = (int32_t)lv_font_get_line_height(word_font)   - word_font->base_line;
+    for (size_t i = 0; i < word_labels.size() && i < num_labels.size(); ++i) {
+        lv_area_t na, wa;
+        lv_obj_get_coords(num_labels[i], &na);
+        lv_obj_get_coords(word_labels[i], &wa);
+        int32_t delta = (na.y1 + num_ascent) - (wa.y1 + word_ascent);
+        if (delta != 0) lv_obj_set_style_translate_y(word_labels[i], delta, LV_PART_MAIN);
+    }
 
     load_screen_and_cleanup_previous(screen.screen);
 }

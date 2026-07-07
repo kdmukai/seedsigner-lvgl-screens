@@ -1339,6 +1339,178 @@ lv_obj_t* btc_amount(lv_obj_t* parent, const btc_amount_opts_t* opts) {
 }
 
 
+// --- reclaim_line_leading -----------------------------------------------------
+// Decode one UTF-8 codepoint at byte `i` in `s`, advancing `i` past it. 0 at end; the byte
+// value itself for a malformed lead byte (advanced by one to make progress). BMP scripts
+// only — enough to walk a label's codepoints for the metric below. (glyph_runs.cpp has its
+// own copy behind an anonymous namespace; this local one keeps that encapsulation intact.)
+static uint32_t utf8_next_cp(const std::string& s, size_t& i) {
+    if (i >= s.size()) return 0;
+    unsigned char c = (unsigned char)s[i];
+    uint32_t cp; int n;
+    if      (c < 0x80)         { cp = c;        n = 1; }
+    else if ((c >> 5) == 0x6)  { cp = c & 0x1F; n = 2; }
+    else if ((c >> 4) == 0xE)  { cp = c & 0x0F; n = 3; }
+    else if ((c >> 3) == 0x1E) { cp = c & 0x07; n = 4; }
+    else { i += 1; return c; }
+    if (i + (size_t)n > s.size()) { i = s.size(); return c; }
+    for (int k = 1; k < n; ++k) cp = (cp << 6) | ((unsigned char)s[i + k] & 0x3F);
+    i += n;
+    return cp;
+}
+
+// See components.h. Pulls a single-line label up/down by its unused line-height leading
+// so stacked labels pack at ink height. Descender-aware and measured per-text.
+void reclaim_line_leading(lv_obj_t* label, const lv_font_t* font) {
+    if (!label || !font) return;
+    const char* text = lv_label_get_text(label);
+    if (!text || !text[0]) return;
+
+    const int32_t line_h  = lv_font_get_line_height(font);
+    const int32_t descent = font->base_line;        // reserved space below the baseline
+    const int32_t ascent  = line_h - descent;       // reserved space above the baseline
+
+    // Actual ink extents of THIS string: max_top = highest ink above the baseline,
+    // min_bot = lowest ink (negative for a descender). Skip spaces (no ink).
+    int32_t max_top = 0, min_bot = 0;
+    bool any = false;
+    std::string s(text);
+    size_t i = 0;
+    uint32_t cp;
+    lv_font_glyph_dsc_t g;
+    while ((cp = utf8_next_cp(s, i)) != 0) {
+        if (cp == ' ') continue;
+        if (!lv_font_get_glyph_dsc(font, &g, cp, 0)) continue;
+        int32_t top = g.ofs_y + g.box_h;
+        int32_t bot = g.ofs_y;
+        if (!any || top > max_top) max_top = top;
+        if (!any || bot < min_bot) min_bot = bot;
+        any = true;
+    }
+    if (!any) return;
+
+    const int32_t top_leading = ascent  - max_top;  // empty space above the ink
+    const int32_t bot_leading = descent + min_bot;  // = descent - (-min_bot): empty below
+    if (top_leading > 0) lv_obj_set_style_margin_top(label, -top_leading, LV_PART_MAIN);
+    if (bot_leading > 0) lv_obj_set_style_margin_bottom(label, -bot_leading, LV_PART_MAIN);
+}
+
+// See components.h. Font-level (uniform) sibling of reclaim_line_leading(): every label
+// sharing this font gets the SAME box, so a column of them aligns on one baseline.
+void reclaim_line_leading_uniform(lv_obj_t* label, const lv_font_t* font) {
+    if (!label || !font) return;
+    const int32_t line_h  = lv_font_get_line_height(font);
+    const int32_t descent = font->base_line;
+    const int32_t ascent  = line_h - descent;
+    lv_font_glyph_dsc_t g;
+    int32_t cap_top = ascent, desc_ink = descent;   // fallbacks (reclaim nothing)
+    if (lv_font_get_glyph_dsc(font, &g, (uint32_t)'X', 0)) cap_top  = g.ofs_y + g.box_h;
+    if (lv_font_get_glyph_dsc(font, &g, (uint32_t)'g', 0)) desc_ink = -g.ofs_y;
+    const int32_t top_leading = ascent  - cap_top;
+    const int32_t bot_leading = descent - desc_ink;
+    if (top_leading > 0) lv_obj_set_style_margin_top(label, -top_leading, LV_PART_MAIN);
+    if (bot_leading > 0) lv_obj_set_style_margin_bottom(label, -bot_leading, LV_PART_MAIN);
+}
+
+
+// --- icon_text_line -----------------------------------------------------------
+// Port of Python components.IconTextLine: an optional icon left of a [label / value]
+// column. Extracted from the seed_finalize inline build so SeedExportXpubDetails and
+// SeedReviewPassphrase can reuse it instead of hand-rolling the same widget tree.
+lv_obj_t* icon_text_line(lv_obj_t* parent, const icon_text_line_opts_t* opts) {
+    if (!parent || !opts || !opts->value_text) return nullptr;
+
+    const bool has_icon  = opts->icon_glyph && opts->icon_glyph[0];
+    const bool has_label = opts->label_text && opts->label_text[0];
+
+    // Resolve font/color defaults. The icon defaults to the 24 px seedsigner icon font;
+    // label/value default to the locale-aware body font (seed_finalize precedent).
+    const lv_font_t* icon_font  = opts->icon_font  ? opts->icon_font  : &ICON_FONT__SEEDSIGNER;
+    const lv_font_t* label_font = opts->label_font ? opts->label_font : &BODY_FONT;
+    const lv_font_t* value_font = opts->value_font ? opts->value_font : &BODY_FONT;
+
+    const uint32_t icon_color  = (opts->icon_color  == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                                     ? (uint32_t)BODY_FONT_COLOR  : opts->icon_color;
+    const uint32_t label_color = (opts->label_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                                     ? (uint32_t)LABEL_FONT_COLOR : opts->label_color;
+    const uint32_t value_color = (opts->value_color == SEEDSIGNER_ICON_COLOR_DEFAULT)
+                                     ? (uint32_t)BODY_FONT_COLOR  : opts->value_color;
+
+    // Outer row: [icon][text column], content-sized, cross-axis centered so the icon
+    // lines up with the vertical middle of the (up to) two-line text block. Python's
+    // icon_horizontal_spacer is COMPONENT_PADDING/2.
+    lv_obj_t* row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, COMPONENT_PADDING / 2, LV_PART_MAIN);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+    if (has_icon) {
+        // Optionally drop the glyph into a fixed-width, center-aligned cell so sibling rows
+        // share one icon-column width — their text columns then start at the same x (left-
+        // aligned labels/values) and glyphs of differing widths center on a common axis.
+        lv_obj_t* icon_parent = row;
+        if (opts->icon_width > 0) {
+            lv_obj_t* cell = lv_obj_create(row);
+            lv_obj_remove_style_all(cell);
+            lv_obj_set_size(cell, opts->icon_width, LV_SIZE_CONTENT);
+            lv_obj_set_layout(cell, LV_LAYOUT_FLEX);
+            lv_obj_set_flex_align(cell, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_remove_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+            icon_parent = cell;
+        }
+        lv_obj_t* icon = lv_label_create(icon_parent);
+        lv_label_set_text(icon, opts->icon_glyph);
+        lv_obj_set_style_text_font(icon, icon_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(icon, lv_color_hex(icon_color), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(icon, 0, LV_PART_MAIN);
+    }
+
+    // Text column. With an icon, the label + value stay LEFT-aligned within the column
+    // (Python left-aligns both when an icon is present); centering is the parent's job.
+    // With NO icon, is_text_centered centers the label + value within the column.
+    lv_obj_t* col = lv_obj_create(row);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(col, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    const lv_flex_align_t col_cross = (!has_icon && opts->is_text_centered)
+                                          ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_START;
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, col_cross, col_cross);
+    // Gap between the gray label and its value. Python's label_padding_y is
+    // COMPONENT_PADDING/2, but with the per-text leading reclaim below the ink already
+    // packs tight, so a quarter-pad reads as the intended small gap without looking loose.
+    lv_obj_set_style_pad_row(col, COMPONENT_PADDING / 4, LV_PART_MAIN);
+    lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+
+    if (has_label) {
+        lv_obj_t* label = lv_label_create(col);
+        lv_label_set_text(label, opts->label_text);
+        lv_obj_set_style_text_font(label, label_font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(label, lv_color_hex(label_color), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(label, 0, LV_PART_MAIN);
+        // Single-line: force CLIP so the shaped-locale run layer can't wrap a long
+        // translation to this tight LV_SIZE_CONTENT column and collapse it to line 0
+        // (see glyph-run-single-line-label-wrap-collapse.md; same guard as seed_finalize).
+        lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+        reclaim_line_leading(label, label_font);
+    }
+
+    lv_obj_t* value = lv_label_create(col);
+    lv_label_set_text(value, opts->value_text);
+    lv_obj_set_style_text_font(value, value_font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(value, lv_color_hex(value_color), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(value, 0, LV_PART_MAIN);
+    reclaim_line_leading(value, value_font);
+
+    return row;
+}
+
+
 // --- formatted_address --------------------------------------------------------
 // Length of the recognized Bitcoin address-format prefix at the start of `a` — the
 // de-emphasized "what type is this" run (0 if unrecognized). Longest match wins:

@@ -907,5 +907,76 @@
         {"locale": "vi", "english": "Vietnamese", "native": "Tiếng Việt", "image": true}
       ]
     }
+  },
+  "seed_export_xpub_details_screen": {
+    "context": {
+      "top_nav": {"title": "Xpub Details", "show_back_button": true},
+      "fingerprint": "9a8f2c1b",
+      "derivation_path": "m/84'/0'/0'",
+      "xpub": "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCtoUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs",
+      "fingerprint_label": "Fingerprint",
+      "derivation_label": "Derivation",
+      "xpub_label": "Xpub",
+      "button_list": ["Export xpub"]
+    }
+  },
+  "seed_review_passphrase_screen": {
+    "context": {
+      "top_nav": {"title": "Verify Passphrase", "show_back_button": true},
+      "passphrase": "dishwasher",
+      "fingerprint_without": "9a8f2c1b",
+      "fingerprint_with": "1b2c3d4e",
+      "changes_fingerprint_label": "changes fingerprint",
+      "button_list": ["Done"]
+    },
+    "variations": [
+      {
+        "name": "long_wraps",
+        "context": {
+          "passphrase": "correct-horse-battery-staple-mountain-river"
+        }
+      },
+      {
+        "name": "random_complex",
+        "context": {
+          "passphrase": "gT5#kW9!mQ2-xL8@pR4vN&hC7"
+        }
+      },
+      {
+        "name": "long_alpha",
+        "context": {
+          "passphrase": "correcthorsebatterystaplemountainriverocean"
+        }
+      },
+      {
+        "name": "edge_spaces",
+        "context": {
+          "passphrase": " secret  phrase "
+        }
+      }
+    ]
+  },
+  "seed_words_screen": {
+    "context": {
+      "top_nav": {"title": "Seed Words: 1/3", "show_back_button": true},
+      "words": ["vault", "ridge", "oyster", "muffin"],
+      "page_index": 0,
+      "num_pages": 3,
+      "start_number": 1,
+      "button_list": ["Next"]
+    },
+    "variations": [
+      {
+        "name": "last_page",
+        "context": {
+          "top_nav": {"title": "Seed Words: 6/6", "show_back_button": true},
+          "words": ["mimic", "suffer", "gadget", "primary"],
+          "page_index": 5,
+          "num_pages": 6,
+          "start_number": 21,
+          "button_list": ["Done"]
+        }
+      }
+    ]
   }
 }
