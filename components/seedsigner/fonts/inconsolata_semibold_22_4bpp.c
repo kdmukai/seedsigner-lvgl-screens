@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 22 px
  * Bpp: 4
- * Opts: --bpp 4 --size 22 --no-compress --font ../seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E --format lvgl --lv-font-name inconsolata_semibold_22_4bpp -o components/seedsigner/fonts/inconsolata_semibold_22_4bpp.c
+ * Opts: --bpp 4 --size 22 --no-compress --font /home/kdmukai/dev/seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E,0x2589 --format lvgl --lv-font-name inconsolata_semibold_22_4bpp -o /home/kdmukai/dev/seedsigner-lvgl-screens/components/seedsigner/fonts/inconsolata_semibold_22_4bpp.c
  ******************************************************************************/
 
 #ifdef __has_include
@@ -1000,7 +1000,29 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
 
     /* U+007E "~" */
     0x8, 0xef, 0xa2, 0x5, 0x80, 0x8f, 0xfd, 0xff,
-    0xef, 0xe1, 0x19, 0x10, 0x3c, 0xfd, 0x30
+    0xef, 0xe1, 0x19, 0x10, 0x3c, 0xfd, 0x30,
+
+    /* U+2589 "▉" */
+    0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff,
+    0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff,
+    0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff,
+    0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff,
+    0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa,
+    0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff,
+    0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff,
+    0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff,
+    0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff,
+    0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa,
+    0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff,
+    0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff,
+    0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff,
+    0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff,
+    0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa,
+    0xff, 0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff,
+    0xff, 0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xff,
+    0xff, 0xff, 0xff, 0xfa, 0xff, 0xff, 0xff, 0xff,
+    0xfa, 0xff, 0xff, 0xff, 0xff, 0xfa, 0xcc, 0xcc,
+    0xcc, 0xcc, 0xc8
 };
 
 
@@ -1104,7 +1126,8 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 5785, .adv_w = 176, .box_w = 10, .box_h = 19, .ofs_x = 0, .ofs_y = -2},
     {.bitmap_index = 5880, .adv_w = 176, .box_w = 3, .box_h = 20, .ofs_x = 4, .ofs_y = -4},
     {.bitmap_index = 5910, .adv_w = 176, .box_w = 9, .box_h = 19, .ofs_x = 1, .ofs_y = -2},
-    {.bitmap_index = 5996, .adv_w = 176, .box_w = 10, .box_h = 3, .ofs_x = 1, .ofs_y = 6}
+    {.bitmap_index = 5996, .adv_w = 176, .box_w = 10, .box_h = 3, .ofs_x = 1, .ofs_y = 6},
+    {.bitmap_index = 6011, .adv_w = 176, .box_w = 10, .box_h = 31, .ofs_x = 0, .ofs_y = -9}
 };
 
 /*---------------------
@@ -1118,6 +1141,10 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
 {
     {
         .range_start = 32, .range_length = 95, .glyph_id_start = 1,
+        .unicode_list = NULL, .glyph_id_ofs_list = NULL, .list_length = 0, .type = LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY
+    },
+    {
+        .range_start = 9609, .range_length = 1, .glyph_id_start = 96,
         .unicode_list = NULL, .glyph_id_ofs_list = NULL, .list_length = 0, .type = LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY
     }
 };
@@ -1143,7 +1170,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
     .cmaps = cmaps,
     .kern_dsc = NULL,
     .kern_scale = 0,
-    .cmap_num = 1,
+    .cmap_num = 2,
     .bpp = 4,
     .kern_classes = 0,
     .bitmap_format = 0,
@@ -1166,8 +1193,8 @@ lv_font_t inconsolata_semibold_22_4bpp = {
 #endif
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/
-    .line_height = 22,          /*The maximum line height required by the font*/
-    .base_line = 4,             /*Baseline measured from the bottom of the line*/
+    .line_height = 31,          /*The maximum line height required by the font*/
+    .base_line = 9,             /*Baseline measured from the bottom of the line*/
 #if !(LVGL_VERSION_MAJOR == 6 && LVGL_VERSION_MINOR == 0)
     .subpx = LV_FONT_SUBPX_NONE,
 #endif

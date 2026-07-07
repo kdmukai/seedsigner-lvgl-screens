@@ -188,6 +188,70 @@ typedef struct {
 
 lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* opts);
 
+// Reusable icon + label/value readout — the LVGL port of Python components.IconTextLine.
+// Lays out an optional icon to the LEFT of a two-line text column: a small gray label on
+// top of a value below it. Used by SeedFinalize (fingerprint), SeedExportXpubDetails
+// (fingerprint / derivation / xpub), SeedReviewPassphrase (changes-fingerprint), and any
+// screen that shows a labeled field.
+//
+// Alignment mirrors Python: when an icon is present the label + value are always LEFT-
+// aligned within the text column and `is_text_centered` only affects where the WHOLE
+// icon+text block sits — but the block's position is owned by the PARENT here (drop the
+// returned row into a center-aligned flex column to center it, or a start-aligned column
+// at some x to left-align it). When there is NO icon, `is_text_centered` centers the
+// label + value within the column itself.
+//
+//   icon_glyph : icon text — a PUA icon glyph (rendered via `icon_font`) or a plain
+//                character (e.g. the xpub "X"). NULL/"" omits the icon.
+//   icon_font  : font for the icon. NULL -> ICON_FONT__SEEDSIGNER (24 px seedsigner icons).
+//   icon_color : SEEDSIGNER_ICON_COLOR_DEFAULT -> BODY_FONT_COLOR.
+//   label_text : the small gray label above the value. NULL/"" omits the label row.
+//   label_font : NULL -> BODY_FONT (locale-aware; 2 px larger than Python's body-2, the
+//                same faithful-localizable choice seed_finalize makes).
+//   label_color: SEEDSIGNER_ICON_COLOR_DEFAULT -> LABEL_FONT_COLOR (gray).
+//   value_text : the value line. Required.
+//   value_font : NULL -> BODY_FONT.
+//   value_color: SEEDSIGNER_ICON_COLOR_DEFAULT -> BODY_FONT_COLOR.
+//   is_text_centered : see the alignment note above (only meaningful with NO icon).
+//   icon_width : 0 -> the icon is its own glyph width (default). >0 -> the icon sits in a
+//                fixed-width column of this many px, centered within it. Give sibling rows
+//                the SAME icon_width so their text columns start at one x (left-aligned
+//                labels/values) and icons of differing widths (PUA glyphs vs a plain "X")
+//                center on a shared axis.
+//
+// Returns a content-sized, transparent row parented to `parent`.
+typedef struct {
+    const char*      icon_glyph;
+    const lv_font_t* icon_font;
+    uint32_t         icon_color;
+    const char*      label_text;
+    const lv_font_t* label_font;
+    uint32_t         label_color;
+    const char*      value_text;
+    const lv_font_t* value_font;
+    uint32_t         value_color;
+    bool             is_text_centered;
+    int32_t          icon_width;
+} icon_text_line_opts_t;
+
+lv_obj_t* icon_text_line(lv_obj_t* parent, const icon_text_line_opts_t* opts);
+
+// Reclaim the line-height leading LVGL reserves above the caps / below the descenders of
+// a single-line label, with negative vertical margins, so stacked labels pack at their
+// VISIBLE ink height (PIL/Python measures the tight text bbox; LVGL boxes are taller).
+// Measured PER-TEXT and descender-aware: a label whose text has no descender (e.g.
+// "Derivation") reclaims its full descent and sits tight to the line below, while text
+// with a descender ("Fingerprint" has a 'g') keeps the room its descender needs.
+// Call AFTER lv_label_set_text(). Reclaiming empty leading never clips ink.
+void reclaim_line_leading(lv_obj_t* label, const lv_font_t* font);
+
+// Like reclaim_line_leading(), but UNIFORM across labels that share one font: it reclaims
+// the FONT's leading (measured once from a cap 'X' + a descender 'g'), NOT each label's own
+// ink. Use it for a column of homogeneous labels — e.g. the seed-words list — so every line
+// gets the SAME box height and baseline and they align consistently, regardless of which
+// words happen to carry descenders or ascenders.
+void reclaim_line_leading_uniform(lv_obj_t* label, const lv_font_t* font);
+
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);
