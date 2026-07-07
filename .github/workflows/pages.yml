@@ -104,9 +104,16 @@ jobs:
   # Read-only screenshot regression diff for PRs: generate the BASE screenshots
   # in-run and compare against the PR's gallery (reused from the `site` artifact).
   # Results go to the job summary + an artifact — no PR comment, no write token.
+  #
+  # TEMPORARILY DISABLED (early-stage dev, 2026-07-07): rebuilding the base ref's whole
+  # gallery (pack build + C++ build + render) roughly doubles the PR build time, and a
+  # render-diff has little value while the screens churn heavily. The job is kept intact
+  # (and its ci.sh helpers untouched) so it can be reactivated near production.
+  #   RE-ENABLE: delete the `false &&` guard on the `if:` below, restoring
+  #              `if: github.event_name == 'pull_request'`.
   screenshot-diff:
     needs: build
-    if: github.event_name == 'pull_request'
+    if: false && github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
