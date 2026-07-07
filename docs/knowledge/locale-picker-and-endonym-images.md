@@ -14,11 +14,11 @@ firmware rebuild. Written 2026-07-03 alongside the initial implementation._
    reboot, no graceful degradation. (See `docs/locale-picker-font-plan.md`, the
    original sketch this implements.)
 2. **Adding a language must not require a firmware rebuild** — copy a pack onto the
-   SD card and it works. But the runtime derived *which locales exist and how to
-   render each* entirely from the compiled-in `locale_font_table()`
-   (`locale_fonts.cpp`); each pack's `manifest.json` was only a build-time
-   integrity artifact, never read at runtime. A locale not in that table fell
-   through to the English baked floor.
+   SD card and it works. The runtime learns *which locales exist and how to render
+   each* from each pack's **`manifest.json`**, registered via
+   `ss_register_pack_manifest` (`locale_loader.cpp`); screens bakes no locale table.
+   A locale whose pack is absent falls through to the English baked floor. (This
+   runtime-registration path landed 2026-07-06, replacing a compiled-in `locale_font_table()`.)
 
 ## Solution 1 — pre-rendered endonym images (zero runtime font in the picker)
 
@@ -59,12 +59,13 @@ strokes (한국어 / 日本語).
   - The app (`LocaleSelectionView`, B3) makes this decision per language when it
     builds the picker rows; a brand-new non-Latin SD language always ships an
     endonym image, so it lists correctly without loading its font.
-- **Offline rasterizer**: `tools/i18n/render_endonym.py` uses **PIL + libraqm**
+- **Offline rasterizer**: the pack repo's `tools/render_endonym.py` uses **PIL + libraqm**
   (the same shaper the pack-validation oracle uses) → complex-script shaping
   (Devanagari conjuncts, Thai stacking, Arabic/Nastaliq joining + RTL) is resolved
-  at build time; the device does zero shaping for the picker. Rendered at the
-  locale's BUTTON px per profile (read from `screenshot_gen --dump-locales`, so the
-  tool never duplicates the C size policy). Emitted from the FULL source TTF (the
+  at build time; the device does zero shaping for the picker. Rendered at the locale's
+  BUTTON px per profile from the pack repo's `locales.h` size policy
+  (`SS_ENDONYM_BUTTON_BASE_*` × the `SS_DISPLAY_PROFILE` multiplier), so the tool never
+  duplicates the render layer's size policy. Emitted from the FULL source TTF (the
   corpus subset may not cover the endonym's own glyphs).
 - **"SSA8" container** (self-describing, little-endian): `"SSA8"` magic, u8 version,
   u8 bpp(=8), u16 w, u16 h, u16 reserved, then `w*h` A8 bytes (stride == width).
