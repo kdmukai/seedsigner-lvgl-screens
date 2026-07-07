@@ -10,21 +10,20 @@ supported locale:
 and writes <dest>/assets/scenarios/locales.json, the ordered locale index
 (code + display name) the picker is built from.
 
-Font packs are gitignored / regenerable. They must exist under lang-packs/
-before staging; pass --regen-packs to (re)build them first via build_fontpacks
-(needs --gen-bin + fontTools, and, for the CJK corpus packs, the translations
-checkout build_fontpacks defaults to).
+Font packs + localized scenarios are gitignored and built from the
+seedsigner-language-packs repo (not committed). They must already exist under lang-packs/
++ tools/scenarios/localized/ before staging — build them with
+`scripts/ci/ci.sh build-fontpacks` + `scripts/ci/ci.sh gen-localized-scenarios` (or
+REGEN_PACKS=1 build.sh). This just copies them; this repo does not own the pack builder.
 
 Usage:
   stage_assets.py --dest tools/apps/web_runner/build-wasm
-  stage_assets.py --dest site/play --regen-packs --gen-bin <screenshot_gen>
 """
 
 import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -50,11 +49,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dest", required=True, help="build/serve dir to stage assets/ under")
-    ap.add_argument("--regen-packs", action="store_true",
-                    help="rebuild the font packs via build_fontpacks before copying")
-    ap.add_argument("--gen-bin",
-                    default=os.path.join(REPO_ROOT, "tools/apps/screenshot_generator/build/screenshot_gen"),
-                    help="screenshot_gen binary (for --regen-packs)")
     args = ap.parse_args()
 
     dest = os.path.abspath(args.dest)
@@ -62,13 +56,6 @@ def main():
     packs_dir = os.path.join(dest, "assets", "lang-packs")
     os.makedirs(scen_dir, exist_ok=True)
     os.makedirs(packs_dir, exist_ok=True)
-
-    if args.regen_packs:
-        cmd = [sys.executable, os.path.join(REPO_ROOT, "tools/i18n/build_fontpacks.py"),
-               "--gen-bin", args.gen_bin]
-        for loc in PACK_LOCALES:
-            cmd += ["--locale", loc]
-        subprocess.run(cmd, check=True)
 
     # Scenario catalogs (raw localized JSON — the page expands variations itself).
     src_scen = os.path.join(REPO_ROOT, "tools/scenarios/localized")
@@ -84,16 +71,17 @@ def main():
         src = os.path.join(src_packs, code)
         if not os.path.isdir(src):
             sys.exit(f"stage_assets: missing font pack {src} "
-                     f"(run tools/i18n/build_fontpacks.py or pass --regen-packs)")
+                     f"(build it with `scripts/ci/ci.sh build-fontpacks`)")
         out = os.path.join(packs_dir, code)
         os.makedirs(out, exist_ok=True)
         for fn in sorted(os.listdir(src)):
-            # The browser fetches exactly the files ss_pack_files lists: the role
-            # .ttf(s) plus runs.bin for complex-script (shaping) packs. (runs.json is
-            # the repo-side debug/oracle mirror; manifest.json stays repo-side too —
-            # the WASM build reads the manifest from the render layer.) endonym_<h>.bin
-            # are the pre-rendered language names the locale picker fetches per row.
-            if (fn.endswith(".ttf") or fn == "runs.bin"
+            # manifest.json: the browser fetches + registers it (ss_register_manifest)
+            # so the render layer learns the locale's policy — screens bakes no locale
+            # table. Then it fetches exactly the files ss_pack_files lists: the role
+            # .ttf(s) plus runs.bin for complex-script (shaping) packs. (runs.json is the
+            # repo-side debug/oracle mirror — not staged.) endonym_<h>.bin are the
+            # pre-rendered language names the locale picker fetches per row.
+            if (fn == "manifest.json" or fn.endswith(".ttf") or fn == "runs.bin"
                     or fn.startswith("endonym_")):
                 shutil.copyfile(os.path.join(src, fn), os.path.join(out, fn))
 

@@ -45,16 +45,19 @@ bool text_role_from_name(const std::string& name, TextRole& out) {
 }
 
 // ---------------------------------------------------------------------------
-// The canonical table.
+// Role/size presets per chain.
 //
-// CJK (Primary): legibility-bumped base sizes follow the production Python
-// per-locale size tables (gui/components.py): body 17->18, button 18->20,
-// title 20->23. LargeButton (native 20) tracks the title bump to 23;
-// MainMenuTitle (26) is already large enough and is left un-bumped.
+// These are the only baked locale policy left in screens: the per-role base sizes a
+// registered pack inherits from its `chain` when its manifest does not carry explicit
+// role sizes (default_locale_roles). Everything else about a locale (which locales
+// exist, their font family / rtl / shaping / script) now travels in each pack's
+// manifest.json — there is no compiled-in locale table. Policy is owned by the
+// seedsigner-language-packs repo; see docs/knowledge/language-pack-format-and-policy-authority.md.
 //
-// Phase 1 ships the three CJK locales. Same-size scripts (Greek/Cyrillic/
-// Vietnamese, ChainRole::Fallback over OpenSans) and shaping-complex scripts
-// (Arabic/Persian/Thai/Hindi, Phase 2) are added here as their subsets land.
+// CJK (Primary): legibility-bumped base sizes follow the production Python per-locale
+// size tables (gui/components.py): body 17->18, button 18->20, title 20->23.
+// LargeButton (native 20) tracks the title bump to 23; MainMenuTitle (26) is already
+// large enough and is left un-bumped.
 // ---------------------------------------------------------------------------
 static std::vector<LocaleRoleSize> cjk_primary_roles() {
     return {
@@ -81,47 +84,10 @@ static std::vector<LocaleRoleSize> opensans_fallback_roles() {
     };
 }
 
-const std::vector<LocaleFontEntry>& locale_font_table() {
-    static const std::vector<LocaleFontEntry> table = {
-        // CJK: corpus-subset Noto, becomes the Primary (bumped sizes).
-        {"zh_Hans_CN", "NotoSansSC", ChainRole::Primary, cjk_primary_roles()},
-        {"ja",         "NotoSansJP", ChainRole::Primary, cjk_primary_roles()},
-        {"ko",         "NotoSansKR", ChainRole::Primary, cjk_primary_roles()},
-        // Arabic/Persian (Phase 2): corpus-subset NotoSansAR as the Primary, at
-        // the same legibility-bumped sizes as CJK. The subset holds the
-        // presentation FORMS the renderer emits (LV_USE_ARABIC_PERSIAN_CHARS),
-        // not base letters — the offline builder runs the corpus through the real
-        // LVGL shaper (tools/i18n/shaper) to learn them. rtl=true drives layout
-        // mirroring; LVGL (LV_USE_BIDI) handles the bidi reordering. The baked
-        // OpenSans baseline stays as fallback so embedded Latin/digits render LTR.
-        {"fa", "NotoSansAR", ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/true},
-        // Complex-script (Phase 2): rendered from OFFLINE HarfBuzz glyph runs, not
-        // by codepoint. corpus-subset Noto as the Primary at the CJK legibility
-        // bump; the pack ships runs.bin next to <locale>.ttf. The subset keeps its
-        // GSUB/GPOS/GDEF layout closure (the offline shaper needs it), unlike the
-        // CJK packs which drop layout. shaping=true + the ISO-15924 script tag tell
-        // the offline builder how to shape; the screen layer draws the runs.
-        //   hi  Devanagari   reorder + conjuncts (glyphs with no codepoint)
-        //   th  Thai         GPOS mark stacking + SARA-AM decomposition
-        //   ur  Nastaliq     the extreme GPOS case (diagonal baseline cascade), rtl
-        {"hi", "NotoSansDevanagari", ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/false, /*shaping=*/true, "Deva"},
-        {"th", "NotoSansTH",         ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/false, /*shaping=*/true, "Thai"},
-        {"ur", "NotoNastaliqUrdu",   ChainRole::Primary, cjk_primary_roles(), "", /*rtl=*/true,  /*shaping=*/true, "Arab"},
-        // Script packs: block-range OpenSans subsets, same-size Fallback over the
-        // baked Western baseline. One pack per script covers its language family
-        // (e.g. ru's Cyrillic block also serves uk/bg) with no corpus coupling.
-        {"el", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0370-03FF"},              // Greek
-        {"ru", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+0400-04FF"},              // Cyrillic
-        // Vietnamese: the horn vowels Ơơ/Ưư live in Latin Extended-B (above the baked
-        // Western floor's Latin-1+Ext-A); without them common words ("được") tofu. Plus
-        // combining marks + the precomposed tone-marked vowels in Latin Ext Additional.
-        {"vi", "OpenSans", ChainRole::Fallback, opensans_fallback_roles(), "U+01A0-01A1,U+01AF-01B0,U+0300-036F,U+1E00-1EFF"},  // Vietnamese
-    };
-    return table;
-}
-
 // ---------------------------------------------------------------------------
-// Runtime-registered locales (SD-card packs). See locale_fonts.h.
+// Runtime-registered locales (language packs). See locale_fonts.h. These are the
+// ONLY source of locale entries — every non-English locale is synthesized from its
+// pack's manifest.json via ss_register_pack_manifest; screens bakes no locale table.
 // ---------------------------------------------------------------------------
 static std::vector<LocaleFontEntry>& runtime_entries() {
     static std::vector<LocaleFontEntry> entries;
@@ -150,11 +116,9 @@ void clear_runtime_locale_entries() {
 }
 
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale) {
-    // Runtime (SD) entries win over the compiled default for the same code.
+    // Only runtime-registered packs exist now; an unregistered locale (English, or a
+    // locale whose pack was not scanned) returns nullptr and renders on the baked floor.
     for (const LocaleFontEntry& e : runtime_entries()) {
-        if (e.locale == locale) return &e;
-    }
-    for (const LocaleFontEntry& e : locale_font_table()) {
         if (e.locale == locale) return &e;
     }
     return nullptr;
@@ -189,18 +153,11 @@ std::string supported_locales_json() {
     out["profile"] = { {"width", profile.width}, {"height", profile.height} };
     out["locales"] = json::array();
 
-    // Emit runtime (SD) entries first; a compiled entry with the same code is then
-    // skipped (the runtime pack overrides it). This is what lets ss_load_locale /
-    // ss_locale_pack_files serve a not-compiled-in locale — they read this JSON.
+    // Every entry is a runtime-registered pack (ss_register_pack_manifest); the English
+    // floor is baked separately and needs no descriptor here. This JSON is what lets
+    // ss_load_locale / ss_locale_pack_files serve each discovered locale.
     std::vector<const LocaleFontEntry*> entries;
     for (const LocaleFontEntry& e : runtime_entries()) entries.push_back(&e);
-    for (const LocaleFontEntry& e : locale_font_table()) {
-        bool overridden = false;
-        for (const LocaleFontEntry& r : runtime_entries()) {
-            if (r.locale == e.locale) { overridden = true; break; }
-        }
-        if (!overridden) entries.push_back(&e);
-    }
 
     for (const LocaleFontEntry* ep : entries) {
         const LocaleFontEntry& e = *ep;

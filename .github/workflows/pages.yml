@@ -26,6 +26,13 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned seedsigner-language-packs ref. Screens does not commit packs — it builds them
+  # in-run from this checkout (inside the pack repo's pinned GHCR toolchain image). Bump
+  # this SHA to adopt new locale policy / translations. Keep it in sync with runner-core-test.yml.
+  PACK_REPO: kdmukAI-bot/seedsigner-language-packs
+  PACK_REF: a9e39dabf60e093bb3d1494eb4728f83342c878b
+
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -43,8 +50,26 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Checkout language-packs (pinned) with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          repository: ${{ env.PACK_REPO }}
+          ref: ${{ env.PACK_REF }}
+          submodules: recursive
+          path: seedsigner-language-packs
+
       - name: Install screenshot dependencies
         run: scripts/ci/ci.sh install-screenshot-deps
+
+      # Build the packs + localized scenarios the gallery renders, from the pinned
+      # language-packs checkout (packs build inside its GHCR toolchain image; scenarios
+      # are pure-Python). Not committed — see .gitignore.
+      - name: Build language packs + localized scenarios
+        run: |
+          scripts/ci/ci.sh build-fontpacks
+          scripts/ci/ci.sh gen-localized-scenarios
+        env:
+          SS_LANGPACKS_REPO_DIR: ${{ github.workspace }}/seedsigner-language-packs
 
       - name: Build & generate screenshots
         run: |
@@ -99,17 +124,37 @@ jobs:
           fetch-depth: 1
           path: base
 
+      - name: Checkout language-packs (pinned) with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          repository: ${{ env.PACK_REPO }}
+          ref: ${{ env.PACK_REF }}
+          submodules: recursive
+          path: seedsigner-language-packs
+
       - name: Download PR site (the "after" gallery)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           name: site
           path: after
 
-      - name: Install screenshot dependencies
-        run: scripts/ci/ci.sh install-screenshot-deps
-
-      - name: Generate BASE screenshots
+      - name: Install screenshot dependencies (base gallery build + compare)
         run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libpng-dev imagemagick rsync python3 python3-pip
+
+      # Build the BASE ref's gallery with the same pinned language-packs checkout as HEAD, so
+      # the diff isolates render-code changes rather than pack drift. The base gallery is
+      # BEST-EFFORT: across this migration the base ref's ci.sh may predate the pack-build
+      # wiring, so a failure here degrades the (advisory, non-gating) diff instead of failing
+      # the job. base/ci.sh cd's to base/, so pass an absolute SS_LANGPACKS_REPO_DIR and let it
+      # build packs via the pinned build_packs.sh (Docker/GHCR).
+      - name: Generate BASE screenshots (best-effort)
+        continue-on-error: true
+        env:
+          SS_LANGPACKS_REPO_DIR: ${{ github.workspace }}/seedsigner-language-packs
+        run: |
+          base/scripts/ci/ci.sh build-fontpacks || echo "base build-fontpacks failed; diff degraded"
           base/scripts/ci/ci.sh build-screenshots
           base/scripts/ci/ci.sh generate-screenshots
 

@@ -63,7 +63,13 @@ def main():
     ap.add_argument("--scenarios",
                     default=os.path.join(REPO_ROOT, "tools/scenarios/scenarios.json"))
     ap.add_argument("--translations-dir",
-                    default=os.path.join(REPO_ROOT, "tools/i18n/seedsigner-translations"))
+                    # Local fixture-regeneration only — CI reads the COMMITTED
+                    # tools/scenarios/localized/. The .po comes from a language-packs
+                    # checkout; point SS_LANGPACKS_REPO_DIR at one (default: sibling).
+                    default=os.path.join(
+                        os.environ.get("SS_LANGPACKS_REPO_DIR",
+                                       os.path.join(REPO_ROOT, "..", "seedsigner-language-packs")),
+                        "seedsigner-translations"))
     ap.add_argument("--out-dir", default=os.path.join(REPO_ROOT, "tools/scenarios/localized"))
     ap.add_argument("--locale", action="append",
                     help="only this locale (repeatable); default = en + all catalogs")

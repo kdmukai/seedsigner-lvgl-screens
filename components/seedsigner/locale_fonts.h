@@ -82,23 +82,23 @@ struct LocaleFontEntry {
     std::string script;
 };
 
-// Canonical table accessors.
-const std::vector<LocaleFontEntry>& locale_font_table();
+// Locale lookup. Every non-English locale is described by a runtime-registered pack
+// manifest — there is no compiled-in locale table. Returns nullptr for an unregistered
+// locale, which then renders on the baked English/Latin floor.
 const LocaleFontEntry* find_locale_font_entry(const std::string& locale);
 
 // ---------------------------------------------------------------------------
-// Runtime-registered locales (SD-card language packs).
+// Runtime-registered locales (language packs).
 // ---------------------------------------------------------------------------
 //
-// locale_font_table() above is the built-in DEFAULT set. A host can ALSO register
-// locales discovered at runtime — a language pack copied onto the SD card whose
-// code is not compiled in — so a brand-new language works with NO firmware
-// rebuild. A runtime entry is synthesized from the pack's own manifest.json (see
-// ss_register_pack_manifest in locale_loader.h) and takes precedence over a
-// compiled entry with the same code (an SD pack can override a stale baked
-// default). find_locale_font_entry() and supported_locales_json() both consult
-// these, so the whole load path (ss_load_locale / ss_locale_pack_files) works for
-// runtime locales unchanged — the smallest possible change to the proven loader.
+// Screens bakes only the English floor; a locale becomes renderable by REGISTERING its
+// pack's own manifest.json (ss_register_pack_manifest in locale_loader.h), which
+// synthesizes a LocaleFontEntry. So a brand-new language works with NO recompile — its
+// pack, discovered under lang-packs/ (desktop/Pi) or on the SD card (ESP32), is scanned
+// and registered by the host. find_locale_font_entry() and supported_locales_json()
+// consult ONLY these runtime entries, so the whole load path (ss_load_locale /
+// ss_locale_pack_files) works from the manifests alone. locale policy (chain / rtl /
+// shaping / role sizes) lives in the seedsigner-language-packs repo, not here.
 
 // The canonical role/size preset for a chain. A runtime pack that does not carry
 // its own role sizes inherits exactly what the compiled packs use for that chain

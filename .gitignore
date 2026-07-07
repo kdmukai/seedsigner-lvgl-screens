@@ -2,7 +2,6 @@
 build/
 cmake-build-*/
 out/
-review/
 
 # CMake artifacts
 CMakeFiles/
@@ -83,16 +82,14 @@ tools/apps/web_runner/.emcache/
 CLAUDE.md
 .claude/
 
-# Production font-pack output (reproducible from scenarios + catalogs + fonts)
+# Built language packs + localized scenarios are NOT committed. CI builds them in-run
+# from the seedsigner-language-packs repo (checked out at a pinned ref) via its pinned
+# GHCR toolchain image, and screens reads them from these gitignored dirs. Local dev:
+# `scripts/ci/ci.sh build-fontpacks` (packs) + `scripts/ci/ci.sh gen-localized-scenarios`
+# build them from a sibling ../seedsigner-language-packs checkout (override with
+# $SS_LANGPACKS_REPO_DIR). Screens tests presentation, not the translation corpus, so
+# nothing here needs to be tracked.
 /lang-packs/
-# Localized scenarios (test-only output of tools/i18n/gen_localized_scenarios.py)
-tools/scenarios/localized/
-# Throwaway shaping-spike output (regenerate: spike_shape.py -> --shape-spike ->
-# spike_compare.py). Subset TTFs, run table, reference + device + diff PNGs.
-tools/i18n/spike_out/
-# Production-pack validation output (regenerate: validate_runs.py). Oracle +
-# device PNGs diffed for the release-validation gate.
-tools/i18n/validate_out/
-# Throwaway scratch dir: dev screenshots, montages, zoom crops, fetched refs.
-# (Was the untracked 'review/'; renamed to .tmp/ as a conventional scratch space.)
-.tmp/
+/tools/scenarios/localized/
+# Local scratch dir for review images (screenshots, montages, crops, device captures).
+review/

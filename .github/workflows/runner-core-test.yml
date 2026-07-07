@@ -11,6 +11,13 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned seedsigner-language-packs ref. Screens does not commit packs — it builds them
+  # in-run from this checkout (inside the pack repo's pinned GHCR toolchain image). Bump
+  # this SHA to adopt new locale policy / translations. Keep it in sync with pages.yml.
+  PACK_REPO: kdmukAI-bot/seedsigner-language-packs
+  PACK_REF: a9e39dabf60e093bb3d1494eb4728f83342c878b
+
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -21,18 +28,25 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Checkout language-packs (pinned) with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          repository: ${{ env.PACK_REPO }}
+          ref: ${{ env.PACK_REF }}
+          submodules: recursive
+          path: seedsigner-language-packs
+
       - name: Install dependencies
         run: scripts/ci/ci.sh install-runner-core-test-deps
 
-      # The test loads real per-locale font packs (zh/hi/ru ...) to verify the font
-      # dedup + retire/reap lifecycle across scripts, so build them first. Full
-      # language support is a core requirement of these screens — the locale cases
-      # are exercised in CI, never skipped. (build-screenshots provides the
-      # screenshot_gen binary that build-fontpacks needs for --dump-locales.)
-      - name: Build per-locale font packs (lang-packs/)
-        run: |
-          scripts/ci/ci.sh build-screenshots
-          scripts/ci/ci.sh build-fontpacks
+      # The test loads the packs (lang-packs/ — zh/hi/ru … among the curated pack_locales)
+      # to verify the font dedup + retire/reap lifecycle across scripts. Built in-run from
+      # the pinned language-packs checkout, inside its GHCR toolchain image. Full language
+      # support is a core requirement — these locale cases are exercised in CI, never skipped.
+      - name: Build language packs
+        run: scripts/ci/ci.sh build-fontpacks
+        env:
+          SS_LANGPACKS_REPO_DIR: ${{ github.workspace }}/seedsigner-language-packs
 
       - name: Build and run headless runner_core test
         run: scripts/ci/ci.sh test-runner-core

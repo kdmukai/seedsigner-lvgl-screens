@@ -66,16 +66,18 @@ docker run --rm \
             && cmake --build tools/apps/web_runner/build-wasm -j\"\$(nproc)\" \
             && ccache --show-stats | grep -iE 'hits|misses' || true"
 
-# Stage the runtime assets (scenario catalogs + font packs + locale index) next
-# to the bundle. The packs must already exist under lang-packs/ (regenerate with
-# tools/i18n/build_fontpacks.py); pass --regen-packs below to rebuild them here.
-echo "==> Staging runtime assets (scenarios + font packs + locale index)"
-REGEN_PACKS="${REGEN_PACKS:-0}"
-STAGE_ARGS=(--dest "${SCRIPT_DIR}/build-wasm")
-if [ "$REGEN_PACKS" = "1" ]; then
-  STAGE_ARGS+=(--regen-packs --gen-bin "${REPO_ROOT}/tools/apps/screenshot_generator/build/screenshot_gen")
+# Stage the runtime assets (scenario catalogs + font packs + locale index) next to the
+# bundle. The packs + localized scenarios must already exist under lang-packs/ +
+# tools/scenarios/localized/ — build them from the seedsigner-language-packs repo with
+# `scripts/ci/ci.sh build-fontpacks` + `scripts/ci/ci.sh gen-localized-scenarios`. Pass
+# REGEN_PACKS=1 to (re)build them here first (needs Docker + a language-packs checkout;
+# override its location with $SS_LANGPACKS_REPO_DIR, default sibling ../seedsigner-language-packs).
+if [ "${REGEN_PACKS:-0}" = "1" ]; then
+  echo "==> REGEN_PACKS=1: building language packs + localized scenarios first"
+  ( cd "$REPO_ROOT" && scripts/ci/ci.sh build-fontpacks && scripts/ci/ci.sh gen-localized-scenarios )
 fi
-python3 "${SCRIPT_DIR}/stage_assets.py" "${STAGE_ARGS[@]}"
+echo "==> Staging runtime assets (scenarios + font packs + locale index)"
+python3 "${SCRIPT_DIR}/stage_assets.py" --dest "${SCRIPT_DIR}/build-wasm"
 
 echo ""
 echo "==> Done: ${REPO_ROOT}/tools/apps/web_runner/build-wasm/  (index.html + .js + .wasm + assets/)"

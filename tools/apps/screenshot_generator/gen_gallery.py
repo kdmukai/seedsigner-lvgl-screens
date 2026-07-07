@@ -14,7 +14,8 @@ for the selected language.
 
 Prerequisites (the caller ensures these exist): a built screenshot_gen, the
 localized scenario catalogs (tools/i18n/gen_localized_scenarios.py), and the font
-packs for the pack locales (tools/i18n/build_fontpacks.py).
+packs for the pack locales (built via the language-packs submodule:
+`scripts/ci/ci.sh build-fontpacks`).
 
 Usage:
   gen_gallery.py --out tools/apps/screenshot_generator/screenshots [--jobs N]

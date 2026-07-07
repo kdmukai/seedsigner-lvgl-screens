@@ -35,16 +35,12 @@ case "$COMMAND" in
   # ---------------------------------------------------------------------------
 
   install-screenshot-deps)
+    # Gallery build deps: screenshot_gen (cmake/libpng) + imagemagick (screenshot compare) +
+    # rsync (staging built packs). The packs are built by `build-fontpacks` INSIDE the pack
+    # repo's pinned GHCR toolchain image (Docker, preinstalled on runners), so NO shaping
+    # toolchain (uharfbuzz/PyICU) is installed here.
     $SUDO apt-get update
-    # python3-icu: distro-prebuilt PyICU (ICU dictionary line-breaker). Installed via
-    # apt, NOT pip, because PyICU ships no wheels — `pip install PyICU` compiles from
-    # source (a slow build that wedged CI for >20 min). The binding tracks the system
-    # libicu, which is exactly what each pack manifest's icu_version already records.
-    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick python3 python3-pip python3-icu
-    # Remaining offline i18n shaping deps ship wheels (fast). Install them from the
-    # pinned requirements, minus the PyICU line (satisfied by python3-icu above) so
-    # pip doesn't trigger the source rebuild.
-    grep -viE '^pyicu' tools/i18n/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick rsync python3 python3-pip
     ;;
 
   build-screenshots)
@@ -55,28 +51,48 @@ case "$COMMAND" in
     ;;
 
   generate-screenshots)
-    # Multi-language gallery: render every supported locale into its own subdir so
-    # the published gallery has a language picker. Needs the localized scenario
-    # catalogs + the font packs (regenerated here from the seedsigner-translations
-    # submodule + fontTools); the generator itself was built by build-screenshots.
+    # Multi-language gallery: render every supported locale into its own subdir. Reads the
+    # packs (lang-packs/) + localized scenarios (tools/scenarios/localized/) produced by
+    # `build-fontpacks` — it neither localizes nor builds packs here. (Screens tests
+    # presentation, not the corpus.)
     OUT="${1:-tools/apps/screenshot_generator/screenshots}"
     GEN=tools/apps/screenshot_generator/build/screenshot_gen
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
-    python3 tools/i18n/gen_localized_scenarios.py
-    python3 tools/i18n/build_fontpacks.py --gen-bin "$GEN"
     python3 tools/apps/screenshot_generator/gen_gallery.py --out "$OUT" --gen-bin "$GEN"
     ;;
 
   build-fontpacks)
-    # Generate the per-locale font packs under lang-packs/ — the runtime locale
-    # assets that on-device locale loading and the headless runner_core dedup test
-    # require. Builds ONLY the packs (not the screenshot gallery). screenshot_gen
-    # supplies the --dump-locales font manifest (build it first via build-screenshots);
-    # build_fontpacks builds the lv_shape shaper on demand for complex-script
-    # (Arabic / Persian / Indic) packs. Usage: ci.sh build-fontpacks [GEN_BIN]
-    GEN="${1:-tools/apps/screenshot_generator/build/screenshot_gen}"
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
-    python3 tools/i18n/build_fontpacks.py --gen-bin "$GEN"
+    # Build the language packs (lang-packs/) + localized scenarios (tools/scenarios/localized/)
+    # the gallery and runner_core test render. Both are gitignored and built in-run — in CI
+    # from a pinned seedsigner-language-packs checkout, in local dev from the sibling one
+    # (override with $SS_LANGPACKS_REPO_DIR). The pack build runs INSIDE the pack repo's pinned
+    # GHCR toolchain image (build_packs.sh pulls it; local docker-build fallback), so screens
+    # needs only Docker + rsync here, not the shaping toolchain. runs.json (the debug/oracle
+    # mirror) is excluded — screens renders from runs.bin.
+    REPO="${SS_LANGPACKS_REPO_DIR:-../seedsigner-language-packs}"
+    [ -x "$REPO/scripts/build_packs.sh" ] || { echo "ERROR: no language-packs checkout at '$REPO' (set SS_LANGPACKS_REPO_DIR)" >&2; exit 1; }
+    LOCS="${LANGPACK_FIXTURE_LOCALES:-zh_Hans_CN ja ko fa hi th ur el ru vi}"
+    # Pin the pack build's output to $REPO/build regardless of any $SS_APP_DIR the dev may
+    # have set (which would otherwise redirect build_packs.sh into the app's src/lang-packs).
+    # shellcheck disable=SC2046
+    "$REPO/scripts/build_packs.sh" --out-dir "$REPO/build" $(for l in $LOCS; do printf ' --locale %s' "$l"; done)
+    # lang-packs/ is gitignored (not committed), so create it before staging.
+    mkdir -p lang-packs
+    for l in $LOCS; do
+      rm -rf "lang-packs/$l"
+      rsync -a --exclude='runs.json' "$REPO/build/$l/" "lang-packs/$l/"
+    done
+    echo "built font packs ($LOCS) in lang-packs/"
+    ;;
+
+  gen-localized-scenarios)
+    # Regenerate the localized scenario catalogs (tools/scenarios/localized/<locale>.json) the
+    # gallery + web runner render — one per locale (en + every .po catalog), translated from the
+    # pinned language-packs checkout's translations submodule. Pure Python (no shaping toolchain).
+    # The runner_core test doesn't need these (it renders the base scenarios.json), only the gallery.
+    REPO="${SS_LANGPACKS_REPO_DIR:-../seedsigner-language-packs}"
+    [ -d "$REPO/seedsigner-translations/l10n" ] || { echo "ERROR: no translations at '$REPO/seedsigner-translations/l10n' (set SS_LANGPACKS_REPO_DIR)" >&2; exit 1; }
+    SS_LANGPACKS_REPO_DIR="$REPO" python3 tools/i18n/gen_localized_scenarios.py
+    echo "regenerated localized scenarios in tools/scenarios/localized/"
     ;;
 
   compare-screenshots)
@@ -142,15 +158,11 @@ PY
       ${@+"$@"}
     cmake --build tools/apps/web_runner/build-wasm -j"$NPROC"
 
-    # Stage the runtime assets (scenario catalogs + font packs + locale index)
-    # next to the bundle. The script/CJK packs are regenerated from the
-    # translations submodule (present via `submodules: recursive`) with fontTools;
-    # the screenshot_gen built by `build-screenshots` provides the manifest.
-    python3 -c "import fontTools" 2>/dev/null || pip3 install --quiet --disable-pip-version-check fonttools
+    # Stage the runtime assets (scenario catalogs + font packs + locale index) next to the
+    # bundle by COPYING the built packs (lang-packs/) + localized scenarios
+    # (tools/scenarios/localized/) from `build-fontpacks`. No pack build here.
     python3 tools/apps/web_runner/stage_assets.py \
-      --dest tools/apps/web_runner/build-wasm \
-      --regen-packs \
-      --gen-bin tools/apps/screenshot_generator/build/screenshot_gen
+      --dest tools/apps/web_runner/build-wasm
     ;;
 
   package-web-runner)
@@ -169,15 +181,12 @@ PY
   # ---------------------------------------------------------------------------
 
   install-runner-core-test-deps)
-    # The runner_core test loads real per-locale font packs (lang-packs/) to exercise
-    # the font dedup + retire/reap lifecycle across scripts, so the job builds those
-    # packs first (see build-fontpacks). That needs the i18n toolchain (PyICU +
-    # fontTools + HarfBuzz) plus the build deps for screenshot_gen (libpng) and the
-    # lv_shape shaper (cmake + compiler). PyICU comes from apt — it ships no wheels, so
-    # `pip install PyICU` would compile from source (>20 min wedge); the rest ship wheels.
+    # The runner_core test loads the packs (lang-packs/) built by `build-fontpacks` to exercise
+    # the font dedup + retire/reap lifecycle across scripts. The pack build runs in the pack
+    # repo's GHCR image (Docker, preinstalled), so no i18n shaping toolchain here — just cmake +
+    # compiler to build the test, plus rsync to stage the built packs.
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libpng-dev python3 python3-pip python3-icu
-    grep -viE '^pyicu' tools/i18n/requirements.txt | pip3 install --quiet --disable-pip-version-check -r /dev/stdin
+    $SUDO apt-get install -y cmake build-essential libpng-dev rsync python3 python3-pip
     ;;
 
   test-runner-core)
@@ -340,8 +349,9 @@ else:
     echo "  package-web-runner [DIR]         Copy the single-file bundle into a deploy dir"
     echo ""
     echo "Headless test commands:"
-    echo "  install-runner-core-test-deps    Install runner_core test deps (build + i18n font-pack toolchain)"
-    echo "  build-fontpacks [GEN_BIN]        Build per-locale font packs (lang-packs/) only (no gallery)"
+    echo "  install-runner-core-test-deps    Install runner_core test deps (build only; packs build in Docker)"
+    echo "  build-fontpacks                  Build language packs (lang-packs/) from the pinned pack repo"
+    echo "  gen-localized-scenarios          Regenerate localized scenario catalogs (tools/scenarios/localized/)"
     echo "  test-runner-core [SCENARIOS]     Build and run the headless runner_core smoke test"
     echo ""
     echo "Pages commands:"
