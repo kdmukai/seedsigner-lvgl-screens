@@ -27,19 +27,28 @@ from po_catalog import parse_catalog
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 _DIGIT_RUN = re.compile(r"\d+")
+_QUOTED_RUN = re.compile(r'"([^"]*)"')
+# Delimiters that join independently-translated label parts, e.g.
+# "{sig} - {script} ({network})". Captured so re.split keeps them for reassembly.
+_SEGMENT_SPLIT = re.compile(r"( - | \(|\))")
 
 
 def translate_string(text, catalog):
     """Translate one display string against the catalog.
 
     First an exact-content match (the common case). Failing that, a Python str.format
-    template fallback: the Python view formats some titles like
-    ``_("Seed Words: {}/{}").format(page, total)``, so the scenario's PRE-formatted string
-    ("Seed Words: 1/3") never equals the msgid template ("Seed Words: {}/{}") and would
-    otherwise pass through untranslated. So abstract each maximal digit run to "{}" and, if
-    THAT is a catalog msgid, translate the template and re-insert the original numbers in
-    order. It only fires when the abstracted form is a real msgid, so strings that merely
-    contain digits (addresses, derivation paths, passphrases, amounts) are untouched.
+    template fallback: the Python view formats some strings with interpolated values, so
+    the scenario's PRE-formatted string never equals the msgid template and would otherwise
+    pass through untranslated. Two abstractions are tried, each firing ONLY when the
+    abstracted form is a real catalog msgid (so strings that merely contain digits/quotes —
+    addresses, derivation paths, passphrases, amounts, config names — are left untouched):
+
+    1. Digit runs -> "{}": ``_("Seed Words: {}/{}").format(page, total)`` produces the
+       pre-formatted "Seed Words: 1/3", whose msgid is "Seed Words: {}/{}".
+    2. Double-quoted runs -> '"{}"': ``_('Your input: "{}"').format(word)`` produces
+       'Your input: "satoshi"', whose msgid is 'Your input: "{}"'. The digit-run pass
+       already covers a quoted *number* ("0010101"); this covers quoted *words* ("satoshi",
+       "say") that carry no digits.
     """
     if text in catalog:
         return catalog[text]
@@ -53,6 +62,27 @@ def translate_string(text, catalog):
                 return translated.format(*nums)
             except (IndexError, KeyError, ValueError):
                 pass
+
+    quoted = _QUOTED_RUN.findall(text)
+    if quoted:
+        template = _QUOTED_RUN.sub('"{}"', text)
+        translated = catalog.get(template)
+        if translated is not None and translated.count("{}") == len(quoted):
+            try:
+                return translated.format(*quoted)
+            except (IndexError, KeyError, ValueError):
+                pass
+
+    # Composite label: strings assembled from independently-translated parts, e.g.
+    # "Single Sig - Native Segwit (Testnet)" == "{sig} - {script} ({network})". Split on the
+    # joining delimiters (kept), translate each SEGMENT that is itself a catalog msgid, and
+    # leave delimiters + unknown segments as-is. Only rebuilds when at least one segment
+    # matched, so arbitrary text (addresses, etc.) is untouched.
+    segments = _SEGMENT_SPLIT.split(text)
+    if len(segments) > 1:
+        rebuilt = [catalog.get(seg, seg) for seg in segments]
+        if any(seg in catalog for seg in segments):
+            return "".join(rebuilt)
     return text
 
 

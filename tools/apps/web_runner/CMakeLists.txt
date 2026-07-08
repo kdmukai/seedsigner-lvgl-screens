@@ -118,6 +118,17 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
   "${SEEDSIGNER_DIR}/seedsigner.cpp"
+  # Scope-A parity screens (one file per screen — multi-agent build).
+  "${SEEDSIGNER_DIR}/multisig_wallet_descriptor_screen.cpp"
+  "${SEEDSIGNER_DIR}/seed_sign_message_confirm_address_screen.cpp"
+  "${SEEDSIGNER_DIR}/settings_qr_confirmation_screen.cpp"
+  # Scope-B parity screens (one file per screen — multi-agent build).
+  "${SEEDSIGNER_DIR}/seed_sign_message_confirm_message_screen.cpp"
+  "${SEEDSIGNER_DIR}/seed_address_verification_screen.cpp"
+  "${SEEDSIGNER_DIR}/tools_calc_final_word_screen.cpp"
+  "${SEEDSIGNER_DIR}/tools_calc_final_word_done_screen.cpp"
+  "${SEEDSIGNER_DIR}/seed_transcribe_whole_qr_screen.cpp"
+  "${SEEDSIGNER_DIR}/tools_address_explorer_address_list_screen.cpp"
   # Shared overlay manager: screensaver idle-watch dispatcher (toast queue later).
   "${SEEDSIGNER_DIR}/overlay_manager.cpp"
   # Locale font seam + the shared locale-pack loader (ss_load_locale): the web host

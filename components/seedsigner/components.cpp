@@ -11,6 +11,8 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
+#include <utility>
 
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 
@@ -539,6 +541,34 @@ void button_set_active(lv_obj_t* lv_button, bool active) {
 // (so a marquee animation wouldn't move the glyphs), AND that draw path start-
 // justifies an overflowing run only while the label stays LONG_CLIP. They keep
 // LONG_CLIP (start-justified) — no active-scroll. (A14)
+// --- Focus-reveal labels ----------------------------------------------------------
+// A button whose row-text should EXPAND to a longer string while its row is focused
+// (and revert to its short "at rest" text otherwise) — e.g. the address-explorer list,
+// which shows a truncated "{i}:{head}…{tail}" at rest and the full "{i}:{address}"
+// (start-justified, marquee-scrolled) when the row is selected.
+//
+// The button's own user_data holds button_state_t and its text label's user_data holds
+// BUTTON_TEXT_LABEL_TAG (both already claimed), so the reveal pair is kept in a side
+// table keyed by the text-label object and erased on the label's LV_EVENT_DELETE. The
+// text swap is driven from button_set_label_marquee (below), the single per-focus hook
+// the nav layer already calls for every row; labels not in the table are untouched, so
+// every other button-list screen is unaffected.
+static std::unordered_map<lv_obj_t*, std::pair<std::string, std::string>>
+    g_focus_reveal_labels;   // text label -> { base (at-rest), full (focused) }
+
+static void focus_reveal_delete_cb(lv_event_t* e) {
+    g_focus_reveal_labels.erase((lv_obj_t*)lv_event_get_target(e));
+}
+
+void label_set_focus_reveal(lv_obj_t* label, const char* full_text) {
+    if (!label || !full_text) {
+        return;
+    }
+    const char* base = lv_label_get_text(label);
+    g_focus_reveal_labels[label] = { base ? base : "", full_text };
+    lv_obj_add_event_cb(label, focus_reveal_delete_cb, LV_EVENT_DELETE, NULL);
+}
+
 void button_set_label_marquee(lv_obj_t* lv_button, bool marquee) {
     if (!lv_button || seedsigner_locale_uses_glyph_runs()) {
         return;
@@ -555,6 +585,18 @@ void button_set_label_marquee(lv_obj_t* lv_button, bool marquee) {
                                         : LV_LABEL_LONG_CLIP;
     if (lv_label_get_long_mode(label) == want) {
         return;
+    }
+
+    // Focus-reveal: on the (real) focus transition, swap the row text to its full form
+    // when gaining focus and back to the at-rest form when losing it — BEFORE the mode
+    // change below, so label_set_line_autoscroll measures the text that will scroll.
+    auto reveal = g_focus_reveal_labels.find(label);
+    if (reveal != g_focus_reveal_labels.end()) {
+        const std::string& text = marquee ? reveal->second.second   // full
+                                          : reveal->second.first;    // base
+        if (text != lv_label_get_text(label)) {
+            lv_label_set_text(label, text.c_str());
+        }
     }
 
     if (marquee) {
@@ -1505,6 +1547,31 @@ lv_obj_t* icon_text_line(lv_obj_t* parent, const icon_text_line_opts_t* opts) {
     lv_obj_set_style_text_font(value, value_font, LV_PART_MAIN);
     lv_obj_set_style_text_color(value, lv_color_hex(value_color), LV_PART_MAIN);
     lv_obj_set_style_pad_all(value, 0, LV_PART_MAIN);
+    // Optional word-wrap (Python auto_line_break): fix the value to value_wrap_width and
+    // let it flow over multiple lines — e.g. a long space-joined fingerprint list that
+    // overflows one line. Center each wrapped line when the row is centered. Default
+    // (value_wrap_width == 0) keeps the single content-sized line every other caller uses.
+    if (opts->value_wrap_width > 0) {
+        lv_obj_set_width(value, opts->value_wrap_width);
+        lv_label_set_long_mode(value, LV_LABEL_LONG_WRAP);
+        if (opts->is_text_centered) {
+            lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        }
+        // Tighten the inter-line advance of the wrapped value: LVGL's default advance
+        // (declared line_height + theme leading) leaves loose gaps between wrapped rows, so a
+        // tall multi-line value (e.g. a 5-key fingerprint list) grows enough to shove the
+        // whole component up under the top nav. Target a gap ≈ the standard body line spacing
+        // (advance = glyph ink height + BODY_LINE_SPACING) — snug but not cramped — capped so
+        // it never loosens past the font default and never collapses the rows.
+        int32_t vlh = (int32_t)lv_font_get_line_height(value_font);
+        lv_font_glyph_dsc_t vgd;
+        int32_t vink = lv_font_get_glyph_dsc(value_font, &vgd, (uint32_t)'0', 0)
+                           ? (int32_t)vgd.box_h : vlh;
+        int32_t vspace = (vink + BODY_LINE_SPACING) - vlh;
+        if (vspace > 0)           vspace = 0;             // never looser than the font default
+        if (vspace < -(vlh / 4))  vspace = -(vlh / 4);   // never collapse the rows
+        lv_obj_set_style_text_line_space(value, vspace, LV_PART_MAIN);
+    }
     reclaim_line_leading(value, value_font);
 
     return row;
@@ -1518,7 +1585,9 @@ lv_obj_t* icon_text_line(lv_obj_t* parent, const icon_text_line_opts_t* opts) {
 // else a single base58 version char (1/3 mainnet, m/n/2 testnet·signet·regtest). Note
 // this identifies the TYPE, not the network — m/n/2 are shared, so the highlight color
 // is caller-supplied, not inferred here.
-static int fa_prefix_len(const std::string &a) {
+int fa_prefix_len(const char *address) {
+    if (!address) return 0;
+    std::string a(address);
     static const char *p6[] = { "bcrt1q", "bcrt1p" };
     static const char *p4[] = { "bc1q", "bc1p", "tb1q", "tb1p" };
     for (const char *p : p6) if (a.rfind(p, 0) == 0) return 6;
@@ -1601,7 +1670,7 @@ lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* op
 
     // Recognized format prefix -> gray. Fall back to no prefix if it would leave no room
     // for a distinct first-7 and last-7 (never happens for real addresses).
-    int plen = fa_prefix_len(address);
+    int plen = fa_prefix_len(address.c_str());
     if (plen + n + n > len) plen = 0;
 
     // --- Compact single-line form (max_lines == 1): [prefix] [head] … [tail], with a
@@ -1651,9 +1720,35 @@ lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* op
     display.push_back(' '); colv.push_back(gray);              // separator
     put(address.substr(len - n, n), net);                      // last n
 
+    // Abbreviated cap (max_lines >= 2): bound the block to max_lines rows by dropping the
+    // TAIL of the gray middle and inserting a gray "..." right before the highlighted last-n,
+    // so the block ends "...<last n>". Preserves the head + tail highlight (only the middle
+    // is shortened) — used by the live address-verification screen, which must leave room for
+    // the type/network + progress lines beneath. (max_lines == 0 => full address, no cap.)
+    if (opts->max_lines >= 2) {
+        int cap_cpl = (int)(width / char_width);
+        if (cap_cpl < 1) cap_cpl = 1;
+        int cap = opts->max_lines * cap_cpl;
+        if ((int)display.size() > cap) {
+            const std::string ell = "...";
+            int fixed_head = plen + (plen > 0 ? 1 : 0) + n + 1;    // prefix + sep + head-n + sep
+            int middle_len = (int)display.size() - (1 + n) - fixed_head;  // middle before " "+last-n
+            int keep = cap - fixed_head - (int)ell.size() - n;    // middle chars that still fit
+            if (keep < 0) keep = 0;
+            if (keep < middle_len) {
+                std::string          ndisp(display.begin(), display.begin() + fixed_head + keep);
+                std::vector<uint32_t> ncol(colv.begin(),    colv.begin()    + fixed_head + keep);
+                for (char ch : ell)                    { ndisp.push_back(ch); ncol.push_back(gray); }
+                for (char ch : address.substr(len - n, n)) { ndisp.push_back(ch); ncol.push_back(net); }
+                display.swap(ndisp);
+                colv.swap(ncol);
+            }
+        }
+    }
+
     // Wrap onto a fixed characters-per-line grid, evened out so every line is the same
-    // width, and center that block horizontally. (max_lines > 1 is currently unused, so
-    // this always wraps the whole address; only the single-line form above caps height.)
+    // width, and center that block horizontally. max_lines == 0 wraps the whole address;
+    // max_lines >= 2 was already abbreviated above to fit within that many rows.
     const int dlen = (int)display.size();
     int fit_cpl = (int)(width / char_width);
     if (fit_cpl < 1) fit_cpl = 1;
@@ -1667,6 +1762,8 @@ lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* op
     int target_lines = (int)lround(std::sqrt((double)dlen / 9.0));
     int num_lines = std::max(min_lines, target_lines);
     if (num_lines < 1) num_lines = 1;
+    // Abbreviated form is already trimmed to fit max_lines rows — never exceed it.
+    if (opts->max_lines >= 2 && num_lines > opts->max_lines) num_lines = opts->max_lines;
     int max_cpl = (dlen + num_lines - 1) / num_lines;   // re-even so lines are equal width
     if (max_cpl < 1) max_cpl = 1;
 

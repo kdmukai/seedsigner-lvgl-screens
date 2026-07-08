@@ -1024,5 +1024,233 @@
         }
       }
     ]
+  },
+  "multisig_wallet_descriptor_screen": {
+    "context": {
+      "top_nav": { "title": "Descriptor Loaded", "show_back_button": true },
+      "policy": "2 of 3",
+      "fingerprints": ["1a0b2c3d", "22bde1a9", "73c5da0a"],
+      "policy_label": "Policy",
+      "signing_keys_label": "Signing Keys",
+      "button_list": ["OK"]
+    },
+    "variations": [
+      {
+        "name": "3_of_5",
+        "context": {
+          "policy": "3 of 5",
+          "fingerprints": ["1a0b2c3d", "22bde1a9", "73c5da0a", "9e8f7a6b", "4c5d6e7f"]
+        }
+      }
+    ]
+  },
+  "seed_sign_message_confirm_address_screen": {
+    "context": {
+      "top_nav": { "title": "Confirm Address", "show_back_button": true },
+      "derivation_path": "m/84h/0h/0h/0/0",
+      "derivation_path_label": "derivation path",
+      "address": "bc1qaz78jzgh8qtz53glkqkz5pckghnyuffwksm777",
+      "button_list": ["Sign message"]
+    }
+  },
+  "settings_qr_confirmation_screen": {
+    "context": {
+      "top_nav": {"title": "Settings QR", "show_back_button": false, "show_power_button": false},
+      "config_name": "English noob mode",
+      "status_message": "Persistent Settings enabled. Settings saved to SD card."
+    },
+    "variations": [
+      { "name": "not_persistent",
+        "context": {
+          "config_name": "Mode Ephemeral",
+          "status_message": "Settings updated in temporary memory"
+        } }
+    ]
+  },
+  "seed_sign_message_confirm_message_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Review Message",
+        "show_back_button": true
+      },
+      "is_bottom_list": true,
+      "is_button_text_centered": true,
+      "message": "I attest that I control the bitcoin address associated with this signing request.",
+      "button_list": [
+        "Next"
+      ]
+    },
+    "variations": [
+      {
+        "name": "paged",
+        "context": {
+          "top_nav": {
+            "title": "Message (pt 1/2)",
+            "show_back_button": true
+          },
+          "message": "A longer message shown one page at a time so the reviewer confirms the exact text before signing."
+        }
+      }
+    ]
+  },
+  "seed_address_verification_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Verify Address",
+        "show_back_button": false
+      },
+      "address": "bc1q6p00wazu4nnqac29fvky6vhjnnhku5u2g9njss62rvy7e0yuperq86f5ek",
+      "type_network": "Single Sig - Native Segwit",
+      "network": "mainnet",
+      "progress_text": "Checking address 1240",
+      "button_list": [
+        "Skip 10",
+        "Cancel"
+      ]
+    },
+    "variations": [
+      {
+        "name": "nested_segwit",
+        "context": {
+          "address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+          "type_network": "Single Sig - Nested Segwit"
+        }
+      },
+      {
+        "name": "taproot",
+        "context": {
+          "address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+          "type_network": "Single Sig - Taproot"
+        }
+      },
+      {
+        "name": "testnet",
+        "context": {
+          "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+          "type_network": "Single Sig - Native Segwit (Testnet)",
+          "network": "testnet"
+        }
+      },
+      {
+        "name": "regtest",
+        "context": {
+          "address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+          "type_network": "Single Sig - Native Segwit (Regtest)",
+          "network": "regtest"
+        }
+      }
+    ]
+  },
+  "tools_calc_final_word_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Final Word Calc",
+        "show_back_button": true
+      },
+      "button_list": [
+        "Next"
+      ],
+      "your_input_text": "Your input: \"satoshi\"",
+      "final_word_text": "Final Word: \"say\"",
+      "checksum_label": "Checksum",
+      "selected_final_bits": "10111111011",
+      "checksum_bits": "1111",
+      "has_selected_word": true
+    },
+    "variations": [
+      {
+        "name": "coin_flips",
+        "context": {
+          "your_input_text": "Your input: \"0010101\"",
+          "final_word_text": "Final Word: \"clever\"",
+          "selected_final_bits": "0010101",
+          "checksum_bits": "0100",
+          "has_selected_word": false
+        }
+      }
+    ]
+  },
+  "tools_calc_final_word_done_screen": {
+    "context": {
+      "top_nav": {
+        "title": "12th Word",
+        "show_back_button": true,
+        "show_power_button": false
+      },
+      "final_word": "clever",
+      "fingerprint": "7b07c0b7",
+      "fingerprint_label": "fingerprint",
+      "mnemonic_word_length": 12,
+      "button_list": [
+        "Load seed",
+        {
+          "label": "Discard",
+          "label_color": "#ff0000"
+        }
+      ]
+    }
+  },
+  "seed_transcribe_whole_qr_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Transcribe SeedQR"
+      },
+      "qr_data": "5bbd9d71a8ec7990831aff359d426545",
+      "qr_mode": "byte",
+      "data_encoding": "hex",
+      "button_list": ["Begin 21x21"]
+    },
+    "variations": [
+      {
+        "name": "12_standard",
+        "context": {
+          "qr_data": "073318950739065415961602009907670428187212261116",
+          "qr_mode": "numeric",
+          "data_encoding": "utf8",
+          "button_list": ["Begin 25x25"]
+        }
+      },
+      {
+        "name": "24_compact",
+        "context": {
+          "qr_data": "0e74b64107f94cc0ccfae6a13dcbec3662154fec67e0e00999c07892597d190a",
+          "qr_mode": "byte",
+          "data_encoding": "hex",
+          "button_list": ["Begin 25x25"]
+        }
+      },
+      {
+        "name": "24_standard",
+        "context": {
+          "qr_data": "011513251154012711900771041507421289190620080870026613431420201617920614089619290300152408010643",
+          "qr_mode": "numeric",
+          "data_encoding": "utf8",
+          "button_list": ["Begin 29x29"]
+        }
+      }
+    ]
+  },
+  "tools_address_explorer_address_list_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Receive Addrs",
+        "show_back_button": true
+      },
+      "start_index": 0,
+      "initial_selected_index": 0,
+      "next_label": "Next 10",
+      "addresses": [
+        "bc1q2yjf4hpc3ljszel9fududcaqxx5pg5k57dpmy6z4xcz40u42cm3qyun274",
+        "bc1qnh4ww87cvt74cdaxcs4dsq8pkz4ugqxpl0mk72vwqww9hlzqmjnq5qz76a",
+        "bc1qccpemcna4n0lmjj3kc5llj8mr8rd3u5229lp79kgsmgqy8qvfx6s9a0jmx",
+        "bc1qs3869rvthe90pts6mqtp9cv5lcmck0zmqwqj36vw5g293yrp6hgsyksggr",
+        "bc1qtqqxl4crr67d6tpz42mype8ymczevhvfqpxeg4322kx3jmsuuvdqemad2e",
+        "bc1q9n5jr88j40upwzudjaqmgj5nrydu8q6sfyu527yk289m8ncwvf5sen4fgk",
+        "bc1qtdrljsc5pzq4ppjz52em9alytkvdf3w3dznek8mm868m0jv5denqgp03jx",
+        "bc1q70pm7qnk34lm7pca2m3t59slnw8d8yes07u20dy6stxy5wvlhlksnxs9kg",
+        "bc1q90a0md77p7g0ywkzewe5dl6k2hvaauq2exctvctt8hvxv5h8c9jsf8xuvu",
+        "bc1qfkgjg95ctrnjkh76xqvkej6n8mvpgny6g6dw79d5r06jl9978v4q97ygvr"
+      ]
+    }
   }
 }

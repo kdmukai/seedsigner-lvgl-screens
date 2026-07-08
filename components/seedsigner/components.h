@@ -188,6 +188,12 @@ typedef struct {
 
 lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* opts);
 
+// Length of the recognized Bitcoin address-format prefix at the start of `address` (the
+// de-emphasized "what type is this" run: bech32 HRP+version like "bc1q"/"tb1q"/"bcrt1q",
+// or a single base58 version char "1"/"3"/"m"/"n"/"2"); 0 if unrecognized. Shared so the
+// address-explorer list can split "prefix + first-7 … last-7" the same way formatted_address does.
+int fa_prefix_len(const char *address);
+
 // Reusable icon + label/value readout — the LVGL port of Python components.IconTextLine.
 // Lays out an optional icon to the LEFT of a two-line text column: a small gray label on
 // top of a value below it. Used by SeedFinalize (fingerprint), SeedExportXpubDetails
@@ -218,6 +224,10 @@ lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* op
 //                the SAME icon_width so their text columns start at one x (left-aligned
 //                labels/values) and icons of differing widths (PUA glyphs vs a plain "X")
 //                center on a shared axis.
+//   value_wrap_width : 0 -> the value is a single content-sized line (default). >0 -> the
+//                value label is fixed to this width and word-wraps over multiple lines
+//                (Python IconTextLine auto_line_break=True) — e.g. a long space-joined
+//                fingerprint list. Centered per-line when is_text_centered is set.
 //
 // Returns a content-sized, transparent row parented to `parent`.
 typedef struct {
@@ -232,6 +242,7 @@ typedef struct {
     uint32_t         value_color;
     bool             is_text_centered;
     int32_t          icon_width;
+    int32_t          value_wrap_width;
 } icon_text_line_opts_t;
 
 lv_obj_t* icon_text_line(lv_obj_t* parent, const icon_text_line_opts_t* opts);
@@ -270,6 +281,14 @@ lv_obj_t* button_text_label(lv_obj_t* btn);
 // nav layer because body buttons are kept out of the LVGL focus group, so LVGL
 // never emits the FOCUSED/DEFOCUSED events that would otherwise drive this.
 void button_set_label_marquee(lv_obj_t* lv_button, bool marquee);
+
+// Register a button text label to EXPAND to `full_text` while its row is focused and
+// revert to whatever text it currently has (its "at rest" form) when unfocused. The
+// swap is driven by button_set_label_marquee on each focus transition, so the focused
+// row's full text marquee-scrolls at the shared 40 px/sec rate. Call after the button's
+// at-rest text is set and before nav binding applies the initial focus. Used by the
+// address-explorer list (truncated head…tail at rest, full "{i}:{address}" on focus).
+void label_set_focus_reveal(lv_obj_t* label, const char* full_text);
 
 
 #endif // SEEDSIGNER_COMPONENTS_H

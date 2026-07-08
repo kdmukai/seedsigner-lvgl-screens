@@ -89,6 +89,15 @@ static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"psbt_change_details_screen", psbt_change_details_screen},
     {"psbt_math_screen", psbt_math_screen},
     {"locale_picker_screen", locale_picker_screen},
+    {"multisig_wallet_descriptor_screen", multisig_wallet_descriptor_screen},
+    {"seed_sign_message_confirm_address_screen", seed_sign_message_confirm_address_screen},
+    {"settings_qr_confirmation_screen", settings_qr_confirmation_screen},
+    {"seed_sign_message_confirm_message_screen", seed_sign_message_confirm_message_screen},
+    {"seed_address_verification_screen", seed_address_verification_screen},
+    {"tools_calc_final_word_screen", tools_calc_final_word_screen},
+    {"tools_calc_final_word_done_screen", tools_calc_final_word_done_screen},
+    {"seed_transcribe_whole_qr_screen", seed_transcribe_whole_qr_screen},
+    {"tools_address_explorer_address_list_screen", tools_address_explorer_address_list_screen},
 };
 
 static screen_fn_t lookup_screen_fn(const std::string &name) {

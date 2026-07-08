@@ -47,6 +47,17 @@ list(APPEND srcs
     # language in its own script with no runtime font" path (locale_picker_screen).
     "locale_picker.cpp"
     "seedsigner.cpp"
+    # Scope-A parity screens (one file per screen — multi-agent build).
+    "multisig_wallet_descriptor_screen.cpp"
+    "seed_sign_message_confirm_address_screen.cpp"
+    "settings_qr_confirmation_screen.cpp"
+    # Scope-B parity screens (one file per screen — multi-agent build).
+    "seed_sign_message_confirm_message_screen.cpp"
+    "seed_address_verification_screen.cpp"
+    "tools_calc_final_word_screen.cpp"
+    "tools_calc_final_word_done_screen.cpp"
+    "seed_transcribe_whole_qr_screen.cpp"
+    "tools_address_explorer_address_list_screen.cpp"
     # Shared LVGL keyboard/text-entry mechanics extracted from the passphrase
     # screen: cursor-styled text entry, key theming + icon recolor, 240px side
     # panel, joystick directional nav. Consumed by every keyboard-style screen.

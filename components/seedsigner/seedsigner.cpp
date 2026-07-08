@@ -1,4 +1,5 @@
 #include "seedsigner.h"
+#include "screen_scaffold.h"  // shared scaffold helper decls (defs below, de-static'd for per-screen .cpp files)
 #include "components.h"
 #include "camera_preview_overlay.h"
 #include "camera_entropy_overlay.h"
@@ -83,7 +84,7 @@ static lv_obj_t* top_nav_from_screen_json(lv_obj_t* lv_parent, const json &cfg) 
 
 // Reusable sanity check for incoming screen JSON payloads.
 // Throws std::runtime_error on invalid shape/syntax.
-static void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
+void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
     if (!ctx_json) {
         throw std::runtime_error("screen JSON context is required");
     }
@@ -139,7 +140,7 @@ static void apply_rtl_text_to_labels(lv_obj_t *obj) {
     }
 }
 
-static void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
+void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     // Global RTL hook: flip text direction on the finished screen's labels for
     // RTL locales (layout stays physical; user-input widgets stay LTR).
     if (seedsigner_locale_is_rtl()) {
@@ -264,7 +265,7 @@ static size_t nav_initial_index_from_cfg(const json &cfg, size_t default_index) 
 // list (upper_body == body) is excluded — it scrolls via item-focus navigation —
 // as are grid layouts (main_menu) and screens that never call this helper
 // (seed_add_passphrase, screensaver).
-static void bind_screen_navigation(const json &cfg,
+void bind_screen_navigation(const json &cfg,
                                    const screen_scaffold_t &screen,
                                    lv_obj_t **body_items,
                                    size_t body_item_count,
@@ -456,7 +457,7 @@ static bool read_button_list_items(const json &cfg, std::vector<button_item_cfg_
 // Screens always populate `scaffold.upper_body` (or `scaffold.body` in
 // case #1, where they're the same object) and finish with
 // `load_screen_and_cleanup_previous(scaffold.screen)`.
-static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool scrollable, const lv_font_t *title_font = nullptr) {
+screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool scrollable, const lv_font_t *title_font) {
     screen_scaffold_t out = {0};
 
     out.screen = lv_obj_create(NULL);
@@ -711,7 +712,9 @@ static screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool sc
 
 
 // Forward decl: tight body line-spacing helper (defined after tight_line_space).
-static void apply_body_tight_line_spacing(lv_obj_t *label);
+// Non-static so sibling screen TUs (e.g. seed_sign_message_confirm_message_screen.cpp)
+// can reuse the exact PIL-matched inter-line advance for their own body labels.
+void apply_body_tight_line_spacing(lv_obj_t *label);
 
 // Create a standard wrapped body-text label in `parent`: WRAP, fixed `width`,
 // centered, BODY_FONT in BODY_FONT_COLOR. Shared by the button_list_screen intro
@@ -1033,7 +1036,7 @@ static void apply_status_type_defaults(json &cfg, const status_type_defaults_t &
 //
 // LVGL automatically frees the animation when its target object is deleted,
 // so no explicit teardown is required.
-static void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
+void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
     lv_obj_t *edge = lv_obj_create(screen);
     lv_obj_set_size(edge, lv_pct(100), lv_pct(100));
     lv_obj_align(edge, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1182,7 +1185,7 @@ static int32_t tight_line_space(const lv_font_t *font, const char *text, int32_t
 // BODY_LINE_SPACING, whose taller block can tip a short prompt into a marginal
 // overflow — wrongly tripping scroll-then-buttons so no button is highlighted on
 // load.
-static void apply_body_tight_line_spacing(lv_obj_t *label) {
+void apply_body_tight_line_spacing(lv_obj_t *label) {
     if (!label) {
         return;
     }

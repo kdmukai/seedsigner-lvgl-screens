@@ -99,6 +99,32 @@ void psbt_address_details_screen(void *ctx_json);
 void psbt_change_details_screen(void *ctx_json);
 void psbt_math_screen(void *ctx_json);
 void locale_picker_screen(void *ctx_json);
+void multisig_wallet_descriptor_screen(void *ctx_json);
+void seed_sign_message_confirm_address_screen(void *ctx_json);
+void settings_qr_confirmation_screen(void *ctx_json);
+void seed_sign_message_confirm_message_screen(void *ctx_json);
+void seed_address_verification_screen(void *ctx_json);
+// Update the in-place "checking…" progress line on a live seed_address_verification_screen
+// while the host's background brute-force worker scans derivation indexes. The host pushes
+// already-localized text (e.g. "Checking address 1240"); the library holds no strings.
+// Safe no-op when no such screen is active — the same host-driven live-push contract as
+// qr_display_set_frame(); the host owns the worker/match logic and closes the screen.
+void seed_address_verification_set_progress(const char *progress_text);
+// Tools > Calc final word: the "final word math" breakdown (parity with Python
+// ToolsCalcFinalWordScreen). Shows the user's entered entropy bits, the checksum
+// bits (orange), and the merged final word — over three centered monospace bit rows.
+void tools_calc_final_word_screen(void *ctx_json);
+void tools_calc_final_word_done_screen(void *ctx_json);
+// The "whole QR" overview step of the SeedQR hand-transcription flow (parity with
+// Python SeedTranscribeSeedQRWholeQRScreen). Direct-draws the full SeedQR/CompactSeedQR
+// grid (python-qrcode mask parity) with a pulsing orange WarningEdges border.
+void seed_transcribe_whole_qr_screen(void *ctx_json);
+// Address Explorer address list (parity with Python ToolsAddressExplorerAddressListScreen).
+// A bottom-pinned, left-aligned, fixed-width (monospace) button list of derived addresses,
+// each shown as "{index}:{head}...{tail}"; the selected row reveals its full address. A
+// trailing "Next N" button (right chevron) pages forward. cfg: addresses / start_index /
+// initial_selected_index / next_label / top_nav.title.
+void tools_address_explorer_address_list_screen(void *ctx_json);
 
 // Push the next frame into a live qr_display_screen (host-driven animation, mirroring
 // the camera-overlay set_* live-update pattern). Re-encodes + repaints the QR in place
