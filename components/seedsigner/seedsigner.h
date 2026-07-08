@@ -85,6 +85,15 @@ void seed_review_passphrase_screen(void *ctx_json);
 void seed_words_screen(void *ctx_json);
 void loading_screen(void *ctx_json);
 void qr_display_screen(void *ctx_json);
+// Zoomed, pannable SeedQR transcription view (parity with Python
+// SeedTranscribeSeedQRZoomedInScreen). Renders the QR oversized (fat round modules),
+// dims all but one centered A-F/1-6 zone, and steps a full zone per joystick press /
+// touch swipe (hardware exits on click via a "click to exit" hint; touch exits via a
+// top-right X). Direct-draws only the viewport modules (no oversized canvas) to stay
+// within the ESP32 LVGL pool. Fixed registration patterns (finder/alignment) render as
+// solid squares to match the pre-printed paper templates; data modules are round dots.
+// cfg: qr_data / qr_mode / data_encoding / num_modules / initial_zone_x / initial_zone_y / exit_text.
+void seed_transcribe_zoomed_qr_screen(void *ctx_json);
 void psbt_overview_screen(void *ctx_json);
 void psbt_address_details_screen(void *ctx_json);
 void psbt_change_details_screen(void *ctx_json);

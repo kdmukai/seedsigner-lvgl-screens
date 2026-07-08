@@ -668,6 +668,52 @@
       }
     ]
   },
+  "seed_transcribe_zoomed_qr_screen": {
+    "context": {
+      "qr_data": "073318950739065415961602009907670428187212261116",
+      "qr_mode": "numeric",
+      "data_encoding": "utf8",
+      "num_modules": 25,
+      "initial_zone_x": 2,
+      "initial_zone_y": 2,
+      "exit_text": "click to exit"
+    },
+    "variations": [
+      {
+        "name": "24word",
+        "context": {
+          "qr_data": "011513251154012711900771041507421289190620080870026613431420201617920614089619290300152408010643",
+          "num_modules": 29,
+          "initial_zone_x": 3,
+          "initial_zone_y": 3
+        }
+      },
+      {
+        "name": "compactseedqr",
+        "context": {
+          "qr_data": "5bbd9d71a8ec7990831aff359d426545",
+          "qr_mode": "byte",
+          "data_encoding": "hex",
+          "num_modules": 21,
+          "initial_zone_x": 1,
+          "initial_zone_y": 1
+        }
+      },
+      {
+        "name": "finder_pattern",
+        "context": { "initial_zone_x": 0, "initial_zone_y": 0 }
+      },
+      {
+        "name": "alignment_pattern",
+        "context": {
+          "qr_data": "011513251154012711900771041507421289190620080870026613431420201617920614089619290300152408010643",
+          "num_modules": 29,
+          "initial_zone_x": 4,
+          "initial_zone_y": 4
+        }
+      }
+    ]
+  },
   "seed_finalize_screen": {
     "context": {
       "top_nav": {"title": "Finalize Seed", "show_power_button": false},
