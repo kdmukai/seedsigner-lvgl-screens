@@ -6527,6 +6527,64 @@ static std::vector<std::string> wrap_passphrase(const std::string& p, int max_cp
 }
 
 
+// --- review-passphrase space reveal ----------------------------------------
+// When a passphrase hides leading/trailing/doubled spaces, every space is marked with a
+// SOLID block drawn over it — not a substituted font glyph. Two glyph approaches were
+// rejected: the ▉ block (U+2589) inflated the baked monospace line_height, regressing every
+// layout that reads it (e.g. psbt_math row spacing); and a hollow open-box / .notdef box
+// reads as a "tofu" rendering-error to anyone used to non-Latin glyph fallbacks. A custom
+// solid block is digit-height, one monospace cell wide, sits on the baseline, and takes the
+// label's text color: the marker we wanted, at correct proportions, with no font-metric
+// side effects and no error-glyph ambiguity.
+struct pp_space_block_t {
+    int32_t cell_w;   // monospace cell width (space advance)
+    int32_t top;      // px from a line's top down to the block top (digit cap)
+    int32_t bottom;   // px from a line's top down to the block bottom (baseline)
+    int32_t inset;    // horizontal inset per side (small gap between adjacent blocks)
+};
+
+static void passphrase_space_block_cb(lv_event_t *e) {
+    lv_obj_t         *lbl   = lv_event_get_target_obj(e);
+    lv_layer_t       *layer = lv_event_get_layer(e);
+    pp_space_block_t *sb    = (pp_space_block_t *)lv_event_get_user_data(e);
+    if (!lbl || !layer || !sb) return;
+
+    const char *txt = lv_label_get_text(lbl);
+    if (!txt) return;
+
+    lv_area_t lc;
+    lv_obj_get_coords(lbl, &lc);   // absolute label box; letter positions are label-relative
+
+    lv_draw_rect_dsc_t d;
+    lv_draw_rect_dsc_init(&d);
+    d.bg_color = lv_obj_get_style_text_color(lbl, LV_PART_MAIN);  // same orange as the text
+    d.bg_opa   = LV_OPA_COVER;
+    d.radius   = 0;
+
+    // Walk by CHARACTER index (lv_label_get_letter_pos is character-, not byte-, indexed):
+    // skip UTF-8 continuation bytes so a multi-byte passphrase char can't desync the index.
+    uint32_t char_id = 0;
+    for (const char *p = txt; *p; ++p) {
+        if (((unsigned char)*p & 0xC0) == 0x80) continue;   // UTF-8 continuation byte
+        if (*p == ' ') {
+            lv_point_t pos;
+            lv_label_get_letter_pos(lbl, char_id, &pos);    // top-left of the space's cell
+            lv_area_t a;
+            a.x1 = lc.x1 + pos.x + sb->inset;
+            a.x2 = lc.x1 + pos.x + sb->cell_w - 1 - sb->inset;
+            a.y1 = lc.y1 + pos.y + sb->top;
+            a.y2 = lc.y1 + pos.y + sb->bottom - 1;
+            if (a.x2 >= a.x1 && a.y2 >= a.y1) lv_draw_rect(layer, &d, &a);
+        }
+        char_id++;
+    }
+}
+
+static void passphrase_space_block_free_cb(lv_event_t *e) {
+    lv_free(lv_event_get_user_data(e));
+}
+
+
 // SeedReviewPassphraseScreen: shows the entered BIP-39 passphrase (orange, fixed-width,
 // centered, up to 3 lines) above a fingerprint IconTextLine that spells out how the
 // passphrase CHANGES the seed's fingerprint (without >> with). No warning edges.
@@ -6576,9 +6634,8 @@ void seed_review_passphrase_screen(void *ctx_json) {
 
     // The passphrase itself: orange, fixed-width, centered, up to 3 balanced lines. The
     // user fixed the size at the baked 24 px monospace (Python auto-fits a range; we don't).
-    // If the passphrase has leading/trailing or doubled spaces, ALL spaces become the block
-    // glyph ▉ (Python ▉) so they can't hide — matched on the raw (ASCII) string, then
-    // substituted per line so the line split stays byte-safe.
+    // If the passphrase has leading/trailing or doubled spaces (show_spaces), every space is
+    // marked with a solid block drawn over it (passphrase_space_block_cb) so they can't hide.
     const lv_font_t *pp_font = &KEYBOARD_FONT;      // Inconsolata SemiBold, 24 px @240
     const bool show_spaces =
         (!passphrase.empty() && (passphrase.front() == ' ' || passphrase.back() == ' ')) ||
@@ -6593,18 +6650,13 @@ void seed_review_passphrase_screen(void *ctx_json) {
     if (max_cpl < 1) max_cpl = 1;
     std::vector<std::string> lines = wrap_passphrase(passphrase, max_cpl, 3);  // Python max_lines = 3
 
-    // Join the wrapped lines into one '\n'-separated string, substituting the block glyph ▉
-    // for spaces when the passphrase has hidden edge/doubled spaces. A SINGLE multi-line
-    // label (vs one label per line) lets tight_line_space() set a uniform, Python-tight line
-    // advance; per-line labels stacked at the font's loose declared line_height left too
-    // much air between the wrapped lines.
+    // Join the wrapped lines into one '\n'-separated string. Real spaces are KEPT (they carry
+    // the correct monospace width and keep centering right); when show_spaces, a solid block is
+    // drawn over each in passphrase_space_block_cb. A SINGLE multi-line label (vs one label per
+    // line) lets tight_line_space() set a uniform, Python-tight line advance; per-line labels
+    // stacked at the font's loose declared line_height left too much air between wrapped lines.
     std::string joined;
-    for (std::string line : lines) {
-        if (show_spaces) {
-            std::string sub;
-            for (char c : line) sub += (c == ' ') ? "\xE2\x96\x89" /* ▉ U+2589 */ : std::string(1, c);
-            line = sub;
-        }
+    for (const std::string &line : lines) {
         if (!joined.empty()) joined += "\n";
         joined += line;
     }
@@ -6628,6 +6680,29 @@ void seed_review_passphrase_screen(void *ctx_json) {
     // declared line_height. Measured across the whole block, so descenders never clip.
     lv_obj_set_style_text_line_space(pp_lbl, tight_line_space(pp_font, joined.c_str(), 2),
                                      LV_PART_MAIN);
+
+    // Reveal hidden spaces with a solid block over each space (one cell wide, on the baseline,
+    // in the label's orange). Size it to the TALLEST ink in the character set — measured over
+    // every printable glyph, since special characters ({}[]()| etc.) reach higher than capitals
+    // or digits — so the block matches the tallest character, not just a digit. See
+    // passphrase_space_block_cb.
+    if (show_spaces) {
+        int32_t ascent  = pp_font->line_height - pp_font->base_line;   // baseline offset from line top
+        int32_t max_top = 0;                                            // tallest ink above the baseline
+        for (uint32_t cp = 0x21; cp <= 0x7E; ++cp) {
+            lv_font_glyph_dsc_t g;
+            if (!lv_font_get_glyph_dsc(pp_font, &g, cp, 0)) continue;
+            int32_t top = (int32_t)g.ofs_y + (int32_t)g.box_h;
+            if (top > max_top) max_top = top;
+        }
+        pp_space_block_t *sb = (pp_space_block_t *)lv_malloc(sizeof(pp_space_block_t));
+        sb->cell_w = pp_char_w;
+        sb->top    = ascent - max_top;   // tallest ink in the set (special chars included)
+        sb->bottom = ascent;             // baseline, aligned with the text
+        sb->inset  = pp_char_w / 8 > 0 ? pp_char_w / 8 : 1;   // ~1/8-cell gap (▉ was 7/8 fill)
+        lv_obj_add_event_cb(pp_lbl, passphrase_space_block_cb,      LV_EVENT_DRAW_MAIN_END, sb);
+        lv_obj_add_event_cb(pp_lbl, passphrase_space_block_free_cb, LV_EVENT_DELETE,        sb);
+    }
 
     bind_screen_navigation(cfg, screen,
         screen.button_list_count > 0 ? screen.button_list : NULL,

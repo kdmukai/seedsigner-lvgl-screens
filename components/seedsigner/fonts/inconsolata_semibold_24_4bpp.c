@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 24 px
  * Bpp: 4
- * Opts: --bpp 4 --size 24 --no-compress --font /home/kdmukai/dev/seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E,0x2589 --font /home/kdmukai/dev/seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE905,0xE909,0xE90A,0xE922,0xE923 --format lvgl --lv-font-name inconsolata_semibold_24_4bpp -o /home/kdmukai/dev/seedsigner-lvgl-screens/components/seedsigner/fonts/inconsolata_semibold_24_4bpp.c
+ * Opts: --bpp 4 --size 24 --no-compress --font /home/kdmukai/dev/seedsigner/src/seedsigner/resources/fonts/Inconsolata-SemiBold.ttf --range 0x20-0x7E --font /home/kdmukai/dev/seedsigner/src/seedsigner/resources/fonts/seedsigner-icons.otf --range 0xE905,0xE909,0xE90A,0xE922,0xE923 --format lvgl --lv-font-name inconsolata_semibold_24_4bpp -o /home/kdmukai/dev/seedsigner-lvgl-screens/components/seedsigner/fonts/inconsolata_semibold_24_4bpp.c
  ******************************************************************************/
 
 #ifdef __has_include
@@ -1141,32 +1141,6 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0xff, 0xff, 0xd0, 0x2a, 0x40, 0x29, 0xef, 0xb1,
     0x0,
 
-    /* U+2589 "▉" */
-    0xff, 0xff, 0xff, 0xff, 0xff, 0x8f, 0xff, 0xff,
-    0xff, 0xff, 0xf8, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0x8f, 0xff, 0xff, 0xff, 0xff,
-    0xf8, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8f, 0xff,
-    0xff, 0xff, 0xff, 0xf8, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0x8f, 0xff, 0xff, 0xff,
-    0xff, 0xf8, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8f,
-    0xff, 0xff, 0xff, 0xff, 0xf8, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0x8f, 0xff, 0xff,
-    0xff, 0xff, 0xf8, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0x8f, 0xff, 0xff, 0xff, 0xff,
-    0xf8, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8f, 0xff,
-    0xff, 0xff, 0xff, 0xf8, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0x8f, 0xff, 0xff, 0xff,
-    0xff, 0xf8, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8f,
-    0xff, 0xff, 0xff, 0xff, 0xf8, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0x8f, 0xff, 0xff, 0xff, 0xff, 0xf8,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0x89, 0x99, 0x99,
-    0x99, 0x99, 0x94,
-
     /* U+E905 "" */
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -1392,12 +1366,11 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 7040, .adv_w = 192, .box_w = 4, .box_h = 21, .ofs_x = 4, .ofs_y = -4},
     {.bitmap_index = 7082, .adv_w = 192, .box_w = 10, .box_h = 20, .ofs_x = 1, .ofs_y = -2},
     {.bitmap_index = 7182, .adv_w = 192, .box_w = 11, .box_h = 3, .ofs_x = 1, .ofs_y = 6},
-    {.bitmap_index = 7199, .adv_w = 192, .box_w = 11, .box_h = 34, .ofs_x = 0, .ofs_y = -10},
-    {.bitmap_index = 7386, .adv_w = 384, .box_w = 18, .box_h = 14, .ofs_x = 3, .ofs_y = 1},
-    {.bitmap_index = 7512, .adv_w = 384, .box_w = 12, .box_h = 19, .ofs_x = 6, .ofs_y = 1},
-    {.bitmap_index = 7626, .adv_w = 384, .box_w = 12, .box_h = 19, .ofs_x = 6, .ofs_y = 1},
-    {.bitmap_index = 7740, .adv_w = 384, .box_w = 21, .box_h = 17, .ofs_x = 2, .ofs_y = 2},
-    {.bitmap_index = 7919, .adv_w = 768, .box_w = 36, .box_h = 19, .ofs_x = 6, .ofs_y = 1}
+    {.bitmap_index = 7199, .adv_w = 384, .box_w = 18, .box_h = 14, .ofs_x = 3, .ofs_y = 1},
+    {.bitmap_index = 7325, .adv_w = 384, .box_w = 12, .box_h = 19, .ofs_x = 6, .ofs_y = 1},
+    {.bitmap_index = 7439, .adv_w = 384, .box_w = 12, .box_h = 19, .ofs_x = 6, .ofs_y = 1},
+    {.bitmap_index = 7553, .adv_w = 384, .box_w = 21, .box_h = 17, .ofs_x = 2, .ofs_y = 2},
+    {.bitmap_index = 7732, .adv_w = 768, .box_w = 36, .box_h = 19, .ofs_x = 6, .ofs_y = 1}
 };
 
 /*---------------------
@@ -1405,7 +1378,7 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
  *--------------------*/
 
 static const uint16_t unicode_list_1[] = {
-    0x0, 0xc37c, 0xc380, 0xc381, 0xc399, 0xc39a
+    0x0, 0x4, 0x5, 0x1d, 0x1e
 };
 
 /*Collect the unicode lists and glyph_id offsets*/
@@ -1416,8 +1389,8 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
         .unicode_list = NULL, .glyph_id_ofs_list = NULL, .list_length = 0, .type = LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY
     },
     {
-        .range_start = 9609, .range_length = 50075, .glyph_id_start = 96,
-        .unicode_list = unicode_list_1, .glyph_id_ofs_list = NULL, .list_length = 6, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
+        .range_start = 59653, .range_length = 31, .glyph_id_start = 96,
+        .unicode_list = unicode_list_1, .glyph_id_ofs_list = NULL, .list_length = 5, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
     }
 };
 
@@ -1465,8 +1438,8 @@ lv_font_t inconsolata_semibold_24_4bpp = {
 #endif
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/
-    .line_height = 34,          /*The maximum line height required by the font*/
-    .base_line = 10,             /*Baseline measured from the bottom of the line*/
+    .line_height = 25,          /*The maximum line height required by the font*/
+    .base_line = 5,             /*Baseline measured from the bottom of the line*/
 #if !(LVGL_VERSION_MAJOR == 6 && LVGL_VERSION_MINOR == 0)
     .subpx = LV_FONT_SUBPX_NONE,
 #endif

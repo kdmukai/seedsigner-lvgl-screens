@@ -13,10 +13,11 @@ Two size roles, each emitted at three display-profile sizes (base=100%, 133x, 20
                              icon glyphs that appear as keyboard keys (check, chevron
                              left/right, backspace, space).
 
-The Inconsolata range includes U+2589 (LEFT SEVEN EIGHTHS BLOCK). The review-passphrase
-screen substitutes it for spaces when the passphrase has leading / trailing / doubled
-spaces, so those otherwise-invisible spaces can't hide. Without the glyph baked in, that
-substitution renders as a clipped .notdef box.
+The Inconsolata range is printable ASCII only. The review-passphrase screen reveals
+leading / trailing / doubled spaces by custom-drawing a solid block over each space (no
+font glyph is used), so no space-marker glyph is baked. (Earlier bakes added U+2589 ▉ or
+U+2423 ␣ for that reveal; ▉ inflated the font's line_height and regressed monospace layouts
+like psbt_math, and a hollow box reads as a tofu rendering-error — see INCONSOLATA_RANGE.)
 
 Post-bake, the lv_font_conv 1.5.x include preamble (a bare `#ifdef LV_LVGL_H_INCLUDE_SIMPLE`
 block that needs `lvgl.h`, not `lvgl/lvgl.h`) is rewritten to the auto-detecting
@@ -36,8 +37,13 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(REPO, "components", "seedsigner", "fonts")
 
-# Inconsolata printable ASCII + U+2589 (block, for the passphrase space-reveal).
-INCONSOLATA_RANGE = "0x20-0x7E,0x2589"
+# Inconsolata printable ASCII only. The review-passphrase space-reveal marker is NOT a font
+# glyph — it is a solid block custom-drawn over each space (see passphrase_space_block_cb in
+# seedsigner.cpp). An earlier bake added U+2589 (▉ block) for that reveal, but its full-cell
+# glyph (ink ≈ -24..+10 vs ASCII -17..+5) inflated the baked line_height 25->34 and regressed
+# every layout that reads it (e.g. psbt_math row spacing). Keeping the range ASCII-only holds
+# line_height at the ASCII value; no space-marker glyph is baked.
+INCONSOLATA_RANGE = "0x20-0x7E"
 # SeedSigner PUA icon glyphs that appear as keyboard keys (check, chevron L/R, backspace,
 # space) — merged into the 24 px keyboard font only.
 KEYBOARD_ICON_RANGE = "0xE905,0xE909,0xE90A,0xE922,0xE923"
