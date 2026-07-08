@@ -4470,15 +4470,108 @@ std::vector<uint8_t> qr_decode_payload(const std::string &s, const std::string &
     return out;
 }
 
+// --- python-qrcode mask-selection parity (transcription QRs only) ----------
+// Target we reproduce: the Python `qrcode` library at qrcode==7.3.1 (the pin in SeedSigner's
+// requirements.txt — what the Pi Zero runs). Its automatic mask-pattern choice differs from
+// qrcodegen's qrcodegen_Mask_AUTO for some payloads (both valid QRs, different module
+// pattern); the SeedQR TRANSCRIPTION screens have the user copy that pattern BY HAND, so it
+// must match the device exactly. The penalty/tie-break is version-specific, so re-verify if
+// that pin ever moves.
+//
+// How it's exact: python-qrcode's QRCode.best_mask_pattern() scores each candidate via
+// makeImpl(test=True), which BLANKS every format-info module to light (0). So we score the
+// format-blanked matrix (qr_is_format_module), take the lowest penalty, and break ties by
+// lowest index (its strict `>`). qr_python_lost_point faithfully transcribes qrcode/util.py
+// lost_point (rules 1-4, iterator/horspool skips included); verified matrix-identical to the
+// device across the real SeedQR/CompactSeedQR vectors + random numeric/byte payloads. (Only
+// format-info is blanked; the version-info block exists only at version>=7 / size>=45, which
+// SeedQR never reaches.)
+
+// Format-info modules (the two 15-bit strips by the finders + the fixed dark module),
+// read as light while scoring — mirrors python-qrcode's makeImpl(test=True).
+bool qr_is_format_module(int row, int col, int size) {
+    if (col == 8) return (row <= 5) || (row == 7) || (row == 8) || (row == size - 8) || (row >= size - 7);
+    if (row == 8) return (col <= 5) || (col == 7) || (col == 8) || (col >= size - 8);
+    return false;
+}
+
+// python-qrcode util.lost_point over the format-blanked matrix (best_mask_pattern scoring).
+long qr_python_lost_point(const uint8_t *qr, int size) {
+    // Module read with the format-info area forced light (0), matching test=True.
+    auto M = [&](int row, int col) -> int {
+        return qr_is_format_module(row, col, size) ? 0 : (qrcodegen_getModule(qr, col, row) ? 1 : 0);
+    };
+    long lost = 0;
+
+    // Rule 1: same-color runs >= 5 in every row/col; a run of length L adds (L-2).
+    for (int row = 0; row < size; row++) {
+        int prev = M(row, 0), len = 0;
+        for (int col = 0; col < size; col++) { int c = M(row, col);
+            if (c == prev) len++; else { if (len >= 5) lost += len - 2; len = 1; prev = c; } }
+        if (len >= 5) lost += len - 2;
+    }
+    for (int col = 0; col < size; col++) {
+        int prev = M(0, col), len = 0;
+        for (int row = 0; row < size; row++) { int c = M(row, col);
+            if (c == prev) len++; else { if (len >= 5) lost += len - 2; len = 1; prev = c; } }
+        if (len >= 5) lost += len - 2;
+    }
+
+    // Rule 2: 2x2 uniform blocks add 3 (python's next()-skip reproduced).
+    for (int row = 0; row < size - 1; row++) {
+        for (int col = 0; col < size - 1; col++) {
+            int top_right = M(row, col + 1);
+            if      (top_right != M(row + 1, col + 1)) { col++; continue; }
+            else if (top_right != M(row, col))         continue;
+            else if (top_right != M(row + 1, col))     continue;
+            else lost += 3;
+        }
+    }
+
+    // Rule 3: 1:1:3:1:1 finder-like pattern with a 4-light margin adds 40 (horspool skip).
+    for (int row = 0; row < size; row++) {
+        for (int col = 0; col < size - 10; col++) {
+            #define D(k) M(row, col + (k))
+            if (!D(1) && D(4) && !D(5) && D(6) && !D(9) &&
+                ((D(0) && D(2) && D(3) && !D(7) && !D(8) && !D(10)) ||
+                 (!D(0) && !D(2) && !D(3) && D(7) && D(8) && D(10)))) lost += 40;
+            if (M(row, col + 10)) col++;
+            #undef D
+        }
+    }
+    for (int col = 0; col < size; col++) {
+        for (int row = 0; row < size - 10; row++) {
+            #define E(k) M(row + (k), col)
+            if (!E(1) && E(4) && !E(5) && E(6) && !E(9) &&
+                ((E(0) && E(2) && E(3) && !E(7) && !E(8) && !E(10)) ||
+                 (!E(0) && !E(2) && !E(3) && E(7) && E(8) && E(10)))) lost += 40;
+            if (M(row + 10, col)) row++;
+            #undef E
+        }
+    }
+
+    // Rule 4: dark-module ratio departure from 50%, every 5% adds 10.
+    long dark = 0;
+    for (int row = 0; row < size; row++) for (int col = 0; col < size; col++) dark += M(row, col);
+    double dev = (double)dark / ((double)size * size) * 100.0 - 50.0;
+    if (dev < 0) dev = -dev;
+    lost += (long)(dev / 5.0) * 10;
+    return lost;
+}
+
 // Encode `data` (len bytes) into `out`, using `tmp` as qrcodegen scratch, per `mode`.
 // SeedQR stays NUMERIC (to match the SeedQR standard version); BBQR and similar all-uppercase
 // payloads use ALPHANUMERIC (denser QR, how real devices show BBQR); everything else (incl.
 // binary CompactSeedQR) is BYTE. "auto" picks the most compact mode the payload allows,
 // mirroring Python's qrcode auto-detect. ECC=L and boostEcl=false mirror Python's non-boosting
 // qrcode lib. Returns false if it can't fit. Both `tmp` and `out` must be qrcodegen_BUFFER_LEN_MAX.
-// Shared by qr_display_screen and the SeedQR transcribe screens (a matrix is a matrix).
+//
+// match_python_mask: false = qrcodegen's fast built-in auto mask (qr_display's static +
+// per-frame animated QRs — machine-scanned, mask invisible). true = pick the same mask
+// python-qrcode would (the SeedQR transcribe screens, whose pattern is hand-copied), via
+// an 8-mask penalty pass. Shared by qr_display_screen and the SeedQR transcribe screens.
 bool qr_encode_bytes(qr_encode_mode_t mode, const uint8_t *data, size_t len,
-                     uint8_t *tmp, uint8_t *out) {
+                     uint8_t *tmp, uint8_t *out, bool match_python_mask) {
     if (mode == QR_ENC_AUTO) {
         // numeric > alphanumeric > byte. isNumeric/isAlphanumeric take a C string, so a NUL
         // in the payload (binary) disqualifies both and it falls through to byte.
@@ -4489,38 +4582,48 @@ bool qr_encode_bytes(qr_encode_mode_t mode, const uint8_t *data, size_t len,
         else                                                   mode = QR_ENC_BYTE;
     }
 
-    if (mode == QR_ENC_NUMERIC) {
-        std::string digits((const char *)data, len);
-        if (qrcodegen_isNumeric(digits.c_str())) {
-            // makeNumeric writes the segment into tmp; encodeSegmentsAdvanced then reuses
-            // tmp as scratch (it's allowed to alias the segment buffer) and writes out.
-            struct qrcodegen_Segment seg = qrcodegen_makeNumeric(digits.c_str(), tmp);
-            return qrcodegen_encodeSegmentsAdvanced(&seg, 1, qrcodegen_Ecc_LOW, 1, 40,
-                                                    qrcodegen_Mask_AUTO, false, tmp, out);
+    // Resolve the concrete encoder ONCE (including the mislabeled-mode -> byte fallback) as a
+    // lambda over the mask, so the auto path and every candidate mask below encode identically.
+    std::string s((const char *)data, len);
+    bool use_numeric = (mode == QR_ENC_NUMERIC) && qrcodegen_isNumeric(s.c_str());
+    bool use_alnum   = (mode == QR_ENC_ALNUM)   && qrcodegen_isAlphanumeric(s.c_str());
+    auto encode_mask = [&](enum qrcodegen_Mask mk) -> bool {
+        if (use_numeric) {
+            // makeNumeric writes the segment into tmp; encodeSegmentsAdvanced reuses tmp as scratch.
+            struct qrcodegen_Segment seg = qrcodegen_makeNumeric(s.c_str(), tmp);
+            return qrcodegen_encodeSegmentsAdvanced(&seg, 1, qrcodegen_Ecc_LOW, 1, 40, mk, false, tmp, out);
         }
-        // Host mislabeled a non-digit payload as numeric — fall through to byte mode.
-    }
-
-    if (mode == QR_ENC_ALNUM) {
-        std::string s((const char *)data, len);
-        if (qrcodegen_isAlphanumeric(s.c_str())) {
+        if (use_alnum) {
             struct qrcodegen_Segment seg = qrcodegen_makeAlphanumeric(s.c_str(), tmp);
-            return qrcodegen_encodeSegmentsAdvanced(&seg, 1, qrcodegen_Ecc_LOW, 1, 40,
-                                                    qrcodegen_Mask_AUTO, false, tmp, out);
+            return qrcodegen_encodeSegmentsAdvanced(&seg, 1, qrcodegen_Ecc_LOW, 1, 40, mk, false, tmp, out);
         }
-        // Not actually alphanumeric; fall through to byte mode.
-    }
+        if (len > (size_t)qrcodegen_BUFFER_LEN_MAX) return false;
+        memcpy(tmp, data, len);  // encodeBinary clobbers dataAndTemp; out must be separate
+        return qrcodegen_encodeBinary(tmp, len, out, qrcodegen_Ecc_LOW, 1, 40, mk, false);
+    };
 
-    if (len > (size_t)qrcodegen_BUFFER_LEN_MAX) return false;
-    memcpy(tmp, data, len);  // encodeBinary clobbers dataAndTemp; out must be separate
-    return qrcodegen_encodeBinary(tmp, len, out, qrcodegen_Ecc_LOW, 1, 40,
-                                  qrcodegen_Mask_AUTO, false);
+    // Fast path: qrcodegen's own auto-mask, a single encode. Used wherever the mask is
+    // invisible because a machine scans it (qr_display's static + animated frames).
+    if (!match_python_mask) return encode_mask(qrcodegen_Mask_AUTO);
+
+    // Parity path (SeedQR transcription): choose the SAME mask python-qrcode would so the
+    // hand-copied pattern matches a Pi Zero. Encode each candidate, score it with
+    // qr_python_lost_point, keep the lowest penalty (lowest index breaks ties). ~9 encodes,
+    // only ever a one-shot static QR — never the per-frame animated path.
+    int best = -1; long best_lp = 0;
+    for (int m = 0; m < 8; m++) {
+        if (!encode_mask((enum qrcodegen_Mask)m)) return false;
+        long lp = qr_python_lost_point(out, qrcodegen_getSize(out));
+        if (best < 0 || lp < best_lp) { best_lp = lp; best = m; }
+    }
+    return encode_mask((enum qrcodegen_Mask)best);  // re-encode the winner into `out`
 }
 
 // Encode into ctx->out reusing the screen cfg's mode/scratch. Thin wrapper over
-// qr_encode_bytes; keeps qr_display_screen's call sites unchanged.
+// qr_encode_bytes; keeps qr_display_screen's call sites unchanged (qr_display QRs are
+// machine-scanned, so they use qrcodegen's fast auto mask — no python-mask parity).
 bool qr_encode(qr_display_ctx_t *ctx, const uint8_t *data, size_t len) {
-    return qr_encode_bytes(ctx->mode, data, len, ctx->tmp, ctx->out);
+    return qr_encode_bytes(ctx->mode, data, len, ctx->tmp, ctx->out, /*match_python_mask=*/false);
 }
 
 // Draw the current ctx->out matrix onto qr_obj's layer (DRAW_MAIN_END, i.e. on top of
@@ -5392,9 +5495,11 @@ void seed_transcribe_zoomed_qr_screen(void *ctx_json) {
     ctx->tmp = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
     ctx->out = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
 
-    // Encode once (this is a static QR — no host frame push). On failure we still build
-    // the screen so navigation doesn't crash; the field just stays blank white.
-    ctx->have_frame = qr_encode_bytes(mode, payload.data(), payload.size(), ctx->tmp, ctx->out);
+    // Encode once (this is a static QR — no host frame push). match_python_mask=true so the
+    // hand-transcribed pattern is pixel-identical to a Pi Zero (see qr_python_lost_point). On
+    // failure we still build the screen so navigation doesn't crash; the field stays white.
+    ctx->have_frame = qr_encode_bytes(mode, payload.data(), payload.size(), ctx->tmp, ctx->out,
+                                      /*match_python_mask=*/true);
     ctx->size = ctx->have_frame ? qrcodegen_getSize(ctx->out) : 21;
 
     // Zone geometry. modules_per_zone follows Python: 7 for a 21-module QR (fills the
