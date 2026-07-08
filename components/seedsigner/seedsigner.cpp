@@ -33,6 +33,9 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>   // psram_alloc: route PSBT-overview geometry off the internal heap
+#endif
 
 using json = nlohmann::json;
 
@@ -5302,13 +5305,47 @@ void splash_screen(void *ctx_json) {
 // centerline would round to different rows and the fork would look lopsided.
 struct psbt_fpt { float x, y; };
 
+// PSRAM allocator for the transaction-flow geometry built below. The diagram allocates many
+// small std::vector<lv_point_precise_t> (curves + per-frame pulse buffers). On ESP32 the
+// default allocator places small blocks in INTERNAL RAM; building/tearing the overview down
+// across repeated visits fragments that heap until the camera's internal-only QR-task stack
+// can't find a contiguous block (builder doc camera-qr-task-internal-ram-starvation). Routing
+// this geometry to PSRAM keeps the churn off the internal heap. Off-device (no ESP_PLATFORM)
+// it degrades to the normal global operator new/delete, so the shared code stays portable.
+template <class T> struct psram_alloc {
+    using value_type = T;
+    psram_alloc() noexcept {}
+    template <class U> psram_alloc(const psram_alloc<U> &) noexcept {}
+    T *allocate(std::size_t n) {
+#ifdef ESP_PLATFORM
+        void *p = heap_caps_malloc(n * sizeof(T), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!p) p = heap_caps_malloc(n * sizeof(T), MALLOC_CAP_8BIT);  // fall back to internal
+        return static_cast<T *>(p);
+#else
+        return static_cast<T *>(::operator new(n * sizeof(T)));
+#endif
+    }
+    void deallocate(T *p, std::size_t) noexcept {
+#ifdef ESP_PLATFORM
+        heap_caps_free(p);
+#else
+        ::operator delete(p);
+#endif
+    }
+};
+template <class T, class U>
+bool operator==(const psram_alloc<T> &, const psram_alloc<U> &) noexcept { return true; }
+template <class T, class U>
+bool operator!=(const psram_alloc<T> &, const psram_alloc<U> &) noexcept { return false; }
+template <class T> using pvec = std::vector<T, psram_alloc<T>>;
+
 static psbt_fpt psbt_lerp(psbt_fpt a, psbt_fpt b, float t) {
     return { (1.0f - t) * a.x + t * b.x, (1.0f - t) * a.y + t * b.y };
 }
 
 // Cubic Bezier p0..p3 over `segments` line segments (De Casteljau); segments+1 points.
-static std::vector<psbt_fpt> psbt_cubic(psbt_fpt p0, psbt_fpt p1, psbt_fpt p2, psbt_fpt p3, int segments) {
-    std::vector<psbt_fpt> pts;
+static pvec<psbt_fpt> psbt_cubic(psbt_fpt p0, psbt_fpt p1, psbt_fpt p2, psbt_fpt p3, int segments) {
+    pvec<psbt_fpt> pts;
     pts.push_back(p0);
     float step = 1.0f / (float)segments;
     for (int i = 1; i <= segments; ++i) {
@@ -5329,8 +5366,8 @@ static lv_point_t psbt_snap(psbt_fpt p, int32_t vc, float vcf) {
     q.y = vc + (int32_t)lroundf(p.y - vcf);
     return q;
 }
-static std::vector<lv_point_t> psbt_snap_curve(const std::vector<psbt_fpt> &f, int32_t vc, float vcf) {
-    std::vector<lv_point_t> out;
+static pvec<lv_point_t> psbt_snap_curve(const pvec<psbt_fpt> &f, int32_t vc, float vcf) {
+    pvec<lv_point_t> out;
     out.reserve(f.size());
     for (const auto &p : f) out.push_back(psbt_snap(p, vc, vcf));
     return out;
@@ -5347,7 +5384,7 @@ static const float PSBT_S_HUB = 0.72f;
 // vertical inflection the way the old two-quadratic did — that forced vertical was the
 // "aggressive kink" on the short inner branches (fee / OP_RETURN) that opened the black
 // negative-space gap. Returned tip-first.
-static std::vector<psbt_fpt> psbt_branch(psbt_fpt tip, psbt_fpt hub, int segments) {
+static pvec<psbt_fpt> psbt_branch(psbt_fpt tip, psbt_fpt hub, int segments) {
     float dx = hub.x - tip.x;   // signed span (hub right of tip for inputs, left for outputs)
     psbt_fpt c1 = { tip.x + dx * PSBT_S_TIP, tip.y };   // horizontal at the label
     psbt_fpt c2 = { hub.x - dx * PSBT_S_HUB, hub.y };   // horizontal at the hub
@@ -5381,8 +5418,8 @@ static const uint32_t PSBT_PULSE_MAX_STEP_MS = 100;   // clamp per-frame advance
 // Convert a snapped integer polyline to lv_line's precise-point type. lv_line stores the
 // pointer WITHOUT copying, so the returned vector must outlive the widget (it lives in the
 // per-screen anim ctx).
-static std::vector<lv_point_precise_t> psbt_to_precise(const std::vector<lv_point_t> &c) {
-    std::vector<lv_point_precise_t> out;
+static pvec<lv_point_precise_t> psbt_to_precise(const pvec<lv_point_t> &c) {
+    pvec<lv_point_precise_t> out;
     out.reserve(c.size());
     for (const auto &p : c) out.push_back({ (lv_value_precise_t)p.x, (lv_value_precise_t)p.y });
     return out;
@@ -5412,16 +5449,16 @@ struct psbt_anim_ctx_t {
     lv_obj_t   *container;      // holds every diagram line (validity-guards the timer)
     lv_timer_t *timer;
     // Geometry as precise points; the static lv_lines reference these, so they must persist.
-    std::vector<std::vector<lv_point_precise_t>> in_pts;    // input curves (tip -> hub)
-    std::vector<std::vector<lv_point_precise_t>> out_pts;   // output curves (hub -> tip)
-    std::vector<lv_point_precise_t>              ctr_pts;   // center bar
+    pvec<pvec<lv_point_precise_t>> in_pts;    // input curves (tip -> hub)
+    pvec<pvec<lv_point_precise_t>> out_pts;   // output curves (hub -> tip)
+    pvec<lv_point_precise_t>       ctr_pts;   // center bar
     // Orange pulse lines + their per-frame point buffers (one per input/output curve + bar).
-    std::vector<lv_obj_t *>                      pin;
-    std::vector<std::vector<lv_point_precise_t>> pin_buf;
-    lv_obj_t                                    *pctr;
-    std::vector<lv_point_precise_t>              pctr_buf;
-    std::vector<lv_obj_t *>                      pout;
-    std::vector<std::vector<lv_point_precise_t>> pout_buf;
+    pvec<lv_obj_t *>               pin;
+    pvec<pvec<lv_point_precise_t>> pin_buf;
+    lv_obj_t                      *pctr;
+    pvec<lv_point_precise_t>       pctr_buf;
+    pvec<lv_obj_t *>               pout;
+    pvec<pvec<lv_point_precise_t>> pout_buf;
     int         in_segs, ctr_segs, out_segs, total_segs;
     int         band_segs, reset_at;
     float       head;
@@ -5430,8 +5467,8 @@ struct psbt_anim_ctx_t {
 
 // Point an orange pulse line at the sub-polyline spanning segments [segLo..segHi] of `src`
 // (segment s connects points s and s+1), or hide it when that range is empty.
-static void psbt_set_pulse(lv_obj_t *line, std::vector<lv_point_precise_t> &buf,
-                           const std::vector<lv_point_precise_t> &src, int segLo, int segHi) {
+static void psbt_set_pulse(lv_obj_t *line, pvec<lv_point_precise_t> &buf,
+                           const pvec<lv_point_precise_t> &src, int segLo, int segHi) {
     if (!line) return;
     if (segHi < segLo || segLo < 0 || segHi + 1 >= (int)src.size()) {
         lv_obj_add_flag(line, LV_OBJ_FLAG_HIDDEN);
@@ -5824,7 +5861,7 @@ void psbt_overview_screen(void *ctx_json) {
 
             psbt_fpt start_pt = { (float)input_start_x, row_cy };
             psbt_fpt conj     = { (float)center_bar_x, vcf };   // input hub = left end of the center bar
-            std::vector<psbt_fpt> fcurve;
+            pvec<psbt_fpt> fcurve;
             if (num_inputs == 1) fcurve = { start_pt, conj };   // one input: a straight segment
             else                 fcurve = psbt_branch(start_pt, conj, 2 * PSBT_CURVE_STEPS);
             actx->in_pts.push_back(psbt_to_precise(psbt_snap_curve(fcurve, vc, vcf)));
@@ -5838,7 +5875,7 @@ void psbt_overview_screen(void *ctx_json) {
 
             psbt_fpt conj   = { (float)dest_conj_x, vcf };   // output hub = right end of the center bar
             psbt_fpt end_pt = { (float)output_end_x, row_cy };
-            std::vector<psbt_fpt> fcurve = psbt_branch(end_pt, conj, 2 * PSBT_CURVE_STEPS);
+            pvec<psbt_fpt> fcurve = psbt_branch(end_pt, conj, 2 * PSBT_CURVE_STEPS);
             std::reverse(fcurve.begin(), fcurve.end());
             actx->out_pts.push_back(psbt_to_precise(psbt_snap_curve(fcurve, vc, vcf)));
         }
