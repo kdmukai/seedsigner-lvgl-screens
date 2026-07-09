@@ -1248,5 +1248,63 @@
         "bc1qfkgjg95ctrnjkh76xqvkej6n8mvpgny6g6dw79d5r06jl9978v4q97ygvr"
       ]
     }
+  },
+  "reset_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Restarting",
+        "show_back_button": false,
+        "show_power_button": false
+      },
+      "text": "SeedSigner is restarting.\n\nAll in-memory data will be wiped."
+    }
+  },
+  "power_off_not_required_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Just Unplug It",
+        "show_back_button": true
+      },
+      "text": "It is safe to disconnect power at any time."
+    }
+  },
+  "donate_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Donate",
+        "show_back_button": true
+      },
+      "text": "SeedSigner is 100% free & open source, funded solely by the Bitcoin community.\n\nDonate onchain or LN at:",
+      "url": "seedsigner.com"
+    }
+  },
+  "psbt_op_return_screen": {
+    "context": {
+      "top_nav": {
+        "title": "OP_RETURN",
+        "show_back_button": true
+      },
+      "button_list": ["Done"],
+      "text": "Hello from the Bitcoin blockchain!"
+    },
+    "variations": [
+      {
+        "name": "raw_hex",
+        "context": {
+          "text": null,
+          "hex": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        }
+      }
+    ]
+  },
+  "io_test_screen": {
+    "context": {
+      "top_nav": {
+        "title": "I/O Test"
+      },
+      "capturing_text": "Capturing image…",
+      "clear_label": "Clear",
+      "exit_label": "Exit"
+    }
   }
 }
