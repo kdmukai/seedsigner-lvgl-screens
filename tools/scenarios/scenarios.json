@@ -1075,20 +1075,16 @@
       },
       "is_bottom_list": true,
       "is_button_text_centered": true,
-      "message": "I attest that I control the bitcoin address associated with this signing request.",
+      "message": "I hereby attest that I am the sole owner of the bitcoin address shown in this signing request, that I control the private key corresponding to it, and that I am signing this message of my own free will to prove that control to the requesting party. This statement is longer than a single screen so the reviewer must scroll through it, confirming every word of the exact text before it is cryptographically signed.",
       "button_list": [
         "Next"
       ]
     },
     "variations": [
       {
-        "name": "paged",
+        "name": "short",
         "context": {
-          "top_nav": {
-            "title": "Message (pt 1/2)",
-            "show_back_button": true
-          },
-          "message": "A longer message shown one page at a time so the reviewer confirms the exact text before signing."
+          "message": "I attest that I control the bitcoin address in this signing request."
         }
       }
     ]
