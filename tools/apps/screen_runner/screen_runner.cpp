@@ -258,6 +258,21 @@ extern "C" void seedsigner_lvgl_on_text_entered(const char *text) {
     g_status_set_ms = SDL_GetTicks();
 }
 
+// Aux keys (KEY1/KEY2/KEY3). io_test_screen forwards these; on the desktop we just
+// surface them in the status bar. Also provides the STRONG definition the MinGW/PE
+// linker needs: navigation.cpp's weak default only resolves same-TU references, so
+// io_test's cross-TU call is undefined on Windows without a strong def here (the same
+// reason on_button_selected / on_text_entered are defined in each interactive app).
+extern "C" void seedsigner_lvgl_on_aux_key(const char *key_name) {
+    SDL_Log("[aux] %s", key_name ? key_name : "");
+    g_status_text = std::string("AUX  |  ") + (key_name ? key_name : "");
+    if (g_status_tex) {
+        SDL_DestroyTexture(g_status_tex);
+        g_status_tex = NULL;
+    }
+    g_status_set_ms = SDL_GetTicks();
+}
+
 
 // ---------------------------------------------------------------------------
 // Chrome sidebar
