@@ -126,6 +126,44 @@ void seed_transcribe_whole_qr_screen(void *ctx_json);
 // initial_selected_index / next_label / top_nav.title.
 void tools_address_explorer_address_list_screen(void *ctx_json);
 
+// Simple info screens — a title over centered/anchored body text, no button list.
+//   reset_screen                    (Python ResetScreen): "Restarting" + wipe notice; no nav buttons.
+//   power_off_not_required_screen   (Python PowerOffNotRequiredScreen): "Just Unplug It" + back button.
+//   donate_screen                   (Python DonateScreen): paragraph + accent "seedsigner.com" 28px line.
+void reset_screen(void *ctx_json);
+void power_off_not_required_screen(void *ctx_json);
+void donate_screen(void *ctx_json);
+
+// PSBT OP_RETURN payload (parity with Python PSBTOpReturnScreen). Bottom-list screen
+// showing the payload either as centered human-readable text (cfg.text) or as a
+// monospace hard-wrapped hex dump with a "raw hex data" caption (cfg.hex). The host
+// decides the mode (it owns the bytes + UTF-8 heuristic); the screen owns the wrap.
+void psbt_op_return_screen(void *ctx_json);
+
+// I/O self-test (parity with Python IOTestScreen). A D-pad pictogram (joystick
+// directions + click) plus KEY1/KEY2/KEY3 controls, over a live camera square. This
+// screen is a PASSIVE chrome overlay for the camera (pixels are blitted by the board
+// adapter, NOT delivered through here), but it OWNS its input: like Python's self-test,
+// each physical control lights up when actuated (the screen reads the keypad indev
+// directly — joystick dirs / click / KEY1-3 — and flashes the matching control). No back
+// button (Python show_back_button = False); the user leaves via KEY3. KEY1/KEY2/KEY3 are
+// also forwarded to the host (seedsigner_lvgl_on_aux_key) so it can grab a frame / clear
+// / exit.
+//
+// A hardware-input diagnostic → meaningful on the Pi Zero (real joystick + keys); on the
+// touchscreen build the app simply does not navigate to it (no touch variant here).
+typedef enum {
+    IO_TEST_CAPTURE_IDLE      = 0,  // no capture; KEY2 label blank
+    IO_TEST_CAPTURE_CAPTURING = 1,  // "Capturing image…" band shown
+    IO_TEST_CAPTURE_CAPTURED  = 2,  // a still frame is displayed; KEY2 label = "Clear"
+} io_test_capture_state_t;
+
+void io_test_screen(void *ctx_json);
+
+// Reflect the camera capture phase (the host's async single-frame grab): show/hide the
+// "Capturing…" band and toggle the KEY2 "Clear" label. Safe no-op when inactive.
+void io_test_set_capture_state(io_test_capture_state_t state);
+
 // Push the next frame into a live qr_display_screen (host-driven animation, mirroring
 // the camera-overlay set_* live-update pattern). Re-encodes + repaints the QR in place
 // reusing the screen cfg's qr_mode. `data` may be raw binary (e.g. a CompactSeedQR

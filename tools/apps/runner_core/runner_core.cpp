@@ -48,6 +48,11 @@ const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"tools_calc_final_word_done_screen", tools_calc_final_word_done_screen},
     {"seed_transcribe_whole_qr_screen", seed_transcribe_whole_qr_screen},
     {"tools_address_explorer_address_list_screen", tools_address_explorer_address_list_screen},
+    {"reset_screen", reset_screen},
+    {"power_off_not_required_screen", power_off_not_required_screen},
+    {"donate_screen", donate_screen},
+    {"psbt_op_return_screen", psbt_op_return_screen},
+    {"io_test_screen", io_test_screen},
 };
 
 // Display / framebuffer state.
