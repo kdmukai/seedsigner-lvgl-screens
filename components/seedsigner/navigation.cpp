@@ -512,6 +512,31 @@ void nav_bind(const nav_config_t *cfg) {
                 lv_indev_set_group(indev, ctx->group);
             }
         }
+    } else {
+        // Touch mode has no persistent active/selected highlight — a row only looks
+        // active while a finger is on it — so we deliberately focus and activate
+        // NOTHING here (that also keeps e.g. AddressExplorer's rows truncated until
+        // tapped, matching Python's "reveal only while selected"). But a caller-supplied
+        // initial_selected_index still means "reveal this row on load" (e.g.
+        // AddressExplorer resuming at the revealed row after a Next-N page-forward). The
+        // active-highlight UI language doesn't fit touch, yet the SCROLL POSITION still
+        // should — so scroll that row into view WITHOUT highlighting it.
+        //
+        // Restricted to plain vertical item-scrolling lists (button lists, menus):
+        //  - scroll_then_buttons screens (status / warning / verify: read-only content
+        //    above the buttons) must start at the TOP so that content is visible;
+        //    scrolling their first button into view would hide it. They already load at
+        //    scroll_y = 0 (touch does nothing else here), which is exactly what we want.
+        //  - a default index 0 scrolls the top row into view == a no-op, so ordinary
+        //    lists are unaffected; only a real non-zero resume index actually moves.
+        if (ctx->body_layout == NAV_BODY_VERTICAL &&
+            !ctx->scroll_then_buttons &&
+            cfg->initial_body_index != NAV_INDEX_NONE &&
+            cfg->initial_body_index < ctx->body_count &&
+            ctx->body_items && ctx->body_items[cfg->initial_body_index]) {
+            lv_obj_update_layout(cfg->screen);   // resolve geometry pre-load so the jump lands
+            lv_obj_scroll_to_view(ctx->body_items[cfg->initial_body_index], LV_ANIM_OFF);
+        }
     }
 
     lv_obj_add_event_cb(cfg->screen, nav_cleanup_handler, LV_EVENT_DELETE, ctx);
