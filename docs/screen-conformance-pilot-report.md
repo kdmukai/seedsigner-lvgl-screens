@@ -383,3 +383,58 @@ behavioral flag below is untouched.
 - **camera_entropy_overlay.h** — Banner, line 18
   'models the image-entropy flow's TWO phases' immediately precedes a three-item phase list (PREVIEW/CAPTURING/CONFIRM) and a three-value enum; the count is stale/wrong.
 
+
+---
+
+## Rollout completion addendum (2026-07-10, same day)
+
+The full rollout ran later the same day with user approval: **all 36 screens are
+now conformed** (5 pilots + waves of 11, 8, and 12) plus a corpus-wide banner
+normalization sweep, on the same branch.
+
+- **Wave 1** (508575e): power_off_not_required, donate, reset,
+  psbt_address_details, psbt_op_return, psbt_math, seed_finalize,
+  seed_export_xpub_details, seed_words, seed_review_passphrase,
+  multisig_wallet_descriptor.
+- **Wave 2** (5e98083): seed_address_verification, both sign-message screens,
+  tools_address_explorer_address_list, settings_locale_picker,
+  settings_qr_confirmation, tools_calc_final_word, io_test. (psbt_overview's
+  agent was stopped pre-edit at a user pause and re-ran in wave 3;
+  tools_calc_final_word's agent was stopped post-edit pre-report — file is
+  gate-verified.)
+- **Wave 3** (46d37f3): keyboard, seed_add_passphrase, seed_mnemonic_entry,
+  qr_display, both transcribe screens, psbt_overview on Fable agents;
+  screensaver, opening_splash, main_menu, both camera overlay wrappers on
+  Opus agents (hybrid model split — all five Opus reports met wave standard).
+- **Normalization sweep** (c28a984): spec §3 register rulings (layer-marked
+  universal cfg keys on scaffold tier, omitted on chrome-free tier; mandatory
+  lifecycle-tier line) applied comment-only across 20 files.
+
+**Verification:** every wave gated at zero diffs; 9 gate runs total across the
+whole effort, all clean (3,180 images each against the pre-change baseline).
+
+**Content-policy retentions (kept-and-flagged, scenario- or contract-driven):**
+psbt_op_return `hex_label` (raw_hex variation omits it), settings_qr_confirmation
+`["Home"]` chrome default (no scenario supplies it), psbt_overview's 10 chart
+label templates (no scenario supplies `labels`), camera_preview
+`instructions_text` (module NULL-contract + touch mode), seed_address_verification
+`progress_text` (blank-until-host-push contract), io_test `camera_glyph`
+(icon-font codepoint, structural). Boot tier (main_menu, opening_splash) keeps
+English defaults by the documented §5 exception.
+
+**Bug-ledger notes from the rollout:** seed_words' `start_number` flag is
+DISPUTED (Python computes `words_per_page` from the rendered page identically);
+seed_add_passphrase's aux-key flag was already resolved by the Group B
+extraction. New report-only Tier-2 audit findings: unchecked `lv_malloc`
+(opening_splash ctx, in addition to the flagged qr_display/zoomed trios),
+psbt_overview cleanup callback missing the LV_EVENT_DELETE re-check,
+loading_spinner POD ctx on new/delete, and psbt_overview's cfg-`animate` vs
+`seedsigner_lvgl_is_static_render()` dual mechanism for stills.
+
+**Cost (measured, whole effort):** pilot phase ~4.1M subagent tokens; rollout
+waves + sweep ~4.3M (wave 1 ≈ 1.2M, wave 2 ≈ 1.0M, wave 3 ≈ 2.0M, sweep ≈ 0.2M);
+total ≈ 8.4M subagent tokens plus main-session orchestration.
+
+**Remaining (unchanged from the deferred-by-design list):** DOCUMENTED
+extraction clusters #10-#16, §11 pixel-policy decisions, §12 consolidations,
+status-family content defaults, and the flagged-bug ledger adjudication.
