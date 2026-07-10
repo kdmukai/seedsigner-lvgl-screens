@@ -171,14 +171,12 @@ void opening_splash_screen(void *ctx_json) {
         {"boot_logo_only", false},
         {"dismissible", true},
     };
+    // The shared optional parse turns a missing context into an empty
+    // (normalized) object, so the defaults above survive untouched.
     const char *json_str = (const char *)ctx_json;
-    if (json_str) {
-        json incoming;
-        try { incoming = json::parse(json_str); }
-        catch (...) { throw std::runtime_error("invalid JSON syntax"); }
-        if (!incoming.is_object()) throw std::runtime_error("screen config must be a JSON object");
-        cfg.merge_patch(incoming);
-    }
+    json incoming;
+    parse_optional_screen_json_ctx(json_str, incoming);
+    cfg.merge_patch(incoming);
 
     const std::string version      = cfg.value("version", std::string(""));
     const std::string sponsor_text = cfg.value("sponsor_text", std::string("With support from:"));

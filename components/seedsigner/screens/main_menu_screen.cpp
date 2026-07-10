@@ -52,19 +52,12 @@ void main_menu_screen(void *ctx_json)
 
     // Merge any provided context over the defaults (RFC 7396 merge-patch): a
     // caller can override just the keys it cares about (e.g. only button_list).
+    // The shared optional parse turns a missing context into an empty
+    // (normalized) object, so the defaults above survive untouched.
     const char *json_str = (const char *)ctx_json;
-    if (json_str) {
-        json incoming;
-        try {
-            incoming = json::parse(json_str);
-        } catch (...) {
-            throw std::runtime_error("invalid JSON syntax");
-        }
-        if (!incoming.is_object()) {
-            throw std::runtime_error("screen config must be a JSON object");
-        }
-        cfg.merge_patch(incoming);
-    }
+    json incoming;
+    parse_optional_screen_json_ctx(json_str, incoming);
+    cfg.merge_patch(incoming);
 
     // Button labels come from cfg["button_list"] when it supplies exactly the
     // four the grid needs; otherwise fall back to the English defaults. (The

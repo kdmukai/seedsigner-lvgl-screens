@@ -145,19 +145,8 @@ static lv_obj_t *find_first_button(lv_obj_t *obj)
 void settings_qr_confirmation_screen(void *ctx_json)
 {
     const char *json_str = (const char *)ctx_json;
-    if (!json_str) {
-        throw std::runtime_error("settings_qr_confirmation_screen: JSON context is required");
-    }
-
     json cfg;
-    try {
-        cfg = json::parse(json_str);
-    } catch (...) {
-        throw std::runtime_error("settings_qr_confirmation_screen: invalid JSON syntax");
-    }
-    if (!cfg.is_object()) {
-        throw std::runtime_error("settings_qr_confirmation_screen: config must be a JSON object");
-    }
+    parse_screen_json_ctx(json_str, cfg);
 
     // Pull out this screen's own fields. config_name is a user-supplied string
     // scanned from the SettingsQR — quoted, never translated. status_message is

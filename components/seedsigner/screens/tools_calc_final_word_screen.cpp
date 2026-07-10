@@ -1,3 +1,4 @@
+#include "screen_scaffold.h" // parse_screen_json_ctx
 #include "seedsigner.h"      // tools_calc_final_word_screen(), button_list_screen(), text_top_leading()
 #include "gui_constants.h"   // TOP_NAV_HEIGHT, COMPONENT_PADDING, EDGE_PADDING, BODY_FONT, CANDIDATE_FONT, colors
 
@@ -166,19 +167,8 @@ static lv_obj_t *place_bit_underscores(lv_obj_t *screen, const char *text, const
 
 void tools_calc_final_word_screen(void *ctx_json) {
     const char *json_str = (const char *)ctx_json;
-    if (!json_str) {
-        throw std::runtime_error("tools_calc_final_word_screen: JSON context is required");
-    }
-
     json cfg;
-    try {
-        cfg = json::parse(json_str);
-    } catch (...) {
-        throw std::runtime_error("tools_calc_final_word_screen: invalid JSON syntax");
-    }
-    if (!cfg.is_object()) {
-        throw std::runtime_error("tools_calc_final_word_screen: config must be a JSON object");
-    }
+    parse_screen_json_ctx(json_str, cfg);
 
     // --- This screen's own fields (host formats + localizes the caption strings). ---
     const std::string your_input_text = cfg.value("your_input_text", std::string());

@@ -66,6 +66,23 @@ status_type_defaults_t defaults_for_status_type(status_type_t st);
 status_type_t parse_status_type(const nlohmann::json &cfg);
 void apply_status_type_defaults(nlohmann::json &cfg, const status_type_defaults_t &defaults);
 
+// ── top_nav chrome defaults (shared write-if-absent injection) ──
+// Ensure cfg["top_nav"] is an object (an absent OR non-object value is replaced
+// with an empty object, exactly like the inline blocks this replaces), then
+// write-if-absent the top-nav title. Write-if-absent semantics throughout: a
+// host-provided value always wins. Forced (non-defaulted) overrides — e.g. a
+// screen that unconditionally hides the back button — stay explicit assignments
+// at the call site AFTER this call, annotated with their Python constant, so
+// each screen's guarded-vs-forced host-override contract remains visible.
+void ensure_top_nav_defaults(nlohmann::json &cfg, const std::string &default_title);
+
+// Variant additionally covering the two chrome flags: after the title default,
+// write-if-absent show_back_button / show_power_button with the given defaults.
+// Same contract as above — host values win; forced overrides are explicit
+// assignments after the call.
+void ensure_top_nav_defaults(nlohmann::json &cfg, const std::string &default_title,
+                             bool default_show_back_button, bool default_show_power_button);
+
 // Per-glyph ink extents over a UTF-8 string (max ascent/descent above/below the
 // baseline). out_max_descent may be null.
 void measure_text_ink_extents(const lv_font_t *font, const char *text,

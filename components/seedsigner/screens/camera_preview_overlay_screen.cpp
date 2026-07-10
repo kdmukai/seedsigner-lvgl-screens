@@ -63,11 +63,7 @@ void camera_preview_overlay_screen(void *ctx_json) {
     const char *json_str = (const char *)ctx_json;
 
     json cfg;
-    if (json_str && json_str[0]) {
-        parse_screen_json_ctx(json_str, cfg);  // validates shape; every field optional
-    } else {
-        cfg = json::object();
-    }
+    parse_optional_screen_json_ctx(json_str, cfg);  // validates shape; ctx + every field optional
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);

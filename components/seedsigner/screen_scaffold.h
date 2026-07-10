@@ -27,6 +27,14 @@ using json = nlohmann::json;
 // malformed input) and normalize the allow_screensaver default.
 void parse_screen_json_ctx(const char *ctx_json, json &cfg_out);
 
+// Optional-context variant of the parse above, for the boot/overlay tier whose
+// context is legitimately optional (main_menu, opening_splash, loading_spinner,
+// the two camera overlay screens). NULL or empty ctx_json yields an empty config
+// object carrying the same allow_screensaver normalization parse_screen_json_ctx
+// applies to every config; any other input is delegated to parse_screen_json_ctx
+// unchanged (identical validation, identical error strings).
+void parse_optional_screen_json_ctx(const char *ctx_json, json &cfg_out);
+
 // Build the root screen: a TopNav plus the standard body container. When
 // cfg["button_list"] is present the body becomes a flex column of
 // [upper_body, (optional flex-grow spacer when is_bottom_list), button(s)].

@@ -110,6 +110,17 @@ void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
 }
 
 
+// Optional-context variant of the parse above (boot/overlay tier: main_menu,
+// opening_splash, loading_spinner, the two camera overlay screens). A NULL or
+// empty context parses the canonical empty object "{}" through the strict
+// helper, so the allow_screensaver normalization stays defined in exactly one
+// place; every other input passes through verbatim — identical validation and
+// identical error strings.
+void parse_optional_screen_json_ctx(const char *ctx_json, json &cfg_out) {
+    parse_screen_json_ctx((ctx_json && ctx_json[0]) ? ctx_json : "{}", cfg_out);
+}
+
+
 void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     // Global RTL hook: flip text direction on the finished screen's labels for
     // RTL locales (layout stays physical; user-input widgets stay LTR).
