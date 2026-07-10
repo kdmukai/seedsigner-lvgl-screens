@@ -19,35 +19,32 @@
 //     than-4:3 displays pillar-box the grid instead of stretching the tiles;
 //     Python renders full-width 2-across. 240x240 and 320x240 stay under the cap
 //     and are byte-identical.
-//   - button_list must carry EXACTLY four labels; any other count silently keeps
-//     the English defaults (flagged low-severity; kept as documented behavior so a
-//     malformed cfg still renders a legible menu rather than blanks).
+//   - button_list must carry EXACTLY four labels; any other count throws (the grid
+//     is a fixed 2x2, so a mismatched count is a host wiring error).
 //
-// BOOT-TIER EXCEPTION (spec §5 content policy): main_menu is one of the two
-// boot/NULL-ctx screens that KEEP built-in English content defaults (title
-// "Home"; labels Scan/Seeds/Tools/Settings) by documented contract — it can be
-// shown before any host view layer exists to supply localized cfg. So, unlike
-// every scaffold screen, its user-visible strings are NOT converted to required-
-// throws, and a NULL ctx is tolerated (parse_optional_screen_json_ctx). The
-// merge-patch RFC-7396 null-delete of a defaulted title, and the wrong-count
-// English label fallback, are known low-severity behaviors, left as-is.
+// CONTENT POLICY (spec §5): main_menu's user-visible strings — the title and the
+// four tile labels — are localized CONTENT and are REQUIRED from the host (an
+// English literal baked here would ship untranslated). Only the structural top_nav
+// flags (show_back_button / show_power_button) keep defaults. A NULL/empty ctx
+// therefore no longer renders a built-in English menu; it throws on the missing
+// title. (This narrows the earlier boot-tier exception, which kept English
+// title/label defaults; on-device main_menu is always reached through
+// MainMenuView, which supplies the localized strings.)
 //
 // Lifecycle: Tier 1 (stateless) — no timers / heap ctx / cleanup callback; the
 // two function-local static arrays are const data with no teardown concern. Ends
 // with load_screen_and_cleanup_previous.
 //
-// cfg — the ctx itself is OPTIONAL (boot tier): parse_optional_screen_json_ctx
-// turns a NULL/empty ctx into an empty object, so the built-in defaults below
-// render the menu before any host view layer exists. A present ctx is merged over
-// those defaults (RFC 7396 merge-patch), so a host overrides only the keys it
-// supplies.
-//   top_nav.title              (string, default "Home")   RESERVED English boot default.
+// cfg — a present ctx is merged (RFC 7396 merge-patch) over the structural top_nav
+// flag defaults, so a host overrides only the keys it supplies.
+// parse_optional_screen_json_ctx still tolerates a NULL/empty ctx at the parse
+// layer, but the required title/labels below then throw.
+//   top_nav.title              (string, required)   localized screen title.
 //   top_nav.show_back_button   (bool,   default false)    Python MainMenuScreen override.
 //   top_nav.show_power_button  (bool,   default true)     Python MainMenuScreen override.
-//   button_list                (array of 4 label strings, optional)  the four localized
-//            tile labels; used ONLY when it supplies exactly four (else the English
-//            defaults, see the deviation above). Erased before the scaffold so it stays
-//            in no-button_list mode and this screen lays out the bespoke 2x2 grid.
+//   button_list                (array of EXACTLY 4 label strings, required)  the four
+//            localized tile labels. Erased before the scaffold so it stays in
+//            no-button_list mode and this screen lays out the bespoke 2x2 grid.
 //   allow_screensaver          (bool, default true)  [read by scaffold]  per-screen saver
 //            opt-out; false stamps SS_OBJ_FLAG_NO_SCREENSAVER on the root.
 //   top_nav.icon / top_nav.icon_color  (string, optional)  [read by scaffold]  optional
@@ -63,14 +60,14 @@
 #include "components.h"       // large_icon_button
 #include "gui_constants.h"    // MAIN_MENU_TITLE_FONT, SeedSignerIconConstants, TOP_NAV_HEIGHT, COMPONENT_PADDING, EDGE_PADDING
 #include "navigation.h"       // NAV_BODY_GRID (nav_body_layout_t)
-#include "screen_helpers.h"   // read_button_list_labels
+#include "screen_helpers.h"   // read_button_list_labels, require_top_nav_title
 
 #include "lvgl.h"             // lv_obj_get_content_width / lv_obj_get_height / lv_obj_set_size / lv_obj_set_pos
 
 #include <nlohmann/json.hpp>  // json (defaults literal + merge_patch + cfg reads)
 
+#include <stdexcept>          // std::runtime_error (required title/labels)
 #include <string>             // std::string
-#include <utility>            // std::move (labels adopt the parsed cfg vector)
 #include <vector>             // std::vector (the label list)
 
 using json = nlohmann::json;
@@ -79,39 +76,37 @@ using json = nlohmann::json;
 void main_menu_screen(void *ctx_json) {
     // --- Config ---
 
-    // Boot-tier defaults: reproduce the original English home menu so the screen
-    // still renders when called with no context (ctx_json == NULL). These are the
-    // Python MainMenuScreen overrides (title font 26 via MAIN_MENU_TITLE_FONT below,
-    // show_back_button=False, show_power_button=True) plus the RESERVED English title
-    // (see the boot-tier exception in the banner).
+    // Structural top_nav flag defaults (never user-visible text): the Python
+    // MainMenuScreen overrides (title font 26 via MAIN_MENU_TITLE_FONT below,
+    // show_back_button=False, show_power_button=True). The title itself is localized
+    // CONTENT, required from the host (see the content-policy note in the banner).
     json cfg = {
-        {"top_nav", {{"title", "Home"}, {"show_back_button", false}, {"show_power_button", true}}},
+        {"top_nav", {{"show_back_button", false}, {"show_power_button", true}}},
     };
 
-    // Merge any provided context over the defaults (RFC 7396 merge-patch): a caller
-    // can override just the keys it cares about (e.g. only button_list). The shared
-    // optional parse turns a missing context into an empty (normalized) object, so
-    // the defaults above survive untouched.
+    // Merge any provided context over the structural defaults (RFC 7396 merge-patch):
+    // a caller overrides just the keys it supplies. The shared optional parse turns a
+    // missing context into an empty (normalized) object; the required title/labels
+    // below then throw for a NULL/empty ctx.
     const char *json_str = (const char *)ctx_json;
     json incoming;
     parse_optional_screen_json_ctx(json_str, incoming);
     cfg.merge_patch(incoming);
 
-    // Button labels come from cfg["button_list"] when it supplies exactly the four
-    // the grid needs; otherwise fall back to the English defaults. (The grid is a
-    // fixed 2x2, so a mismatched count means an ill-formed context — defaulting keeps
-    // the screen legible rather than rendering blanks.)
+    // Require the localized title (host-supplied content) — a screen-named throw on a
+    // missing/malformed title instead of an English fallback.
+    require_top_nav_title(cfg, "main_menu_screen");
+
+    // The four tile labels are localized content, required from the host: exactly four
+    // strings (the grid is a fixed 2x2, so any other count is a host wiring error and
+    // throws).
     //
     // read_button_list_labels lives in screen_helpers though this file is currently
     // its sole caller; that single-caller consolidation is slated for a rollout
     // decision (spec §12), not resolved here.
-    static const char *main_menu_default_labels[] = {"Scan", "Seeds", "Tools", "Settings"};
-    std::vector<std::string> labels(main_menu_default_labels, main_menu_default_labels + 4);
-    {
-        std::vector<std::string> labels_from_cfg;
-        if (read_button_list_labels(cfg, labels_from_cfg) && labels_from_cfg.size() == 4) {
-            labels = std::move(labels_from_cfg);
-        }
+    std::vector<std::string> labels;
+    if (!read_button_list_labels(cfg, labels) || labels.size() != 4) {
+        throw std::runtime_error("main_menu_screen: button_list is required and must supply exactly four labels");
     }
 
     // Drop button_list before building the scaffold: this screen lays out its own

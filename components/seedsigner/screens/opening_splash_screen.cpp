@@ -30,12 +30,13 @@
 // UP into its raised slot (Python fades it in already-raised) — one consistent motion
 // across both platforms that also makes the MCU boot->splash handoff seamless.
 //
-// Content policy (spec §5): BOOT-TIER EXCEPTION. Unlike every other screen, this
-// one keeps built-in English content defaults (version/sponsor text) by documented
-// contract — it can render before any host view layer exists to localize (NULL ctx
-// on MicroPython boot). The defaults live in ONE place: the merge-patch defaults
-// object below; the scalar reads take them from the merged cfg rather than
-// re-declaring them.
+// Content policy (spec §5): version and the reveal flags default, so a NULL/empty
+// ctx still yields a valid logo-only splash (the MicroPython boot handoff, before
+// any host view layer exists). But sponsor_text is localized CONTENT: it is
+// REQUIRED from the host whenever the partner band actually renders (partner logos
+// enabled and not boot_logo_only), so no English caption is ever baked in. version
+// stays a data default (empty -> no label). The structural defaults live in ONE
+// place, the merge-patch defaults object below.
 //
 // Lifecycle (stateful, Tier 2): one heap ctx owns the reveal lv_timer, the optional
 // keypad-sink lv_group, and the phase state; opening_splash_cleanup_handler on the
@@ -50,7 +51,7 @@
 // defaults):
 //   version             (string, default "")                   version text under the logo; empty -> no label
 //   show_partner_logos  (bool,   default false)                 reveal the bottom HRF partner band
-//   sponsor_text        (string, default "With support from:")  band caption above the HRF logo
+//   sponsor_text        (string, required WHEN the band renders — show_partner_logos && !boot_logo_only)  band caption above the HRF logo
 //   logo_already_shown  (bool,   default false)                 MicroPython handoff: logo already on screen -> no fade
 //   boot_logo_only      (bool,   default false)                 preview only the centered logo, no reveal/animation
 //   dismissible         (bool,   default true)                  first touch/key completes the splash early
@@ -69,6 +70,7 @@
 
 #include <nlohmann/json.hpp>  // json (cfg defaults, merge_patch, reads)
 
+#include <stdexcept>          // std::runtime_error (required sponsor_text)
 #include <string>             // std::string
 
 using json = nlohmann::json;
@@ -208,13 +210,13 @@ void opening_splash_screen(void *ctx_json) {
 
     // Defaults reproduce the English opening splash so a NULL/empty ctx still
     // renders (boot-tier contract, spec §5). A caller overrides only the keys it
-    // cares about via RFC 7396 merge-patch, like main_menu_screen. These defaults
-    // are the SINGLE source of truth: the scalar reads below take the merged values
-    // rather than re-declaring the same defaults.
+    // cares about via RFC 7396 merge-patch, like main_menu_screen. version and the
+    // flags default here (SINGLE source of truth — the scalar reads below take the
+    // merged values); sponsor_text is NOT defaulted — it is localized content, read
+    // and required conditionally below.
     json cfg = {
         {"version", ""},
         {"show_partner_logos", false},
-        {"sponsor_text", "With support from:"},
         {"logo_already_shown", false},
         {"boot_logo_only", false},
         {"dismissible", true},
@@ -228,11 +230,23 @@ void opening_splash_screen(void *ctx_json) {
 
     // merge-patch guarantees every default key is present, so read them directly.
     const std::string version      = cfg["version"].get<std::string>();
-    const std::string sponsor_text = cfg["sponsor_text"].get<std::string>();
     const bool show_partner        = cfg["show_partner_logos"].get<bool>();
     const bool logo_already_shown  = cfg["logo_already_shown"].get<bool>();
     const bool boot_logo_only      = cfg["boot_logo_only"].get<bool>();
     const bool dismissible         = cfg["dismissible"].get<bool>();
+
+    // sponsor_text is localized CONTENT shown only on the partner band; require it
+    // from the host ONLY when that band actually renders, so a boot_logo_only /
+    // no-partners splash needn't supply it (an English literal baked here would ship
+    // untranslated).
+    std::string sponsor_text;
+    if (show_partner && !boot_logo_only) {
+        if (!cfg.contains("sponsor_text") || !cfg["sponsor_text"].is_string() ||
+            cfg["sponsor_text"].get<std::string>().empty()) {
+            throw std::runtime_error("opening_splash_screen: sponsor_text is required when partner logos are shown");
+        }
+        sponsor_text = cfg["sponsor_text"].get<std::string>();
+    }
 
     // Reveal timing (optional overrides via a nested durations object).
     uint32_t fade_in_ms = 1200, slide_in_ms = 600, hold_logo_ms = 1000, hold_final_ms = 2000;
