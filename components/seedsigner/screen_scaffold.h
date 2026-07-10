@@ -69,6 +69,15 @@ void bind_screen_navigation(const json &cfg, const screen_scaffold_t &screen,
 // seed_transcribe_whole_qr_screen.cpp) in addition to the status screens.
 void add_warning_edges_overlay(lv_obj_t *screen, int status_color);
 
+// Post-layout scaffold-geometry query: the laid-out TOP edge (absolute y1) of the
+// scaffold's bottom button — i.e. the bottom of the free band a screen centers
+// body content into. Returns button_list[0]'s y1 when the scaffold has a valid
+// button, else the display-derived fallback every call site used
+// (display height - BUTTON_HEIGHT).
+// PRECONDITION: the caller has already run lv_obj_update_layout() on the screen,
+// so button_list[0]'s coordinates are final.
+int32_t bottom_button_top_y(const screen_scaffold_t &screen);
+
 // Switch to a finished screen: applies the RTL + complex-script glyph-run passes,
 // loads it as the active screen, deletes the previous root, and reaps retired fonts.
 void load_screen_and_cleanup_previous(lv_obj_t *new_screen);

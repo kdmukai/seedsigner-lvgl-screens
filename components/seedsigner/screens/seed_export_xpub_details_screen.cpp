@@ -118,10 +118,7 @@ void seed_export_xpub_details_screen(void *ctx_json) {
     // here), truncated to fill one line. Truncation is measured HERE so it tracks each
     // display profile's char width — Python's num_chars math.
     const lv_font_t *xpub_font = &CANDIDATE_FONT;   // Inconsolata SemiBold, 22 px @240
-    lv_point_t sz10;
-    lv_text_get_size(&sz10, "0000000000", xpub_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    int32_t char_w = sz10.x / 10;
-    if (char_w < 1) char_w = 1;
+    int32_t char_w = monospace_char_width(xpub_font);
     const int32_t W = lv_display_get_horizontal_resolution(NULL);
     int num_chars = (int)((W - ICON_FONT_SIZE - 2 * COMPONENT_PADDING) / char_w) - 3;  // -3 = "..."
     if (num_chars < 1) num_chars = 1;

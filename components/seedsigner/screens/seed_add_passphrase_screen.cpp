@@ -605,10 +605,16 @@ void seed_add_passphrase_screen(void *ctx_json) {
     const int32_t content_w = lv_obj_get_content_width(body);
     const int32_t content_h = lv_obj_get_content_height(body);
 
+    // Shared KEY1/KEY2/KEY3 side-panel geometry (kb_side_panel_geometry). Computed
+    // unconditionally because panel_w also feeds the keyboard/text-entry strip
+    // width below; the panel itself is only built when use_side_panel.
+    const kb_side_panel_geometry_t side_panel =
+        kb_side_panel_geometry(lv_obj_get_height(screen.screen), content_w);
+
     // Reserve a right-side strip for the KEY1/KEY2/KEY3 panel only when it is
     // shown (240 + joystick). Python's right_panel_buttons_width = 56, scaled per
     // profile. The text strip and keyboard occupy the remaining width.
-    const int32_t panel_w = use_side_panel ? (56 * active_profile().px_multiplier / 100) : 0;
+    const int32_t panel_w = use_side_panel ? side_panel.panel_w : 0;
     // The side panel deliberately runs off the right screen edge to line up with
     // the three physical Waveshare buttons (mirrors Python, whose hw buttons
     // overshoot canvas_width by COMPONENT_PADDING). Reclaiming the right
@@ -675,29 +681,27 @@ void seed_add_passphrase_screen(void *ctx_json) {
 
     if (use_side_panel) {
         // KEY1/KEY2/KEY3 indicator buttons. Their vertical positions must line up
-        // with the device's physical buttons, so they replicate the Python
-        // SeedAddPassphraseScreen layout: KEY2 centered on the full canvas,
-        // KEY1/KEY3 offset by (3*COMPONENT_PADDING + BUTTON_HEIGHT). Those offsets
-        // are canvas-relative; `body` sits TOP_NAV_HEIGHT below the canvas top, so
-        // subtract it to get body-local y.
+        // with the device's physical buttons; the shared kb_side_panel_geometry
+        // replicates the Python SeedAddPassphraseScreen layout (KEY2 centered on
+        // the full canvas, KEY1/KEY3 one `spacing` step above/below, the strip
+        // overshooting the right screen edge by `clipped`).
         const int32_t btn_h = BUTTON_HEIGHT;
-        const int32_t screen_h = lv_obj_get_height(screen.screen);
-        const int32_t spacing = 3 * COMPONENT_PADDING + btn_h;
-        const int32_t center_y = (screen_h - btn_h) / 2 - TOP_NAV_HEIGHT;
-        // Buttons sit COMPONENT_PADDING right of the keyboard and overshoot the
-        // right screen edge by COMPONENT_PADDING (clipped at the body boundary) so
-        // they read as aligned with the physical hardware keys.
-        const int32_t px = content_w + EDGE_PADDING + COMPONENT_PADDING - panel_w;
+
         // ABC/123 use the fixed-width keyboard font (Inconsolata), matching the
         // keys and the Python side panel (FIXED_WIDTH_EMPHASIS_FONT_NAME), not the
         // OpenSans body button font.
-        const int32_t clipped = COMPONENT_PADDING;  // overshoot off the right edge
-        c->key1_btn = kb_side_button(body, px, center_y - spacing, panel_w, btn_h,
-                               UPPER_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key1_label);
-        c->key2_btn = kb_side_button(body, px, center_y, panel_w, btn_h,
-                               NUM_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR, clipped, &c->key2_label);
-        c->key3_btn = kb_side_button(body, px, center_y + spacing, panel_w, btn_h,
-                               SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR, clipped, NULL);
+        c->key1_btn = kb_side_button(body, side_panel.x, side_panel.key2_y - side_panel.spacing,
+                               side_panel.panel_w, btn_h,
+                               UPPER_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR,
+                               side_panel.clipped, &c->key1_label);
+        c->key2_btn = kb_side_button(body, side_panel.x, side_panel.key2_y,
+                               side_panel.panel_w, btn_h,
+                               NUM_LABEL, &KEYBOARD_FONT, BUTTON_FONT_COLOR,
+                               side_panel.clipped, &c->key2_label);
+        c->key3_btn = kb_side_button(body, side_panel.x, side_panel.key2_y + side_panel.spacing,
+                               side_panel.panel_w, btn_h,
+                               SeedSignerIconConstants::CHECK, &ICON_FONT__SEEDSIGNER, SUCCESS_COLOR,
+                               side_panel.clipped, NULL);
         passphrase_update_labels(c);
     }
 

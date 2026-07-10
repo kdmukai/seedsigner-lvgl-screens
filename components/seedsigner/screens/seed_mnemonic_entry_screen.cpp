@@ -658,15 +658,14 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
     const int32_t hl_h   = (int32_t)(BUTTON_HEIGHT * 3 / 4);
 
     if (hardware) {
-        // Passphrase-aligned anchor slots (body-local). The KEY2 slot is a
-        // BUTTON_HEIGHT box centered on the full screen; KEY1/KEY3 are one
-        // (3*COMPONENT_PADDING + BUTTON_HEIGHT) step above/below it.
-        const int32_t screen_h  = lv_obj_get_height(screen.screen);
-        const int32_t spacing   = 3 * COMPONENT_PADDING + BUTTON_HEIGHT;
-        const int32_t key2_top  = (screen_h - BUTTON_HEIGHT) / 2 - TOP_NAV_HEIGHT;
-        const int32_t key1_top  = key2_top - spacing;
-        const int32_t key3_top  = key2_top + spacing;
-        const int32_t hl_center = key2_top + BUTTON_HEIGHT / 2;
+        // Passphrase-aligned anchor slots (body-local), from the shared
+        // kb_side_panel_geometry: the KEY2 slot is a BUTTON_HEIGHT box centered on
+        // the full screen; KEY1/KEY3 are one `spacing` step above/below it.
+        const kb_side_panel_geometry_t side_panel =
+            kb_side_panel_geometry(lv_obj_get_height(screen.screen), content_w);
+        const int32_t key1_top  = side_panel.key2_y - side_panel.spacing;
+        const int32_t key3_top  = side_panel.key2_y + side_panel.spacing;
+        const int32_t hl_center = side_panel.key2_y + BUTTON_HEIGHT / 2;
 
         // Dimmed candidate rows: up to 3 above + 7 below the highlight, spaced by
         // row_h off its center. They overflow past the arrows and clip at the body
@@ -712,18 +711,18 @@ void seed_mnemonic_entry_screen(void *ctx_json) {
 
         // Scroll arrows (KEY1/KEY3), created LAST so they draw OVER the candidate
         // rows (Python parity), centered in their slots and overshooting the right
-        // screen edge exactly like the passphrase side panel (same w / x / clipped).
-        const int32_t side_w   = 56 * active_profile().px_multiplier / 100;
-        const int32_t side_x   = content_w + EDGE_PADDING + COMPONENT_PADDING - side_w;
-        const int32_t clipped  = COMPONENT_PADDING;
+        // screen edge exactly like the passphrase side panel (same w / x / clipped,
+        // all from the shared kb_side_panel_geometry).
         const int32_t arrow_h  = (int32_t)(BUTTON_HEIGHT * 3 / 4);
         const int32_t arrow_dy = (BUTTON_HEIGHT - arrow_h) / 2;   // center within the slot
-        c->arrow_up = kb_side_button(body, side_x, key1_top + arrow_dy, side_w, arrow_h,
+        c->arrow_up = kb_side_button(body, side_panel.x, key1_top + arrow_dy,
+                                     side_panel.panel_w, arrow_h,
                                      SeedSignerIconConstants::CHEVRON_UP, &ICON_FONT__SEEDSIGNER,
-                                     BODY_FONT_COLOR, clipped, nullptr);
-        c->arrow_down = kb_side_button(body, side_x, key3_top + arrow_dy, side_w, arrow_h,
+                                     BODY_FONT_COLOR, side_panel.clipped, nullptr);
+        c->arrow_down = kb_side_button(body, side_panel.x, key3_top + arrow_dy,
+                                       side_panel.panel_w, arrow_h,
                                        SeedSignerIconConstants::CHEVRON_DOWN, &ICON_FONT__SEEDSIGNER,
-                                       BODY_FONT_COLOR, clipped, nullptr);
+                                       BODY_FONT_COLOR, side_panel.clipped, nullptr);
     } else {
         // Touch: a scrollable candidate list above a persistent green CHECK button.
         const int32_t check_h = hl_h;

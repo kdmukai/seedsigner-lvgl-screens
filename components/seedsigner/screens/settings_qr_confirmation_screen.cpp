@@ -1,5 +1,6 @@
 #include "screen_scaffold.h" // shared screen-helper header (per multi-agent integration convention)
 #include "seedsigner.h"      // settings_qr_confirmation_screen(), button_list_screen(), text_top_leading()
+#include "screen_helpers.h"  // tight_line_space()
 #include "gui_constants.h"   // TOP_NAV_HEIGHT, EDGE_PADDING, BODY_FONT, BODY_FONT_COLOR, active_profile()
 
 #include "lvgl.h"
@@ -45,58 +46,6 @@ using json = nlohmann::json;
 //     // "button_list" OPTIONAL: host may override the action label; defaults to ["Home"].
 //   }
 
-// Ink-based tight inter-line spacing, mirroring screen_helpers.cpp's
-// tight_line_space()/apply_body_tight_line_spacing() (kept screen-private here per
-// the multi-agent brief). LVGL's declared font line_height carries loose leading, so
-// a plain wrapped label spaces its lines ~10 px looser than the PIL/Python TextArea
-// reference. Instead derive the advance from the ACTUAL glyph ink of `text` (tallest
-// ascender + deepest descender + a small gap) and hand the delta to
-// lv_obj_set_style_text_line_space (rendered advance = font line_height + this),
-// which is usually negative (tightening). Matches the reference status paragraph.
-static int32_t tight_body_line_space(const lv_font_t *font, const char *text)
-{
-    if (!font || !text) return 0;
-
-    int32_t max_ascent = 0, max_descent = 0;
-
-    // Minimal UTF-8 walk; ask the font engine for each glyph's ink box.
-    for (const unsigned char *p = (const unsigned char *)text; *p; ) {
-        uint32_t cp;
-        if (*p < 0x80) {
-            cp = *p; p += 1;
-        } else if ((*p >> 5) == 0x6 && p[1]) {
-            cp = ((uint32_t)(p[0] & 0x1F) << 6) | (p[1] & 0x3F); p += 2;
-        } else if ((*p >> 4) == 0xE && p[1] && p[2]) {
-            cp = ((uint32_t)(p[0] & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F); p += 3;
-        } else if ((*p >> 3) == 0x1E && p[1] && p[2] && p[3]) {
-            cp = ((uint32_t)(p[0] & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) | ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F); p += 4;
-        } else {
-            p += 1; continue;
-        }
-        if (cp == '\n' || cp == '\r' || cp == ' ') continue;
-
-        lv_font_glyph_dsc_t d;
-        if (!lv_font_get_glyph_dsc(font, &d, cp, 0) || d.box_h == 0) continue;  // absent/inkless
-
-        int32_t ascent  = (int32_t)d.ofs_y + (int32_t)d.box_h;  // ink above baseline
-        int32_t descent = -(int32_t)d.ofs_y;                    // ink below baseline
-        if (ascent  > max_ascent)  max_ascent  = ascent;
-        if (descent > max_descent) max_descent = descent;
-    }
-
-    if (max_ascent + max_descent <= 0) return 0;  // measured nothing; leave default
-
-    const int32_t line_gap = LIST_ITEM_PADDING / 2;   // screen_helpers.cpp uses the same gap
-    const int32_t line_h   = (int32_t)lv_font_get_line_height(font);
-    int32_t space = (max_ascent + max_descent + line_gap) - line_h;
-
-    // Never tighten more than a quarter of the declared line_height (collapse guard
-    // for scripts whose drawn glyphs differ from their codepoints).
-    const int32_t min_space = -(line_h / 4);
-    if (space < min_space) space = min_space;
-    return space;
-}
-
 // Create a centered, wrapped BODY_FONT label whose VISIBLE ink top lands at the
 // canvas-relative `screen_y` (Python TextArea.screen_y semantics). LVGL anchors a
 // label box by the font ascent, which carries leading above the caps; subtract that
@@ -118,7 +67,9 @@ static lv_obj_t *place_centered_body_text(lv_obj_t *screen, const char *text, in
     // Tight, ink-based inter-line spacing so a wrapped status paragraph matches the
     // PIL TextArea reference (the inherited screen-wide BODY_LINE_SPACING is ~10 px
     // too loose). No-op for single-line text (e.g. the config name).
-    lv_obj_set_style_text_line_space(label, tight_body_line_space(&BODY_FONT, text), LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(label,
+                                     tight_line_space(&BODY_FONT, text, LIST_ITEM_PADDING / 2),
+                                     LV_PART_MAIN);
 
     const int32_t lead = text_top_leading(&BODY_FONT, text);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, screen_y - lead);

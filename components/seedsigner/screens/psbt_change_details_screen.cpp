@@ -124,11 +124,7 @@ void psbt_change_details_screen(void *ctx_json) {
         lv_obj_update_layout(screen.screen);
         lv_area_t aa; lv_obj_get_coords(addr, &aa);
         int32_t gap_top    = aa.y2;
-        int32_t gap_bottom = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
-        if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
-            lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
-            gap_bottom = ba.y1;
-        }
+        int32_t gap_bottom = bottom_button_top_y(screen);
         int32_t vh = lv_obj_get_height(vrow);
         int32_t vw = lv_obj_get_width(vrow);
         lv_obj_set_pos(vrow, (W - vw) / 2, (gap_top + gap_bottom) / 2 - vh / 2);

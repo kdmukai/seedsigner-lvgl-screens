@@ -220,30 +220,29 @@ void io_test_screen(void *ctx_json) {
     ctx->controls[IOC_RIGHT] = make_dpad_arrow(body, cx + ibw + COMPONENT_PADDING, cy, ibw, ibh, SeedSignerIconConstants::CHEVRON_RIGHT);
 
     // ── KEY1 / KEY2 / KEY3 (right), reusing the shared side panel so they align with the
-    // physical keys and stay on-screen (same layout as seed_add_passphrase_screen): a 56px
-    // strip that overshoots the right edge by COMPONENT_PADDING, KEY2 centered on the
-    // canvas, KEY1/KEY3 offset by 3*COMPONENT_PADDING + BUTTON_HEIGHT. ──
-    const int32_t panel_w = 56 * active_profile().px_multiplier / 100;
-    const int32_t btn_h   = BUTTON_HEIGHT;
-    const int32_t px      = content_w + EDGE_PADDING + COMPONENT_PADDING - panel_w;
-    const int32_t clipped = COMPONENT_PADDING;
-    const int32_t center_y = (screen_h - btn_h) / 2 - TOP_NAV_HEIGHT;
-    const int32_t spacing  = 3 * COMPONENT_PADDING + btn_h;
+    // physical keys and stay on-screen (same layout as seed_add_passphrase_screen): the
+    // strip geometry comes from the shared kb_side_panel_geometry (56px strip overshooting
+    // the right edge, KEY2 centered on the canvas, KEY1/KEY3 one `spacing` step away). ──
+    const kb_side_panel_geometry_t side_panel = kb_side_panel_geometry(screen_h, content_w);
+    const int32_t btn_h = BUTTON_HEIGHT;
 
-    ctx->controls[IOC_KEY1] = kb_side_button(body, px, center_y - spacing, panel_w, btn_h,
+    ctx->controls[IOC_KEY1] = kb_side_button(body, side_panel.x, side_panel.key2_y - side_panel.spacing,
+                                             side_panel.panel_w, btn_h,
                                              camera_glyph.c_str(), &ICON_FONT__SEEDSIGNER,
-                                             BUTTON_FONT_COLOR, clipped, NULL);
+                                             BUTTON_FONT_COLOR, side_panel.clipped, NULL);
 
     // KEY2 starts blank (nothing to clear yet); the screenshot generator shows the label so
     // translators can review it (Python: `if not is_screenshot_generator: text = " "`).
     const char *key2_initial = seedsigner_lvgl_is_static_render() ? clear_label.c_str() : "";
-    ctx->controls[IOC_KEY2] = kb_side_button(body, px, center_y, panel_w, btn_h,
+    ctx->controls[IOC_KEY2] = kb_side_button(body, side_panel.x, side_panel.key2_y,
+                                             side_panel.panel_w, btn_h,
                                              key2_initial, &BUTTON_FONT, BUTTON_FONT_COLOR,
-                                             clipped, &ctx->key2_label);
+                                             side_panel.clipped, &ctx->key2_label);
 
-    ctx->controls[IOC_KEY3] = kb_side_button(body, px, center_y + spacing, panel_w, btn_h,
+    ctx->controls[IOC_KEY3] = kb_side_button(body, side_panel.x, side_panel.key2_y + side_panel.spacing,
+                                             side_panel.panel_w, btn_h,
                                              exit_label.c_str(), &BUTTON_FONT, BUTTON_FONT_COLOR,
-                                             clipped, NULL);
+                                             side_panel.clipped, NULL);
 
     // ── "Capturing image…" band (hidden until CAPTURING) ──
     const int32_t band_h = (int32_t)lv_font_get_line_height(&TOP_NAV_TITLE_FONT) + 2 * COMPONENT_PADDING;

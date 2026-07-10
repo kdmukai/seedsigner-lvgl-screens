@@ -594,3 +594,21 @@ void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
     });
     lv_anim_start(&pulse);
 }
+
+
+// See screen_scaffold.h: the bottom edge of the free band above the scaffold's
+// bottom button. PRECONDITION: the caller has already run lv_obj_update_layout()
+// on the screen, so button_list[0]'s coordinates are final.
+int32_t bottom_button_top_y(const screen_scaffold_t &screen) {
+    // Display-derived fallback: where a bottom-pinned button WOULD start when the
+    // scaffold has no (valid) button.
+    int32_t top_y = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
+
+    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
+        lv_area_t button_area;
+        lv_obj_get_coords(screen.button_list[0], &button_area);
+        top_y = button_area.y1;
+    }
+
+    return top_y;
+}

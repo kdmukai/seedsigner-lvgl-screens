@@ -375,11 +375,10 @@ void psbt_overview_screen(void *ctx_json) {
     } else {
         chart_top = TOP_NAV_HEIGHT + comp;
     }
-    int32_t chart_bottom = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT - comp;
-    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
-        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
-        chart_bottom = ba.y1 - comp;
-    }
+    // Band bottom = the shared scaffold query minus the chart's own `comp` inset
+    // (both branches of the inlined form subtracted comp, so hoisting it out of
+    // the fallback/override pair is value-identical).
+    int32_t chart_bottom = bottom_button_top_y(screen) - comp;
     const int32_t chart_h = chart_bottom - chart_top;
 
     const int32_t text_h = lv_font_get_line_height(&BODY_FONT);

@@ -209,6 +209,21 @@ int32_t label_subset_text_width(lv_obj_t* label, const lv_font_t* font) {
     return size.x;
 }
 
+// See components.h: one monospace cell advance of `font`. Measure a run of zeros
+// and divide, so any sub-pixel rounding in the per-glyph advance averages out
+// (the canonical rationale formatted_address's original copy carried).
+int32_t monospace_char_width(const lv_font_t *font, int run_length) {
+    std::string zero_run((size_t)run_length, '0');
+
+    lv_point_t run_size = {0, 0};
+    lv_text_get_size(&run_size, zero_run.c_str(), font, 0, 0,
+                     LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+
+    int32_t char_width = run_size.x / run_length;
+    if (char_width < 1) char_width = 1;
+    return char_width;
+}
+
 // See components.h: width of an inline icon glyph in the active inline icon font.
 // Matches the per-glyph measurement apply_button_icon_layout makes for a created icon
 // label, so a column sized from the MAX of these aligns the buttons' text exactly.
@@ -1645,13 +1660,10 @@ lv_obj_t* formatted_address(lv_obj_t* parent, const formatted_address_opts_t* op
 
     const std::string address = opts->address;
 
-    // Fixed-width metrics. char_width = one monospace advance (measure 10 glyphs and
-    // divide, so any sub-pixel rounding averages out); char_height = a glyph's ink box
-    // (Python measures getbbox("Q")), which sets the inter-line advance.
-    lv_point_t sz10;
-    lv_text_get_size(&sz10, "0000000000", font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    int32_t char_width = sz10.x / 10;
-    if (char_width < 1) char_width = 1;
+    // Fixed-width metrics. char_width = one monospace advance (monospace_char_width);
+    // char_height = a glyph's ink box (Python measures getbbox("Q")), which sets the
+    // inter-line advance.
+    int32_t char_width = monospace_char_width(font);
 
     int32_t char_height = 0;
     lv_font_glyph_dsc_t gd;

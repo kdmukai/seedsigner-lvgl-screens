@@ -248,6 +248,32 @@ void kb_style_matrix(lv_obj_t *kb, const lv_font_t *item_font) {
 // 240px hardware side panel
 // ===========================================================================
 
+// See keyboard_core.h: the shared KEY1/KEY2/KEY3 panel geometry. The integer
+// expressions are the exact ones the side-panel screens derived inline (division
+// and rounding order preserved), so the extraction is pixel-identical.
+kb_side_panel_geometry_t kb_side_panel_geometry(int32_t screen_h, int32_t body_content_w) {
+    kb_side_panel_geometry_t geometry;
+
+    // Python right_panel_buttons_width = 56, scaled per display profile.
+    geometry.panel_w = 56 * active_profile().px_multiplier / 100;
+
+    // The panel sits COMPONENT_PADDING right of the keyboard strip and deliberately
+    // overshoots the right screen edge by COMPONENT_PADDING (clipped at the body
+    // boundary) so the buttons read as aligned with the physical hardware keys
+    // (Python's hw buttons overshoot canvas_width by COMPONENT_PADDING).
+    geometry.clipped = COMPONENT_PADDING;
+    geometry.x       = body_content_w + EDGE_PADDING + COMPONENT_PADDING - geometry.panel_w;
+
+    // KEY2 is a BUTTON_HEIGHT slot centered on the FULL canvas. That offset is
+    // canvas-relative and the body sits TOP_NAV_HEIGHT below the canvas top, so
+    // subtract it for body-local y. KEY1/KEY3 sit one
+    // (3*COMPONENT_PADDING + BUTTON_HEIGHT) step above/below the KEY2 slot.
+    geometry.key2_y  = (screen_h - BUTTON_HEIGHT) / 2 - TOP_NAV_HEIGHT;
+    geometry.spacing = 3 * COMPONENT_PADDING + BUTTON_HEIGHT;
+
+    return geometry;
+}
+
 lv_obj_t *kb_side_button(lv_obj_t *parent, int32_t x, int32_t y,
                          int32_t w, int32_t h, const char *text,
                          const lv_font_t *font, int color,

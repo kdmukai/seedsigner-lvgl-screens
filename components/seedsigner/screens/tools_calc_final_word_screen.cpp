@@ -1,5 +1,7 @@
 #include "screen_scaffold.h" // parse_screen_json_ctx
 #include "seedsigner.h"      // tools_calc_final_word_screen(), button_list_screen(), text_top_leading()
+#include "screen_helpers.h"  // measure_text_ink_extents()
+#include "components.h"      // monospace_char_width()
 #include "gui_constants.h"   // TOP_NAV_HEIGHT, COMPONENT_PADDING, EDGE_PADDING, BODY_FONT, CANDIDATE_FONT, colors
 
 #include "lvgl.h"
@@ -83,29 +85,6 @@ static const int PY_BODY_CAP_HEIGHT_240 = 13;
 
 static const int BIT_COLUMNS = 11;             // a BIP-39 word index is 11 bits
 
-// Ink extents of `text` in `font`, measured above/below the baseline. `out_ascent`
-// is the tallest glyph ink above the baseline; `out_descent` the deepest below.
-// (Local copy of screen_helpers.cpp's measure_text_ink_extents — the bit
-// strings are pure ASCII, so a plain byte walk suffices.)
-static void measure_ascii_ink(const lv_font_t *font, const char *text,
-                              int32_t &out_ascent, int32_t &out_descent) {
-    out_ascent = 0;
-    out_descent = 0;
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
-        if (*p == ' ' || *p == '\n' || *p == '\r') {
-            continue;
-        }
-        lv_font_glyph_dsc_t d;
-        if (!lv_font_get_glyph_dsc(font, &d, *p, 0) || d.box_h == 0) {
-            continue;   // absent or inkless
-        }
-        int32_t ascent  = (int32_t)d.ofs_y + (int32_t)d.box_h;   // ink above baseline
-        int32_t descent = -(int32_t)d.ofs_y;                     // ink below baseline
-        if (ascent  > out_ascent)  out_ascent  = ascent;
-        if (descent > out_descent) out_descent = descent;
-    }
-}
-
 // Create a centered, single-line BODY_FONT caption whose VISIBLE ink top lands at the
 // canvas-relative `ink_top_y` (Python TextArea.screen_y with height_ignores_below_baseline).
 // LVGL anchors a label box by the font ascent (leading above the caps); subtract that
@@ -155,7 +134,7 @@ static lv_obj_t *place_bit_underscores(lv_obj_t *screen, const char *text, const
     lv_label_set_text(label, text);
 
     int32_t asc = 0, desc = 0;
-    measure_ascii_ink(font, text, asc, desc);
+    measure_text_ink_extents(font, text, &asc, &desc);
     // Underscore ink spans [baseline - asc, baseline + desc]; its center is
     // baseline + (desc - asc)/2. Solve for the baseline that lands the center on
     // ink_center_y, then back out the label box top (baseline - font ascent).
@@ -235,10 +214,7 @@ void tools_calc_final_word_screen(void *ctx_json) {
     // anchor the checksum segment (11 - num_checksum) columns in — Python's exact math,
     // using the actual font's advance so the grid stays monospace.
     const int32_t W = lv_obj_get_width(screen);
-    lv_point_t grid_sz;
-    lv_text_get_size(&grid_sz, "00000000000", bit_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    int32_t char_width = grid_sz.x / BIT_COLUMNS;
-    if (char_width < 1) char_width = 1;
+    int32_t char_width = monospace_char_width(bit_font, BIT_COLUMNS);
     const int32_t bit_display_width = BIT_COLUMNS * char_width;
     const int32_t bit_display_x     = (W - bit_display_width) / 2;
     const int32_t checksum_x        = bit_display_x + num_keeper * char_width;

@@ -226,10 +226,7 @@ void seed_review_passphrase_screen(void *ctx_json) {
         (!passphrase.empty() && (passphrase.front() == ' ' || passphrase.back() == ' ')) ||
         (passphrase.find("  ") != std::string::npos);
 
-    lv_point_t ppsz;
-    lv_text_get_size(&ppsz, "0000000000", pp_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    int32_t pp_char_w = ppsz.x / 10;
-    if (pp_char_w < 1) pp_char_w = 1;
+    int32_t pp_char_w = monospace_char_width(pp_font);
 
     int max_cpl = (int)((W - 2 * EDGE_PADDING) / pp_char_w);
     if (max_cpl < 1) max_cpl = 1;
@@ -295,11 +292,7 @@ void seed_review_passphrase_screen(void *ctx_json) {
     // the button (Python: button_top - COMPONENT_PADDING - body_font_size*2.5); the
     // passphrase centers in the gap between the top nav and the fingerprint line.
     lv_obj_update_layout(screen.screen);
-    int32_t button_top = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
-    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
-        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
-        button_top = ba.y1;
-    }
+    int32_t button_top = bottom_button_top_y(screen);
 
     int32_t fp_h = lv_obj_get_height(fp_line);
     int32_t fp_w = lv_obj_get_width(fp_line);

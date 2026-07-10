@@ -27,6 +27,7 @@
 
 #include "screen_scaffold.h"   // parse/scaffold/nav/load helpers
 #include "seedsigner.h"        // screen_scaffold_t
+#include "components.h"        // monospace_char_width
 #include "gui_constants.h"     // TOP_NAV_TITLE_FONT, CANDIDATE_FONT, colors, padding
 #include "navigation.h"        // NAV_BODY_VERTICAL, NAV_INDEX_NONE
 
@@ -72,10 +73,7 @@ void psbt_op_return_screen(void *ctx_json) {
         // FIXED_WIDTH font's 'X' box). The only baked monospace sizes are 22/24 px;
         // CANDIDATE_FONT (22 px) packs the most hex per line.
         const lv_font_t *mono = &CANDIDATE_FONT;
-        lv_point_t sz10;
-        lv_text_get_size(&sz10, "0000000000", mono, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        int32_t adv = sz10.x / 10;
-        if (adv < 1) adv = 1;
+        int32_t adv = monospace_char_width(mono);
         int chars_per_line = (int)(text_w / adv);
         if (chars_per_line < 1) chars_per_line = 1;
 

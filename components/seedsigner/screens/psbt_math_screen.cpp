@@ -60,9 +60,7 @@ void psbt_math_screen(void *ctx_json) {
     const lv_font_t *digit_font = &KEYBOARD_FONT;   // profile fixed-width (Inconsolata)
 
     // Fixed-width metrics: one monospace advance + the digit line height.
-    lv_point_t sz10;
-    lv_text_get_size(&sz10, "0000000000", digit_font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    int32_t char_width = sz10.x / 10; if (char_width < 1) char_width = 1;
+    int32_t char_width = monospace_char_width(digit_font);
     int32_t digit_h    = lv_font_get_line_height(digit_font);
 
     // Left-pad all four amounts to a common width so the monospace digits right-align
@@ -191,11 +189,7 @@ void psbt_math_screen(void *ctx_json) {
     lv_obj_update_layout(screen.screen);
     int32_t mc_h    = lv_obj_get_height(mc);
     int32_t gap_top = TOP_NAV_HEIGHT;
-    int32_t gap_bot = lv_display_get_vertical_resolution(NULL) - BUTTON_HEIGHT;
-    if (screen.button_list_count > 0 && lv_obj_is_valid(screen.button_list[0])) {
-        lv_area_t ba; lv_obj_get_coords(screen.button_list[0], &ba);
-        gap_bot = ba.y1;
-    }
+    int32_t gap_bot = bottom_button_top_y(screen);
     int32_t mc_y = gap_top + (gap_bot - gap_top - mc_h) / 2;
     if (mc_y < gap_top + COMPONENT_PADDING) mc_y = gap_top + COMPONENT_PADDING;   // clear the nav
     lv_obj_set_y(mc, mc_y);
