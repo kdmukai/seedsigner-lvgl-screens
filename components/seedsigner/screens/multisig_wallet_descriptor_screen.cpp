@@ -142,9 +142,7 @@ void multisig_wallet_descriptor_screen(void *ctx_json) {
     keys_line.value_wrap_width = lv_display_get_horizontal_resolution(NULL) - 2 * EDGE_PADDING;
     icon_text_line(screen.upper_body, &keys_line);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

@@ -143,8 +143,6 @@ void seed_export_xpub_details_screen(void *ctx_json) {
     // WarningEdgesMixin — pulsing yellow border.
     add_warning_edges_overlay(screen.screen, WARNING_COLOR);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
     load_screen_and_cleanup_previous(screen.screen);
 }

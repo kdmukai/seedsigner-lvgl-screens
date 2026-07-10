@@ -116,9 +116,7 @@ void psbt_change_details_screen(void *ctx_json) {
         lv_label_set_long_mode(vtx, LV_LABEL_LONG_CLIP);
     }
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     // With the scaffold + content laid out, center the verified line between the address
     // bottom and the first button top.

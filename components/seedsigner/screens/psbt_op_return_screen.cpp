@@ -126,9 +126,7 @@ void psbt_op_return_screen(void *ctx_json) {
     // NAV_INDEX_NONE: the Done button is active when the payload fits; a long hex body
     // that overflows must be scrolled through before Done is reachable (read-first),
     // via bind_screen_navigation's scroll-then-buttons auto-detect.
-    bind_screen_navigation(cfg, screen,
-                           screen.button_list_count > 0 ? screen.button_list : NULL,
-                           screen.button_list_count, NAV_BODY_VERTICAL, NAV_INDEX_NONE);
+    bind_screen_navigation(cfg, screen, NAV_INDEX_NONE);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

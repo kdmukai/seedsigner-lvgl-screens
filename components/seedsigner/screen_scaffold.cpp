@@ -234,6 +234,29 @@ void bind_screen_navigation(const json &cfg,
 }
 
 
+// Scaffold-buttons convenience: vertical body list discovered by the scaffold.
+// Exactly the ritual every scaffold-built button screen performed inline — same
+// callee, same argument values — so it is a pure textual factoring of the call.
+// The NULL-when-empty ternary is kept verbatim for byte-level argument parity,
+// even though nav_bind's own count guard already treats NULL-with-count-0 and
+// valid-pointer-with-count-0 identically.
+void bind_screen_navigation(const json &cfg,
+                            const screen_scaffold_t &screen,
+                            size_t default_initial_index) {
+    // button_list is a fixed array member, so under this const reference it decays
+    // to `lv_obj_t *const *`; the full overload takes `lv_obj_t **` (nav_bind only
+    // READS the pointers — it copies them into its own array). const_cast bridges
+    // the decay without changing any argument value.
+    bind_screen_navigation(cfg, screen,
+                           screen.button_list_count > 0
+                               ? const_cast<lv_obj_t **>(screen.button_list)
+                               : NULL,
+                           screen.button_list_count,
+                           NAV_BODY_VERTICAL,
+                           default_initial_index);
+}
+
+
 // Build root screen: TopNav, body container, and (if cfg["button_list"] is
 // present) a flex-column body that stacks `upper_body`, an optional
 // flex-grow=1 spacer, and one button per `cfg["button_list"]` label.

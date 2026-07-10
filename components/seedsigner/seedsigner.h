@@ -200,6 +200,14 @@ void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 // entry). Ships a weak no-op default (in components.cpp); host provides a strong one.
 void seedsigner_lvgl_on_text_entered(const char *text);
 
+// Host callback: an aux key (KEY1/KEY2/KEY3) was forwarded to the host — by the nav
+// layer when the key's policy is NAV_AUX_EMIT, or by io_test_screen's self-owned
+// input. `key_name` is "KEY1" / "KEY2" / "KEY3". Ships a weak no-op default (in
+// components.cpp); interactive hosts provide a strong override — and MUST on
+// MinGW/PE, where a weak default only resolves references from its own TU (the
+// cross-TU link failure behind commit 7f89913).
+void seedsigner_lvgl_on_aux_key(const char *key_name);
+
 // Text metrics (shared with components.cpp). Empty vertical space between a
 // label's box top and the VISIBLE top of its text — the font's declared ascent
 // minus the text's real ink ascent. LVGL anchors a text box by the font ascent

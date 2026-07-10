@@ -44,6 +44,15 @@ typedef struct {
     nav_aux_action_t key3;
 } nav_aux_policy_t;
 
+// Shared KEY1/KEY2/KEY3 recognizer — the single spec for mapping a keypad keycode to
+// an aux-key index. Returns 1/2/3 for a KEY1/KEY2/KEY3 keycode, 0 otherwise.
+// Recognized codes: LV_KEY_F1..F3 when the platform defines them (the forward-compat
+// on-device contract; no current build does), and ASCII '1'/'2'/'3' always (what every
+// build delivers today). Used by the nav key handler and by the self-input screens
+// (seed_mnemonic_entry, seed_add_passphrase, io_test), so all aux-key recognition
+// stays byte-equivalent across the corpus.
+int nav_aux_key_index(uint32_t key);
+
 typedef struct {
     lv_obj_t *screen;
     lv_obj_t *top_back_btn;

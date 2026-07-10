@@ -161,9 +161,7 @@ void seed_words_screen(void *ctx_json) {
     // WarningEdgesMixin — pulsing orange border (seed on screen).
     add_warning_edges_overlay(screen.screen, DIRE_WARNING_COLOR);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     // Baseline-align each word to its number: Python draws both at the same baseline_y
     // (word anchor "ls", number "ms"), so descenders drop below a shared baseline. Cross-

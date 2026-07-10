@@ -70,9 +70,7 @@ void seed_sign_message_confirm_message_screen(void *ctx_json) {
     // it OVERFLOWS, start UNFOCUSED at the TOP so the reader sees the message from its
     // beginning and scrolls DOWN through it to reveal + focus the Next button — rather than
     // loading pre-scrolled to the bottom with Next focused.
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, NAV_INDEX_NONE);
+    bind_screen_navigation(cfg, screen, NAV_INDEX_NONE);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

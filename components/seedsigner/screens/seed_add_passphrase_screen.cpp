@@ -411,13 +411,14 @@ static void passphrase_kb_key_cb(lv_event_t *e) {
 
     uint32_t key = lv_event_get_key(e);
 
-    // KEY1/KEY2/KEY3 (ASCII '1'/'2'/'3'; see is_aux_key in navigation.cpp) only
-    // act when the side panel is present (240 joystick). At >240 there is no
+    // KEY1/KEY2/KEY3 (via the shared nav_aux_key_index recognizer, navigation.h)
+    // only act when the side panel is present (240 joystick). At >240 there is no
     // panel — switching/confirm is via the in-grid mode/OK keys.
     if (c->key2_label) {
-        if (key == (uint32_t)'1') { kb_flash_side_button(c->key1_btn); passphrase_key1_case(c); return; }
-        if (key == (uint32_t)'2') { kb_flash_side_button(c->key2_btn); passphrase_key2_cycle(c); return; }
-        if (key == (uint32_t)'3') {
+        int aux = nav_aux_key_index(key);
+        if (aux == 1) { kb_flash_side_button(c->key1_btn); passphrase_key1_case(c); return; }
+        if (aux == 2) { kb_flash_side_button(c->key2_btn); passphrase_key2_cycle(c); return; }
+        if (aux == 3) {
             kb_flash_side_button(c->key3_btn);
             if (c->ta && lv_obj_is_valid(c->ta)) {
                 seedsigner_lvgl_on_text_entered(lv_textarea_get_text(c->ta));

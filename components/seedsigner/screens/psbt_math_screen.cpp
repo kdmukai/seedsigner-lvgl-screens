@@ -183,9 +183,7 @@ void psbt_math_screen(void *ctx_json) {
     cur_y += BODY_LINE_SPACING;
     render_amount(cur_y, std::string(" ") + s_change, l_change, 0xff8c00 /* darkorange */);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     // Vertical centering: now that the equation's height is known, center it in the gap
     // between the top nav and the pinned button (Python top-anchors it; here the wider

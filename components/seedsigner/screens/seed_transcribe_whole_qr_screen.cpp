@@ -393,9 +393,7 @@ extern "C" void seed_transcribe_whole_qr_screen(void *ctx_json) {
     // WarningEdgesMixin — pulsing ORANGE border (seed material on screen).
     add_warning_edges_overlay(screen.screen, DIRE_WARNING_COLOR);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     // --- Geometry: size + center the QR from the laid-out chrome ------------
     // Python: qr_side = buttons[0].screen_y - top_nav.height - COMPONENT_PADDING,

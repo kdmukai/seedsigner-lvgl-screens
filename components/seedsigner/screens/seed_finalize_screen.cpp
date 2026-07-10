@@ -117,9 +117,6 @@ void seed_finalize_screen(void *ctx_json) {
     bind_screen_navigation(
         cfg,
         screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count,
-        NAV_BODY_VERTICAL,
         0   // default the first action button (Done) selected, like button_list_screen
     );
 

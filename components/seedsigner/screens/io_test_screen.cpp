@@ -11,7 +11,7 @@
 // exactly what Python's _run does with hw_inputs.wait_for(). It installs its own LVGL
 // group + keypad sink and, on each key, flashes the matching control:
 //   LV_KEY_UP/DOWN/LEFT/RIGHT -> the D-pad arrows; LV_KEY_ENTER -> the center click;
-//   '1'/'2'/'3' (KEY1/2/3, per navigation.cpp is_aux_key) -> the right-side buttons.
+//   KEY1/2/3 (per nav_aux_key_index, navigation.h) -> the right-side buttons.
 // KEY1/2/3 are ALSO forwarded to the host (seedsigner_lvgl_on_aux_key) so it can grab a
 // frame / clear / exit. There is NO back button (Python show_back_button = False).
 //
@@ -32,19 +32,17 @@
 //   exit_label       (str) — KEY3 label, default "Exit".
 
 #include "screen_scaffold.h"   // parse/scaffold/load helpers
-#include "seedsigner.h"        // io_test_capture_state_t, is_static_render
+#include "seedsigner.h"        // io_test_capture_state_t, is_static_render, on_aux_key host hook
 #include "keyboard_core.h"     // kb_side_button, kb_flash_side_button
 #include "gui_constants.h"     // fonts, colors, sizes, padding, icon glyphs, active_profile
 #include "input_profile.h"     // input_profile_set_mode (force hardware input)
+#include "navigation.h"        // nav_aux_key_index (shared KEY1/2/3 recognizer)
 #include "lvgl.h"
 
 #include <nlohmann/json.hpp>
 #include <string>
 
 using json = nlohmann::json;
-
-// Weak host hook (defined in navigation.cpp): forward KEY1/2/3 so the host can act.
-extern "C" void seedsigner_lvgl_on_aux_key(const char *key_name);
 
 namespace {
 
@@ -124,11 +122,15 @@ int control_for_key(uint32_t key) {
         case LV_KEY_LEFT:  return IOC_LEFT;
         case LV_KEY_RIGHT: return IOC_RIGHT;
         case LV_KEY_ENTER: return IOC_CLICK;
-        case (uint32_t)'1': return IOC_KEY1;
-        case (uint32_t)'2': return IOC_KEY2;
-        case (uint32_t)'3': return IOC_KEY3;
-        default: return -1;
+        default: break;
     }
+
+    // KEY1/KEY2/KEY3 via the shared recognizer (navigation.h): 1/2/3 map onto the
+    // contiguous IOC_KEY1..IOC_KEY3 control slots.
+    int aux_index = nav_aux_key_index(key);
+    if (aux_index != 0) return IOC_KEY1 + (aux_index - 1);
+
+    return -1;
 }
 
 void io_test_key_handler(lv_event_t *e) {

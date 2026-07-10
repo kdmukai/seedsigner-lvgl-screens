@@ -78,9 +78,6 @@ void button_list_screen(void *ctx_json)
     bind_screen_navigation(
         cfg,
         screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count,
-        NAV_BODY_VERTICAL,
         // Default to button index 0 selected when nothing is passed in (an explicit
         // initial_selected_index still overrides). A concrete index keeps a button
         // active even when intro text makes the list overflow — a menu/list always

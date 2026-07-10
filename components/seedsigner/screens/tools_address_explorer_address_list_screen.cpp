@@ -213,9 +213,7 @@ void tools_address_explorer_address_list_screen(void *ctx_json) {
     // then follows the joystick as the user moves between rows. In touch mode (no
     // persistent selection) nothing is focused, so every row stays truncated — matching
     // Python's "reveal only while selected".
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

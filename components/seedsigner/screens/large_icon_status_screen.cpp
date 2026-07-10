@@ -361,9 +361,6 @@ void large_icon_status_screen(void *ctx_json) {
     bind_screen_navigation(
         cfg,
         screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count,
-        NAV_BODY_VERTICAL,
         // NAV_INDEX_NONE: the single OK/ack button is active when the screen FITS, but
         // when a long warning overflows the user must scroll through it before the
         // button becomes selectable (read-first). It is NOT pre-focused under overflow.

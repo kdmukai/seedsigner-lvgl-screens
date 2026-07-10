@@ -64,8 +64,6 @@ void psbt_address_details_screen(void *ctx_json) {
     fo.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;
     formatted_address(screen.upper_body, &fo);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
     load_screen_and_cleanup_previous(screen.screen);
 }

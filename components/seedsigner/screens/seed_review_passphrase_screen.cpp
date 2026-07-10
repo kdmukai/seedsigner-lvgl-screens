@@ -289,9 +289,7 @@ void seed_review_passphrase_screen(void *ctx_json) {
         lv_obj_add_event_cb(pp_lbl, passphrase_space_block_free_cb, LV_EVENT_DELETE,        sb);
     }
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    bind_screen_navigation(cfg, screen, 0);
 
     // Position both blocks now that sizes are known. The fingerprint line sits just above
     // the button (Python: button_top - COMPONENT_PADDING - body_font_size*2.5); the

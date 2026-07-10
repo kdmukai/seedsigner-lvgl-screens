@@ -48,6 +48,22 @@ void bind_screen_navigation(const json &cfg, const screen_scaffold_t &screen,
                             lv_obj_t **body_items, size_t body_item_count,
                             nav_body_layout_t body_layout, size_t default_initial_index);
 
+// Scaffold-buttons convenience: vertical body list discovered by the scaffold.
+// Forwards to the full overload above with the scaffold's own button_list /
+// button_list_count and NAV_BODY_VERTICAL — scaffold-built button screens are
+// always vertical lists, so this is the canonical form for them.
+//
+// default_initial_index is deliberately REQUIRED (no default value): it is the one
+// real per-screen policy — 0 means "a menu/list always has a selection";
+// NAV_INDEX_NONE means "read-first status screen: nothing is focused while
+// scrolling is required to reach the buttons" (see nav_config_t.initial_body_index).
+//
+// Screens with custom item arrays, grid layouts (main_menu), or a contract of
+// ignoring any scaffold buttons (donate / reset / power_off_not_required pass a
+// literal NULL, 0) stay on the full overload.
+void bind_screen_navigation(const json &cfg, const screen_scaffold_t &screen,
+                            size_t default_initial_index);
+
 // Add the pulsing WarningEdges border (color = status_color) on top of `screen`
 // (WarningEdgesMixin parity). Reused by warning-class screens (e.g.
 // seed_transcribe_whole_qr_screen.cpp) in addition to the status screens.

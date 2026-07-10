@@ -401,24 +401,6 @@ static void mnemonic_accept_word(mnemonic_ctx_t *c, int word_index) {
 
 // --- event callbacks --------------------------------------------------------
 
-// KEY1/KEY2/KEY3 arrive as LV_KEY_F1..F3 on-device or ASCII '1'/'2'/'3' on the
-// desktop runner (see is_aux_key in navigation.cpp). Returns 1/2/3, else 0.
-static int mnemonic_aux_index(uint32_t key) {
-#ifdef LV_KEY_F1
-    if (key == LV_KEY_F1) return 1;
-#endif
-#ifdef LV_KEY_F2
-    if (key == LV_KEY_F2) return 2;
-#endif
-#ifdef LV_KEY_F3
-    if (key == LV_KEY_F3) return 3;
-#endif
-    if (key == (uint32_t)'1') return 1;
-    if (key == (uint32_t)'2') return 2;
-    if (key == (uint32_t)'3') return 3;
-    return 0;
-}
-
 // Click on a key (joystick ENTER or touch tap): lock in a letter / delete.
 static void mnemonic_value_changed_cb(lv_event_t *e) {
     lv_obj_t *m = lv_event_get_target_obj(e);
@@ -445,7 +427,7 @@ static void mnemonic_kb_preprocess_cb(lv_event_t *e) {
     if (!c) return;
     uint32_t key = lv_event_get_key(e);
 
-    int aux = mnemonic_aux_index(key);
+    int aux = nav_aux_key_index(key);   // shared KEY1/2/3 recognizer (navigation.h)
     if (aux == 1) { mnemonic_scroll(c, -1); lv_event_stop_processing(e); return; }
     if (aux == 3) { mnemonic_scroll(c, +1); lv_event_stop_processing(e); return; }
     if (aux == 2) {

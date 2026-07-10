@@ -625,6 +625,15 @@ extern "C" __attribute__((weak)) void seedsigner_lvgl_on_text_entered(const char
     (void)text;
 }
 
+// Host hook for the aux keys: fired with "KEY1"/"KEY2"/"KEY3" by the nav layer under a
+// NAV_AUX_EMIT key policy and by io_test_screen's self-test forwarding. Weak no-op
+// default; interactive hosts override it to act — and must define a strong override on
+// MinGW/PE, where a weak default only resolves same-TU references (see seedsigner.h and
+// the screen_runner.cpp override). Sibling of the two defaults above.
+extern "C" __attribute__((weak)) void seedsigner_lvgl_on_aux_key(const char *key_name) {
+    (void)key_name;
+}
+
 // Host-facing teardown of the active screen: delete any running animations and clear the
 // active screen's widget tree. Public C API (declared in seedsigner.h).
 void lv_seedsigner_screen_close(void)
