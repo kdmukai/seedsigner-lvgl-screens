@@ -66,6 +66,28 @@ status_type_defaults_t defaults_for_status_type(status_type_t st);
 status_type_t parse_status_type(const nlohmann::json &cfg);
 void apply_status_type_defaults(nlohmann::json &cfg, const status_type_defaults_t &defaults);
 
+// --- top_nav chrome normalization (structural defaults + content validation) ---
+// Content policy (spec: docs/screen-conformance-spec.md): every user-visible
+// string arrives LOCALIZED from the host view layer via cfg. Screens never
+// inject English content defaults — a missing required content key is a
+// developer error and throws. Structural defaults (booleans / layout flags,
+// never rendered as text) remain write-if-absent.
+
+// Ensure cfg["top_nav"] is an object (an absent OR non-object value is replaced
+// with an empty object, exactly like the inline blocks this replaces), then
+// write-if-absent the two structural chrome flags. A host-provided value always
+// wins. Forced (non-defaulted) overrides — e.g. a screen that unconditionally
+// hides the back button — stay explicit assignments at the call site AFTER this
+// call, annotated with their Python constant, so each screen's guarded-vs-forced
+// host-override contract remains visible.
+void ensure_top_nav_structure(nlohmann::json &cfg,
+                              bool default_show_back_button, bool default_show_power_button);
+
+// Validate that the host supplied the (localized) top-nav title: throws a
+// screen-name-prefixed std::runtime_error when cfg["top_nav"]["title"] is
+// missing or not a string. Call after ensure_top_nav_structure().
+void require_top_nav_title(const nlohmann::json &cfg, const char *screen_name);
+
 // Per-glyph ink extents over a UTF-8 string (max ascent/descent above/below the
 // baseline). out_max_descent may be null.
 void measure_text_ink_extents(const lv_font_t *font, const char *text,

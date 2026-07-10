@@ -1,70 +1,79 @@
-#include "seedsigner.h"
-#include "screen_scaffold.h"
-#include "screen_helpers.h"
-#include "components.h"
-#include "camera_preview_overlay.h"
-#include "camera_entropy_overlay.h"
-#include "keyboard_core.h"
-#include "gui_constants.h"
-#include "navigation.h"
-#include "input_profile.h"
-#include "font_registry.h"
-#include "glyph_runs.h"
-#include "locale_loader.h"
-#include "locale_picker.h"
-#include "overlay_manager.h"
+// camera_entropy_overlay_screen
+//
+// Python provenance: no Python screen class — this is a desktop-tooling host. The
+// overlay it renders (camera_entropy_overlay.{h,cpp}) ports the image-entropy
+// capture screens ToolsImageEntropyLivePreviewScreen / ToolsImageEntropyFinalImageScreen
+// (tools_screens.py). On device the host owns the live camera surface and pushes
+// phase changes, so no single Python screen class maps to this entry point.
+//
+// Synthesizes a placeholder gray "camera preview" square and renders the entropy
+// overlay onto it in ONE static, JSON-described phase (preview / capturing /
+// confirm), so the screenshot generator and interactive runner exercise the same
+// overlay spec without a camera. Takes no input and returns no result here — the
+// affordances (back button, shutter, accept button, instruction text) are built by
+// the overlay module and, on device, wire to the host via SEEDSIGNER_RET_BACK_BUTTON
+// / seedsigner_lvgl_on_button_selected.
+//
+// Chrome-free tier (spec §8): no top-nav scaffold — a bare root screen holds the
+// synthetic preview panel and the overlay; the mandatory load_screen_and_cleanup_previous
+// tail still applies.
+//
+// Lifecycle: Tier 1 (stateless) — no statics, no timers, no cleanup callback. The
+// overlay handle is created and immediately destroyed; destroy() frees only the
+// handle struct, leaving the widgets parented on the screen tree.
+//
+// Layout notes: the synthetic-preview-background block (bare root + per-resolution
+// center-cut geometry + gray placeholder panel) is duplicated near-verbatim in the
+// twin camera_preview_overlay_screen. It is kept byte-exact here and slated for
+// extraction into a shared synthetic-preview-background builder at the rollout
+// consolidation decision (spec §12); the two copies deliberately stay identical
+// until then. The back affordance and controls follow input_profile_get_mode()
+// (read inside the overlay): 240px hardware panels get bottom-center instruction
+// text; larger touch panels get on-screen buttons.
+//
+// cfg — the ctx itself is optional (parse_optional_screen_json_ctx: a NULL/empty ctx
+// yields an empty config; any present ctx gets the same strict validation as every
+// other screen). EVERY key is optional; on device the strings arrive host-provided
+// and already localized (a literal baked here would be English-only by construction):
+//   phase                (string, default "preview")   "preview" | "capturing" | "confirm"; unknown -> "preview".
+//   preview_instructions (string, optional)   hardware-mode PREVIEW bottom line (e.g. "< back | click a button"); empty -> omitted.
+//   confirm_instructions (string, optional)   hardware-mode CONFIRM bottom line (e.g. "< reshoot | accept >"); empty -> omitted.
+//   capturing_text       (string, optional)   accent-color transient line during the CAPTURING phase; empty -> omitted.
+//   capture_icon         (string, optional)   glyph forwarded to the touch-mode shutter control; empty -> nullptr.
+//   capture_style        (string, default "ring")   touch-mode PREVIEW capture control: "ring" | "solid" shutter, or "button"; unknown -> "ring".
+//   capture_label        (string, optional)   touch-mode capture BUTTON text (capture_style "button" only); empty -> omitted.
+//   accept_label         (string, optional)   touch-mode CONFIRM Accept button text; empty -> omitted.
+//   fill_landscape       (bool, default: short dim <= 240)   preview geometry: true fills the display, false center-cuts a square with side gutters.
+//   square               (object {x,y,w,h}, optional)   explicit preview-square rect, overriding the per-resolution default.
 
-#include "lvgl.h"
+#include "screen_scaffold.h"        // parse_optional_screen_json_ctx, load_screen_and_cleanup_previous
+#include "seedsigner.h"             // camera_entropy_overlay_screen declaration
+#include "camera_entropy_overlay.h" // camera_entropy_overlay_create/destroy + spec / phase / capture-style types
 
-#if LV_USE_QRCODE
-#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"
-#endif
+#include "lvgl.h"                   // lv_obj / lv_display / lv_color / lv_memzero + per-object style setters
 
-#include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
-#include <cctype>
-#include <set>
-#include <map>
-#include <algorithm>
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#endif
+#include <nlohmann/json.hpp>        // json (optional cfg reads)
+
+#include <string>                   // std::string
 
 using json = nlohmann::json;
 
-// ---------------------------------------------------------------------------
-// camera_entropy_overlay_screen — tooling host for the image-entropy overlay
-// ---------------------------------------------------------------------------
-// Sibling of camera_preview_overlay_screen, for camera_entropy_overlay: synthesizes a
-// placeholder square "preview" and renders the entropy overlay onto it in a static,
-// JSON-described PHASE, so the screenshot generator + runners exercise the SAME spec
-// without a camera. The back affordance/controls follow input_profile_get_mode(), which
-// the tools set per resolution (240 = hardware → text; larger = touch → buttons).
-//
-// JSON config (all optional; on device the strings are host-provided + localized):
-//   phase                : "preview" (default) | "capturing" | "confirm"
-//   preview_instructions : hardware-mode PREVIEW bottom line (e.g. "< back | click a button")
-//   confirm_instructions : hardware-mode CONFIRM bottom line (e.g. "< reshoot | accept >")
-//   capturing_text       : accent-color transient line (e.g. "Capturing image…")
-//   capture_label        : touch-mode label above the shutter
-//   accept_label         : touch-mode Accept button text
-//   fill_landscape       : bool — preview geometry (default: short dim <= 240 fills)
-//   square               : {x,y,w,h} — explicit preview-square rect
+
 void camera_entropy_overlay_screen(void *ctx_json) {
+    // --- Config ---
+
     const char *json_str = (const char *)ctx_json;
 
     json cfg;
-    if (json_str && json_str[0]) {
-        parse_screen_json_ctx(json_str, cfg);
-    } else {
-        cfg = json::object();
-    }
+    parse_optional_screen_json_ctx(json_str, cfg);  // boot/overlay tier: NULL/empty ctx -> empty config; every field optional
 
+    // --- Bare-root build ---
+
+    // Synthetic camera-preview background — duplicated near-verbatim in
+    // camera_preview_overlay_screen and kept byte-exact with it; slated for
+    // extraction into a shared builder at the rollout consolidation decision (§12).
+
+    // 1. Bare root screen (chrome-free: no top-nav scaffold), solid black, nothing scrolls.
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
@@ -76,8 +85,14 @@ void camera_entropy_overlay_screen(void *ctx_json) {
     int32_t screen_w = lv_display_get_horizontal_resolution(NULL);
     int32_t screen_h = lv_display_get_vertical_resolution(NULL);
 
-    // Same per-resolution geometry default as camera_preview_overlay_screen: DSI panels
-    // (short dim > 240) center-cut a SQUARE with static gutters; the Pi Zero fills.
+    // 2. Preview geometry, defaulting per resolution (identical policy to
+    //    camera_preview_overlay_screen): the higher-resolution DSI touch panels
+    //    (short dimension > 240) default to a landscape center-cut SQUARE with static
+    //    side gutters — those panels have per-frame update limits along their long
+    //    axis, so confining the live camera writes to the square (the gutters never
+    //    refresh) is the win, hence not opt-in. The 240px Pi Zero (short dim <= 240)
+    //    FILLS the display. cfg["fill_landscape"] overrides the default in either
+    //    direction; cfg["square"] sets an explicit rect.
     int32_t short_dim = screen_w < screen_h ? screen_w : screen_h;
     bool fill_landscape = cfg.value("fill_landscape", short_dim <= 240);
 
@@ -95,7 +110,8 @@ void camera_entropy_overlay_screen(void *ctx_json) {
         sh = sq.value("h", sh);
     }
 
-    // Placeholder "camera preview" fill (flat mid-gray); gutters stay black.
+    // 3. Placeholder "camera preview" fill (flat mid-gray stands in for live pixels);
+    //    the surrounding gutters stay black.
     lv_obj_t *preview = lv_obj_create(scr);
     lv_obj_set_size(preview, sw, sh);
     lv_obj_set_pos(preview, sx, sy);
@@ -106,47 +122,61 @@ void camera_entropy_overlay_screen(void *ctx_json) {
     lv_obj_set_style_bg_opa(preview, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_remove_flag(preview, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
+    // --- Body ---
+
+    // 4. Initial phase selector (structural, not user-visible text): an unrecognized
+    //    string falls through to the PREVIEW default.
     camera_entropy_phase_t phase = CAMERA_ENTROPY_PHASE_PREVIEW;
     if (cfg.contains("phase") && cfg["phase"].is_string()) {
-        std::string p = cfg["phase"].get<std::string>();
-        if (p == "capturing")    phase = CAMERA_ENTROPY_PHASE_CAPTURING;
-        else if (p == "confirm") phase = CAMERA_ENTROPY_PHASE_CONFIRM;
+        std::string phase_name = cfg["phase"].get<std::string>();
+        if (phase_name == "capturing")    phase = CAMERA_ENTROPY_PHASE_CAPTURING;
+        else if (phase_name == "confirm") phase = CAMERA_ENTROPY_PHASE_CONFIRM;
     }
 
-    std::string preview_instr, confirm_instr, capturing_text, capture_label, accept_label;
-    auto get_str = [&](const char *k, std::string &dst) {
-        if (cfg.contains(k) && cfg[k].is_string()) dst = cfg[k].get<std::string>();
+    // 5. Optional host-localized overlay strings. Each is genuinely phase-dependent
+    //    (e.g. confirm_instructions is unused in the preview phase), so an absent key
+    //    is not an error: it maps to nullptr and the overlay omits that element.
+    std::string preview_instructions, confirm_instructions, capturing_text,
+                capture_icon, capture_label, accept_label;
+    auto read_optional_string = [&](const char *key, std::string &destination) {
+        if (cfg.contains(key) && cfg[key].is_string()) destination = cfg[key].get<std::string>();
     };
-    std::string capture_icon;
-    get_str("preview_instructions", preview_instr);
-    get_str("confirm_instructions", confirm_instr);
-    get_str("capturing_text",       capturing_text);
-    get_str("capture_icon",         capture_icon);
-    get_str("capture_label",        capture_label);
-    get_str("accept_label",         accept_label);
+    read_optional_string("preview_instructions", preview_instructions);
+    read_optional_string("confirm_instructions", confirm_instructions);
+    read_optional_string("capturing_text",       capturing_text);
+    read_optional_string("capture_icon",         capture_icon);
+    read_optional_string("capture_label",        capture_label);
+    read_optional_string("accept_label",         accept_label);
 
+    // 6. Assemble the declarative overlay spec and build it onto the root. Tooling
+    //    renders one static phase, so the handle is freed immediately after build —
+    //    destroy() releases only the handle struct while the widgets stay parented on
+    //    the tree; on device the host instead retains the handle to push
+    //    camera_entropy_overlay_set_phase().
     camera_entropy_overlay_spec_t spec;
     lv_memzero(&spec, sizeof(spec));
     spec.square_x = sx; spec.square_y = sy; spec.square_w = sw; spec.square_h = sh;
-    spec.preview_instructions = preview_instr.empty()  ? nullptr : preview_instr.c_str();
-    spec.confirm_instructions = confirm_instr.empty()  ? nullptr : confirm_instr.c_str();
-    spec.capturing_text       = capturing_text.empty() ? nullptr : capturing_text.c_str();
-    spec.capture_icon         = capture_icon.empty()   ? nullptr : capture_icon.c_str();
+    spec.preview_instructions = preview_instructions.empty() ? nullptr : preview_instructions.c_str();
+    spec.confirm_instructions = confirm_instructions.empty() ? nullptr : confirm_instructions.c_str();
+    spec.capturing_text       = capturing_text.empty()       ? nullptr : capturing_text.c_str();
+    spec.capture_icon         = capture_icon.empty()         ? nullptr : capture_icon.c_str();
+
+    // Touch-mode capture-control style selector (structural): unknown -> RING shutter.
     camera_entropy_capture_style_t capture_style = CAMERA_ENTROPY_CAPTURE_RING;
     if (cfg.contains("capture_style") && cfg["capture_style"].is_string()) {
-        std::string cs = cfg["capture_style"].get<std::string>();
-        if (cs == "solid")       capture_style = CAMERA_ENTROPY_CAPTURE_SOLID;
-        else if (cs == "button") capture_style = CAMERA_ENTROPY_CAPTURE_BUTTON;
+        std::string capture_style_name = cfg["capture_style"].get<std::string>();
+        if (capture_style_name == "solid")       capture_style = CAMERA_ENTROPY_CAPTURE_SOLID;
+        else if (capture_style_name == "button") capture_style = CAMERA_ENTROPY_CAPTURE_BUTTON;
     }
     spec.capture_style        = capture_style;
-    spec.capture_label        = capture_label.empty()  ? nullptr : capture_label.c_str();
-    spec.accept_label         = accept_label.empty()   ? nullptr : accept_label.c_str();
+    spec.capture_label        = capture_label.empty() ? nullptr : capture_label.c_str();
+    spec.accept_label         = accept_label.empty()  ? nullptr : accept_label.c_str();
     spec.phase = phase;
 
-    // Tooling renders one static state, so free the handle right away — destroy()
-    // releases only the handle struct; the widgets stay in the tree.
     camera_entropy_overlay_t *overlay = camera_entropy_overlay_create(scr, &spec);
     camera_entropy_overlay_destroy(overlay);
+
+    // --- Load ---
 
     load_screen_and_cleanup_previous(scr);
 }

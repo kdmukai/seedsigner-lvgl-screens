@@ -59,6 +59,31 @@ void kb_style_matrix(lv_obj_t *matrix, const lv_font_t *item_font);
 
 // --- 240px hardware side panel (KEY1/KEY2/KEY3 indicators) ------------------
 
+// Shared side-panel geometry: ONE physical-hardware alignment contract — the
+// on-screen KEY1/KEY2/KEY3 indicators must line up with the three physical
+// buttons beside the display — derived identically by every screen that shows
+// the panel (seed_add_passphrase, seed_mnemonic_entry, io_test).
+//
+// All y values are body-local: the Python reference offsets are canvas-relative
+// and the body sits TOP_NAV_HEIGHT below the canvas top, so TOP_NAV_HEIGHT is
+// already subtracted. KEY1/KEY3 sit `spacing` above/below the KEY2 slot.
+typedef struct {
+    int32_t panel_w;  // Python right_panel_buttons_width = 56, scaled per display profile
+    int32_t x;        // panel left edge: COMPONENT_PADDING right of the keyboard strip,
+                      // overshooting the right screen edge by `clipped` (Python's hw
+                      // buttons overshoot canvas_width by COMPONENT_PADDING)
+    int32_t key2_y;   // KEY2 slot top: a BUTTON_HEIGHT box centered on the FULL canvas
+    int32_t spacing;  // KEY1/KEY3 offset from the KEY2 slot: 3*COMPONENT_PADDING + BUTTON_HEIGHT
+    int32_t clipped;  // px that run off the right screen edge (= COMPONENT_PADDING);
+                      // pass as kb_side_button's clipped_right
+} kb_side_panel_geometry_t;
+
+// Compute the side-panel geometry from the screen height and the body's content
+// width. Callers pass lv_obj_get_height(screen.screen) and
+// lv_obj_get_content_width(body) — the laid-out tree's own values, NOT the
+// display resolution — so the derivation matches what the screen actually built.
+kb_side_panel_geometry_t kb_side_panel_geometry(int32_t screen_h, int32_t body_content_w);
+
 // Build one display-only side-panel button (not joystick-navigable). The label
 // is centered within the VISIBLE portion (full width minus `clipped_right`, the
 // px that run off the right screen edge). Pass 0 for a fully-visible button.

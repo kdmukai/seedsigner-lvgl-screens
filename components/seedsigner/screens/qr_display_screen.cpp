@@ -1,74 +1,117 @@
-#include "seedsigner.h"
-#include "screen_scaffold.h"
-#include "screen_helpers.h"
-#include "qr_core.h"
-#include "components.h"
-#include "camera_preview_overlay.h"
-#include "camera_entropy_overlay.h"
-#include "keyboard_core.h"
-#include "gui_constants.h"
-#include "navigation.h"
-#include "input_profile.h"
-#include "font_registry.h"
-#include "glyph_runs.h"
-#include "locale_loader.h"
-#include "locale_picker.h"
-#include "overlay_manager.h"
+// qr_display_screen
+//
+// Python provenance: QRDisplayScreen (screen.py)
+//
+// Full-bleed QR display: encodes a payload with the qrcodegen library bundled in
+// LVGL and paints the module matrix at integer scale — black modules on a
+// brightness-driven gray field, black gutters filling the rest of the screen.
+// Any non-UP/DOWN key (hardware) or the top-right X (touch) exits, reporting
+// SEEDSIGNER_RET_BACK_BUTTON with label "qr_display_done" exactly once; the final
+// brightness is also pushed through the weak seedsigner_lvgl_on_qr_brightness()
+// hook so the host can persist Python's SETTING__QR_BRIGHTNESS.
+//
+// Chrome-free tier (spec §8 sanctioned scaffold bypass): bare root screen, no
+// top-nav, self-owned input; the mandatory load_screen_and_cleanup_previous tail
+// still applies.
+//
+// HOST-PUSH PATTERN (this file is the reference shape). Animation is HOST-DRIVEN:
+// Python's encode_qr frame cadence lives host-side (UR fountain frames are
+// generated on the fly and cannot be precomputed), so the screen renders the
+// initial frame from cfg["qr_data"] and the host pushes every subsequent frame
+// via qr_display_set_frame(); qr_display_is_tip_active() lets the host's frame
+// driver HOLD on the valuable first frames while the brightness tip is up. The
+// idiom: the public extern "C" APIs sit between the anonymous-namespace close and
+// the entry point, each carrying its own #if LV_USE_QRCODE/#else availability
+// stub, and reach the live screen through the module-scope singleton g_qr_ctx.
+//
+// Lifecycle (stateful, Tier 2): one lv_malloc'd POD ctx; qr_display_cleanup_cb on
+// the screen root's LV_EVENT_DELETE re-checks the event code, frees the toast
+// timer / input group / qrcodegen buffers, and clears g_qr_ctx under an identity
+// guard — this file is the spec §6 named pattern for the identity-guarded module
+// static + DELETE cleanup.
+//
+// Brightness is a native render concern (Python: QRDisplayThread repaints the QR
+// background from a 31..255 counter; KEY_UP/KEY_DOWN step it ±31). HARDWARE mode
+// raises a passive hint panel — chevron rows naming what the physical keys do —
+// while the keys themselves act. TOUCH mode (no Python equivalent; Python is
+// hardware-only) taps the QR to raise a draggable slider flanked by dim/bright
+// sun icons, with a top-right X to exit. Panel styling ports Python's
+// render_brightness_tip (opacity 224, radius 8). Layout deviation from Python:
+// the panel is a content-sized rounded box bottom-centered 2*COMPONENT_PADDING
+// above the screen edge, where Python renders a full-width band flush to the
+// bottom edge.
+//
+// The only user-visible strings are brighter_text/darker_text, which arrive
+// ALREADY TRANSLATED from the host view layer (nothing user-visible is baked
+// here).
+//
+// cfg:
+//   qr_data              (string, required, non-empty)  initial-frame payload,
+//            interpreted per data_encoding.
+//   qr_mode              (string, default "auto")  numeric|alphanumeric|byte|auto:
+//            the qrcodegen encode mode (unknown values throw).
+//   data_encoding        (string, default "utf8")  utf8|hex|base64: how qr_data
+//            maps to payload bytes (unknown values throw).
+//   border               (int, default 2, validated 0..20)  quiet-zone width in
+//            modules (Python: part_to_image(..., border=2)).
+//   initial_brightness   (int, default 62, clamped 31..255)  starting gray level
+//            (Python: SETTING__QR_BRIGHTNESS, default 62).
+//   show_brightness_tips (bool, default true)  whether the brightness panel
+//            exists at all (Python: SETTING__QR_BRIGHTNESS_TIPS, default enabled).
+//   brighter_text        (string, required when show_brightness_tips)  localized
+//            hardware hint-row text (Python: _("Brighter")).
+//   darker_text          (string, required when show_brightness_tips)  localized
+//            hardware hint-row text (Python: _("Darker")).
+//   tips_visible         (bool, default false)  gallery/demo aid: raise the panel
+//            persistently on load (no auto-hide), including in static stills.
+//   input.mode           (string, optional, "touch"|"hardware")  input-mode
+//            override, read via nav_mode_override_from_cfg (screen_helpers);
+//            absent -> the global input profile decides.
+//   test_frames          (array of string, optional)  NOT read by this screen:
+//            the desktop runner harness reads it and stands in for the host,
+//            pushing each entry through qr_display_set_frame().
 
-#include "lvgl.h"
+#include "screen_scaffold.h"  // parse_screen_json_ctx, load_screen_and_cleanup_previous
+#include "seedsigner.h"       // qr_display_screen / qr_display_set_frame / qr_display_is_tip_active / seedsigner_lvgl_on_qr_brightness decls, SEEDSIGNER_RET_BACK_BUTTON, seedsigner_lvgl_on_button_selected, seedsigner_lvgl_is_static_render
+#include "gui_constants.h"    // COMPONENT_PADDING, BODY_FONT, BODY_FONT_COLOR, ACCENT_COLOR, INACTIVE_COLOR, ICON_FONT__SEEDSIGNER, ICON_LARGE_BUTTON_FONT__SEEDSIGNER, SeedSignerIconConstants, active_profile
+#include "input_profile.h"    // input_mode_t, INPUT_MODE_TOUCH/INPUT_MODE_HARDWARE, input_profile_get_mode
+#include "qr_core.h"          // qr_encode_mode_t, QR_ENC_*, qr_decode_payload, qr_encode_bytes, build_gutter_close_button
+#include "screen_helpers.h"   // nav_mode_override_from_cfg (input.mode override)
 
+#include "lvgl.h"             // lv_obj / lv_label / lv_slider / lv_group / lv_indev / lv_timer / lv_draw_rect + per-object style setters
+
+#include <nlohmann/json.hpp>  // json (cfg reads)
+
+#include <cstddef>            // size_t (payload/frame lengths)
+#include <cstdint>            // uint8_t / uint32_t / int32_t
+#include <stdexcept>          // std::runtime_error (required-field validation)
+#include <string>             // std::string
+#include <vector>             // std::vector (decoded payload bytes)
+
+// Feature-gated last: the qrcodegen encoder bundled inside LVGL.
 #if LV_USE_QRCODE
-#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"
-#endif
-
-#include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
-#include <cctype>
-#include <set>
-#include <map>
-#include <algorithm>
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
+#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"  // qrcodegen_getSize/getModule, qrcodegen_BUFFER_LEN_MAX
 #endif
 
 using json = nlohmann::json;
 
-// ---------------------------------------------------------------------------
-// qr_display_screen — full-bleed QR renderer (parity with Python QRDisplayScreen)
-// ---------------------------------------------------------------------------
-// Chrome-free full-screen QR (no top-nav), matching Python's QRDisplayScreen. Encodes
-// a payload with the qrcodegen library bundled in LVGL and paints the module matrix at
-// integer scale, black modules on a brightness-driven gray background.
-//
-// Animation is HOST-DRIVEN. The encode_qr.py cadence lives in Python (UR fountain frames
-// are generated on the fly and cannot be precomputed), so the screen renders the initial
-// frame from cfg["qr_data"] and the host pushes each subsequent frame via
-// qr_display_set_frame() — mirroring the camera-overlay set_* live-update pattern.
-//
-// Brightness is a native render concern. HARDWARE: KEY_UP/DOWN raise a passive hint panel
-// with up/down chevrons + translated "Brighter"/"Darker" text (physical keys do the work).
-// TOUCH: tap the QR to raise a draggable slider flanked by dim/bright "sun" icons; top-right
-// X to close. The final value is reported on exit via the weak seedsigner_lvgl_on_qr_brightness()
-// hook so the host can persist SETTING__QR_BRIGHTNESS.
-//
-// The only user-facing strings are the hardware hints' brighter_text/darker_text, passed in
-// ALREADY TRANSLATED (this repo's screens are locale-agnostic; translation is the host's job).
-
-// Optional host hook (weak no-op default; a host overrides to persist the setting).
+// Optional host hook: fired on every brightness change and once on exit so the host
+// can persist SETTING__QR_BRIGHTNESS (prototype in seedsigner.h). Weak no-op default;
+// slated to move to components.cpp (the shared weak-default home) at the
+// callback-surface rollout decision.
 extern "C" __attribute__((weak)) void seedsigner_lvgl_on_qr_brightness(uint8_t /*brightness*/) {}
 
 #if LV_USE_QRCODE
 
 namespace {
 
-// qr_encode_mode_t + the QR encode/decode core (qr_encode_bytes, qr_decode_payload) and
-// build_gutter_close_button now live in qr_core.{h,cpp}, shared with the transcribe screen.
+// ---------------------------------------------------------------------------
+// Screen state (Tier-2 ctx + host-push singleton)
+// ---------------------------------------------------------------------------
 
+// Pure POD (pointers/ints/bools only): allocated with lv_malloc + lv_memzero in
+// the entry point and freed with lv_free in qr_display_cleanup_cb (§6 Tier-2
+// allocation idiom).
 struct qr_display_ctx_t {
     lv_obj_t   *screen;
     lv_obj_t   *qr_obj;         // plain object; QR modules are direct-drawn in qr_draw_cb
@@ -96,19 +139,24 @@ struct qr_display_ctx_t {
 // single-threaded (host pushes frames from the same loop), so no locking is needed.
 qr_display_ctx_t *g_qr_ctx = nullptr;
 
-// Touch toast stays up longer than the hardware hint so there's time to tap it.
-constexpr uint32_t QR_TOAST_MS_HARDWARE = 1200;
-constexpr uint32_t QR_TOAST_MS_TOUCH    = 3000;
+// Touch toast stays up longer than the hardware hint (Python's tip duration is
+// 1.2 s) so there's time to tap and drag it.
+constexpr uint32_t QR_DISPLAY_TOAST_MS_HARDWARE = 1200;
+constexpr uint32_t QR_DISPLAY_TOAST_MS_TOUCH    = 3000;
+
+// ---------------------------------------------------------------------------
+// QR encode + direct draw
+// ---------------------------------------------------------------------------
 
 // brightness (31..255) -> gray, EXACT Python parity: hex(n)[2:] * 3 == (n,n,n).
-lv_color_t qr_gray(int b) {
-    uint32_t v = (uint32_t)(b < 0 ? 0 : (b > 255 ? 255 : b));
-    return lv_color_hex((v << 16) | (v << 8) | v);
+lv_color_t qr_display_gray(int brightness) {
+    uint32_t gray = (uint32_t)(brightness < 0 ? 0 : (brightness > 255 ? 255 : brightness));
+    return lv_color_hex((gray << 16) | (gray << 8) | gray);
 }
 
-// Encode into ctx->out reusing the screen cfg's mode/scratch. Thin wrapper over
-// qr_encode_bytes; keeps qr_display_screen's call sites unchanged (qr_display QRs are
-// machine-scanned, so they use qrcodegen's fast auto mask — no python-mask parity).
+// Encode into ctx->out reusing the screen cfg's mode/scratch — a thin ctx-bound
+// wrapper over qr_encode_bytes (qr_display QRs are machine-scanned, so they use
+// qrcodegen's fast auto mask — no python-mask parity).
 bool qr_encode(qr_display_ctx_t *ctx, const uint8_t *data, size_t len) {
     return qr_encode_bytes(ctx->mode, data, len, ctx->tmp, ctx->out, /*match_python_mask=*/false);
 }
@@ -175,93 +223,106 @@ void qr_encode_and_paint(qr_display_ctx_t *ctx, const uint8_t *data, size_t len)
     lv_obj_invalidate(ctx->qr_obj);  // schedules qr_draw_cb to repaint with the new matrix
 }
 
-// --- brightness + toast ----------------------------------------------------
+// ---------------------------------------------------------------------------
+// Brightness + toast
+// ---------------------------------------------------------------------------
 
-void qr_hide_toast(qr_display_ctx_t *ctx) {
+void qr_display_hide_toast(qr_display_ctx_t *ctx) {
     if (ctx->toast) lv_obj_add_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN);
 }
 
-void qr_toast_timer_cb(lv_timer_t *t) {
-    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_timer_get_user_data(t);
-    qr_hide_toast(ctx);
+void qr_display_toast_timer_cb(lv_timer_t *timer) {
+    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_timer_get_user_data(timer);
+    qr_display_hide_toast(ctx);
     ctx->toast_timer = NULL;  // one-shot self-deletes (repeat count 1)
 }
 
-void qr_show_toast(qr_display_ctx_t *ctx, uint32_t ms) {
+void qr_display_show_toast(qr_display_ctx_t *ctx, uint32_t auto_hide_ms) {
     if (!ctx->toast) return;
     lv_obj_remove_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(ctx->toast);
     if (ctx->toast_timer) { lv_timer_del(ctx->toast_timer); ctx->toast_timer = NULL; }
-    // ms == 0 keeps the toast up persistently (the brightness_tip demo scenario / static
-    // stills); a positive ms arms a one-shot auto-hide (normal brightness interaction).
-    // Stills never animate the auto-hide either.
-    if (!seedsigner_lvgl_is_static_render() && ms > 0) {
-        ctx->toast_timer = lv_timer_create(qr_toast_timer_cb, ms, ctx);
+    // auto_hide_ms == 0 keeps the toast up persistently (the brightness_tip demo
+    // scenario / static stills); a positive value arms a one-shot auto-hide (normal
+    // brightness interaction). Stills never animate the auto-hide either.
+    if (!seedsigner_lvgl_is_static_render() && auto_hide_ms > 0) {
+        ctx->toast_timer = lv_timer_create(qr_display_toast_timer_cb, auto_hide_ms, ctx);
         lv_timer_set_repeat_count(ctx->toast_timer, 1);
     }
 }
 
-void qr_set_brightness(qr_display_ctx_t *ctx, int b) {
-    if (b < 31) b = 31;
-    if (b > 255) b = 255;
-    if (b == ctx->brightness) return;
-    ctx->brightness = b;
+void qr_display_set_brightness(qr_display_ctx_t *ctx, int brightness) {
+    if (brightness < 31) brightness = 31;
+    if (brightness > 255) brightness = 255;
+    if (brightness == ctx->brightness) return;
+    ctx->brightness = brightness;
     // The gray quiet-zone field is qr_obj's background; recolor it (the matrix is
     // unchanged, still in ctx->out). set_style invalidates the object, so qr_draw_cb
     // repaints the black modules on top of the new gray.
-    lv_obj_set_style_bg_color(ctx->qr_obj, qr_gray(ctx->brightness), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ctx->qr_obj, qr_display_gray(ctx->brightness), LV_PART_MAIN);
     // Real-time change signal: on a brightness change the host RESTARTS an animated sequence
     // (Python restarts the UR fountain so the valuable pure frames are re-delivered from the
     // start) and may persist the value. Fires per change; the host may debounce slider drags.
     seedsigner_lvgl_on_qr_brightness((uint8_t)ctx->brightness);
 }
 
-void qr_exit(qr_display_ctx_t *ctx) {
+// Report the exit exactly once (emitted latch): final brightness first (the host's
+// persist cue), then the BACK_BUTTON navigation event that tears the screen down.
+void qr_display_exit(qr_display_ctx_t *ctx) {
     if (ctx->emitted) return;
     ctx->emitted = true;
     seedsigner_lvgl_on_qr_brightness((uint8_t)ctx->brightness);
     seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_BACK_BUTTON, "qr_display_done");
 }
 
-// --- input handlers --------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Input handlers
+// ---------------------------------------------------------------------------
 
-// Hardware/joystick: UP/DOWN adjust brightness (+ hint toast); any other key exits.
-void qr_key_cb(lv_event_t *e) {
+// Hardware/joystick: UP/DOWN adjust brightness (+ hint toast); any other key exits
+// (Python _run: any other input exits the screen).
+void qr_display_key_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_KEY) return;
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
     uint32_t key = lv_event_get_key(e);
     if (key == LV_KEY_UP) {
-        qr_set_brightness(ctx, ctx->brightness + 31);
-        if (ctx->show_tips) qr_show_toast(ctx, QR_TOAST_MS_HARDWARE);
+        qr_display_set_brightness(ctx, ctx->brightness + 31);
+        if (ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_HARDWARE);
     } else if (key == LV_KEY_DOWN) {
-        qr_set_brightness(ctx, ctx->brightness - 31);
-        if (ctx->show_tips) qr_show_toast(ctx, QR_TOAST_MS_HARDWARE);
+        qr_display_set_brightness(ctx, ctx->brightness - 31);
+        if (ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_HARDWARE);
     } else {
-        qr_exit(ctx);
+        qr_display_exit(ctx);
     }
 }
 
 // Touch: tapping the QR raises the (interactive) toast.
-void qr_canvas_tap_cb(lv_event_t *e) {
+void qr_display_tap_cb(lv_event_t *e) {
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
-    if (ctx && ctx->show_tips) qr_show_toast(ctx, QR_TOAST_MS_TOUCH);
+    if (ctx && ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_TOUCH);
 }
+
 // Touch: the brightness slider drives the gray live as it is dragged; each change also
 // resets the panel's idle auto-hide so it stays up while the user is adjusting.
-void qr_slider_cb(lv_event_t *e) {
+void qr_display_slider_cb(lv_event_t *e) {
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     lv_obj_t *slider = lv_event_get_target_obj(e);
     if (!ctx || !slider) return;
-    qr_set_brightness(ctx, (int)lv_slider_get_value(slider));
-    qr_show_toast(ctx, QR_TOAST_MS_TOUCH);
-}
-void qr_close_cb(lv_event_t *e) {
-    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
-    if (ctx) qr_exit(ctx);
+    qr_display_set_brightness(ctx, (int)lv_slider_get_value(slider));
+    qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_TOUCH);
 }
 
-void qr_cleanup_cb(lv_event_t *e) {
+// Touch: the top-right gutter X exits.
+void qr_display_close_cb(lv_event_t *e) {
+    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
+    if (ctx) qr_display_exit(ctx);
+}
+
+// LV_EVENT_DELETE teardown on the screen root: free the toast timer / input group /
+// qrcodegen buffers, clear the host-push singleton under an identity guard, then
+// free the ctx.
+void qr_display_cleanup_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
@@ -273,19 +334,21 @@ void qr_cleanup_cb(lv_event_t *e) {
     lv_free(ctx);
 }
 
-// --- widget builders -------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Widget builders
+// ---------------------------------------------------------------------------
 
 // A small icon label (brightness "sun", chevron, ...) in `font`, body-colored.
-lv_obj_t *qr_make_icon(lv_obj_t *parent, const char *glyph, const lv_font_t *font) {
-    lv_obj_t *ic = lv_label_create(parent);
-    lv_label_set_text(ic, glyph);
-    lv_obj_set_style_text_font(ic, font, LV_PART_MAIN);
-    lv_obj_set_style_text_color(ic, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
-    return ic;
+lv_obj_t *qr_display_make_icon(lv_obj_t *parent, const char *glyph, const lv_font_t *font) {
+    lv_obj_t *icon_label = lv_label_create(parent);
+    lv_label_set_text(icon_label, glyph);
+    lv_obj_set_style_text_font(icon_label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(icon_label, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+    return icon_label;
 }
 
 // A horizontal, content-sized flex row with the standard inter-item gap.
-lv_obj_t *qr_make_row(lv_obj_t *parent) {
+lv_obj_t *qr_display_make_row(lv_obj_t *parent) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -298,10 +361,10 @@ lv_obj_t *qr_make_row(lv_obj_t *parent) {
 // One hardware hint row: a chevron (which physical key) + the translated label. The
 // physical KEY_UP/KEY_DOWN do the work; the row tells the user which key does what. Text
 // (not an icon) so it reads as a clear instruction; the host passes it already translated.
-void qr_build_hint_row(lv_obj_t *parent, const char *chevron, const std::string &text) {
-    lv_obj_t *row = qr_make_row(parent);
+void qr_display_build_hint_row(lv_obj_t *parent, const char *chevron, const std::string &text) {
+    lv_obj_t *row = qr_display_make_row(parent);
     lv_obj_set_style_pad_ver(row, COMPONENT_PADDING / 2, LV_PART_MAIN);
-    qr_make_icon(row, chevron, &ICON_FONT__SEEDSIGNER);
+    qr_display_make_icon(row, chevron, &ICON_FONT__SEEDSIGNER);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text.c_str());
     lv_obj_set_style_text_font(label, &BODY_FONT, LV_PART_MAIN);
@@ -316,13 +379,13 @@ void qr_build_hint_row(lv_obj_t *parent, const char *chevron, const std::string 
 // interaction. HARDWARE shows passive chevron + translated-text hint rows (physical keys
 // act); TOUCH shows a draggable slider flanked by dim/bright suns (a slider is the natural
 // touch affordance for a range). brighter_text/darker_text are used only by the hardware hints.
-void qr_build_toast(qr_display_ctx_t *ctx, const std::string &brighter, const std::string &darker) {
+void qr_display_build_toast(qr_display_ctx_t *ctx, const std::string &brighter, const std::string &darker) {
     lv_obj_t *toast = lv_obj_create(ctx->screen);
     lv_obj_remove_style_all(toast);
     lv_obj_set_size(toast, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(toast, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(toast, 224, LV_PART_MAIN);        // Python render_brightness_tip opacity
-    lv_obj_set_style_radius(toast, 8 * active_profile().px_multiplier / 100, LV_PART_MAIN);
+    lv_obj_set_style_radius(toast, 8 * active_profile().px_multiplier / 100, LV_PART_MAIN);  // Python radius=8, px-scaled
     lv_obj_set_style_pad_all(toast, COMPONENT_PADDING, LV_PART_MAIN);
     lv_obj_set_flex_flow(toast, LV_FLEX_FLOW_COLUMN);
     // LEFT-align rows (cross axis = START) so the hardware hint chevrons line up in a column
@@ -333,8 +396,8 @@ void qr_build_toast(qr_display_ctx_t *ctx, const std::string &brighter, const st
 
     if (ctx->input_mode == INPUT_MODE_TOUCH) {
         // dim sun (small) | slider | bright sun (large)
-        lv_obj_t *row = qr_make_row(toast);
-        qr_make_icon(row, SeedSignerIconConstants::BRIGHTNESS, &ICON_FONT__SEEDSIGNER);
+        lv_obj_t *row = qr_display_make_row(toast);
+        qr_display_make_icon(row, SeedSignerIconConstants::BRIGHTNESS, &ICON_FONT__SEEDSIGNER);
         lv_obj_t *slider = lv_slider_create(row);
         lv_slider_set_range(slider, 31, 255);                 // same 31..255 gray range
         lv_slider_set_value(slider, ctx->brightness, LV_ANIM_OFF);
@@ -342,26 +405,25 @@ void qr_build_toast(qr_display_ctx_t *ctx, const std::string &brighter, const st
         lv_obj_set_style_bg_color(slider, lv_color_hex(INACTIVE_COLOR), LV_PART_MAIN);
         lv_obj_set_style_bg_color(slider, lv_color_hex(ACCENT_COLOR), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(slider, lv_color_hex(BODY_FONT_COLOR), LV_PART_KNOB);
-        lv_obj_add_event_cb(slider, qr_slider_cb, LV_EVENT_VALUE_CHANGED, ctx);
-        qr_make_icon(row, SeedSignerIconConstants::BRIGHTNESS, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER);
+        lv_obj_add_event_cb(slider, qr_display_slider_cb, LV_EVENT_VALUE_CHANGED, ctx);
+        qr_display_make_icon(row, SeedSignerIconConstants::BRIGHTNESS, &ICON_LARGE_BUTTON_FONT__SEEDSIGNER);
     } else {
-        qr_build_hint_row(toast, SeedSignerIconConstants::CHEVRON_UP,   brighter);
-        qr_build_hint_row(toast, SeedSignerIconConstants::CHEVRON_DOWN, darker);
+        qr_display_build_hint_row(toast, SeedSignerIconConstants::CHEVRON_UP,   brighter);
+        qr_display_build_hint_row(toast, SeedSignerIconConstants::CHEVRON_DOWN, darker);
     }
 
     lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
     ctx->toast = toast;
 }
 
-// Touch-only top-right X to dismiss the chrome-free QR (parity screens exit via any key
-// on hardware; touch has no keys, so it gets an explicit affordance clear of the toast).
-void qr_build_close_button(qr_display_ctx_t *ctx) {
-    build_gutter_close_button(ctx->screen, qr_close_cb, ctx);
-}
-
 }  // namespace
 
 #endif  // LV_USE_QRCODE
+
+// ---------------------------------------------------------------------------
+// Host-push public APIs (the banner's host-push pattern; each carries its own
+// availability stub for builds without LV_USE_QRCODE)
+// ---------------------------------------------------------------------------
 
 // Push the next animated-QR frame from the host. See seedsigner.h.
 extern "C" void qr_display_set_frame(const void *data, size_t len) {
@@ -385,45 +447,57 @@ extern "C" bool qr_display_is_tip_active(void) {
 #endif
 }
 
+
 void qr_display_screen(void *ctx_json) {
 #if !LV_USE_QRCODE
     // Built without the bundled QR encoder (no shipping build does this). Load a blank
     // screen so the entry point exists and navigation into it does not crash.
     (void)ctx_json;
-    lv_obj_t *scr = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
-    load_screen_and_cleanup_previous(scr);
+    lv_obj_t *screen_root = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_root, lv_color_black(), LV_PART_MAIN);
+    load_screen_and_cleanup_previous(screen_root);
 #else
-    json cfg;
-    parse_screen_json_ctx((const char *)ctx_json, cfg);
+    // --- Config ---
 
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // Required payload: the initial QR frame. Every validation below throws BEFORE
+    // any LVGL object or ctx allocation exists, so no throw path can leak.
     if (!cfg.contains("qr_data") || !cfg["qr_data"].is_string() ||
         cfg["qr_data"].get<std::string>().empty()) {
         throw std::runtime_error("qr_display_screen: non-empty qr_data (string) is required");
     }
     std::string qr_data = cfg["qr_data"].get<std::string>();
 
-    std::string mode_s = cfg.value("qr_mode", std::string("auto"));
-    qr_encode_mode_t mode;
-    if (mode_s == "numeric")            mode = QR_ENC_NUMERIC;
-    else if (mode_s == "alphanumeric")  mode = QR_ENC_ALNUM;
-    else if (mode_s == "byte")          mode = QR_ENC_BYTE;
-    else if (mode_s == "auto")          mode = QR_ENC_AUTO;
+    // Encode mode (structural default "auto"; unknown values throw).
+    std::string qr_mode_string = cfg.value("qr_mode", std::string("auto"));
+    qr_encode_mode_t qr_mode;
+    if (qr_mode_string == "numeric")            qr_mode = QR_ENC_NUMERIC;
+    else if (qr_mode_string == "alphanumeric")  qr_mode = QR_ENC_ALNUM;
+    else if (qr_mode_string == "byte")          qr_mode = QR_ENC_BYTE;
+    else if (qr_mode_string == "auto")          qr_mode = QR_ENC_AUTO;
     else throw std::runtime_error("qr_display_screen: qr_mode must be numeric|alphanumeric|byte|auto");
 
-    std::string enc = cfg.value("data_encoding", std::string("utf8"));
-    if (enc != "utf8" && enc != "hex" && enc != "base64")
+    // Payload byte interpretation (structural default "utf8"; unknown values throw).
+    std::string data_encoding = cfg.value("data_encoding", std::string("utf8"));
+    if (data_encoding != "utf8" && data_encoding != "hex" && data_encoding != "base64")
         throw std::runtime_error("qr_display_screen: data_encoding must be utf8|hex|base64");
 
+    // Quiet-zone width in modules (Python: part_to_image(..., border=2)).
     int border = cfg.value("border", 2);
     if (border < 0 || border > 20)
         throw std::runtime_error("qr_display_screen: border must be 0..20");
 
+    // Starting gray level, clamped to Python's 31..255 brightness range
+    // (Python: SETTING__QR_BRIGHTNESS, default 62).
     int brightness = cfg.value("initial_brightness", 62);
     if (brightness < 31) brightness = 31;
     if (brightness > 255) brightness = 255;
 
-    bool show_tips = cfg.value("show_brightness_tips", true);
+    bool show_tips = cfg.value("show_brightness_tips", true);  // Python: SETTING__QR_BRIGHTNESS_TIPS default enabled
     std::string brighter, darker;
     if (show_tips) {
         // Hardware brightness hints use translated TEXT (touch uses an icon slider instead).
@@ -438,61 +512,77 @@ void qr_display_screen(void *ctx_json) {
         darker   = cfg["darker_text"].get<std::string>();
     }
 
+    // Input mode: the cfg override (input.mode) wins, else the global input profile.
     bool has_override = false;
     input_mode_t mode_override = INPUT_MODE_TOUCH;
     nav_mode_override_from_cfg(cfg, has_override, mode_override);
-    input_mode_t imode = has_override ? mode_override : input_profile_get_mode();
+    input_mode_t input_mode = has_override ? mode_override : input_profile_get_mode();
 
-    std::vector<uint8_t> payload = qr_decode_payload(qr_data, enc);
+    // Decode the initial payload (throws on malformed hex — still before any allocation).
+    std::vector<uint8_t> payload = qr_decode_payload(qr_data, data_encoding);
 
-    // Full-bleed screen, black gutters (the QR square is gray).
-    lv_obj_t *scr = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(scr, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_width(scr, 0, LV_PART_MAIN);
-    lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    // --- Bare-root build ---
 
+    // 1. Full-bleed bare root (chrome-free tier: no top-nav scaffold), black gutters
+    //    (the QR square itself is gray), nothing scrolls.
+    lv_obj_t *screen_root = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_root, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(screen_root, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(screen_root, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(screen_root, 0, LV_PART_MAIN);
+    lv_obj_set_scrollbar_mode(screen_root, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(screen_root, LV_OBJ_FLAG_SCROLLABLE);
+
+    // 2. Tier-2 heap ctx (POD -> lv_malloc + lv_memzero; released by
+    //    qr_display_cleanup_cb) + the version-40-sized qrcodegen scratch/output pair.
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_malloc(sizeof(qr_display_ctx_t));
     lv_memzero(ctx, sizeof(*ctx));
-    ctx->screen     = scr;
-    ctx->input_mode = imode;
+    ctx->screen     = screen_root;
+    ctx->input_mode = input_mode;
     ctx->brightness = brightness;
     ctx->border     = border;
-    ctx->mode       = mode;
+    ctx->mode       = qr_mode;
     ctx->show_tips  = show_tips;
     ctx->tmp = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
     ctx->out = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
 
-    // Square QR area sized to the display's short dimension, centered. This is a PLAIN
-    // object, not an lv_canvas: a short-dimension-square RGB565 canvas buffer (~200-460 KB)
-    // overflows the ESP32's ~128 KB LVGL pool and freezes the screen. Its gray background
-    // is the quiet-zone field (so a rare encode failure shows a clean gray, not garbage);
-    // qr_draw_cb paints the black modules on top with no large buffer. See qr_draw_cb.
-    int32_t screen_w = lv_display_get_horizontal_resolution(NULL);
-    int32_t screen_h = lv_display_get_vertical_resolution(NULL);
-    int32_t sd = screen_w < screen_h ? screen_w : screen_h;
-    ctx->qr_side = sd;
-    ctx->qr_obj  = lv_obj_create(scr);
+    // 3. Square QR area sized to the display's short dimension, centered. This is a PLAIN
+    //    object, not an lv_canvas: a short-dimension-square RGB565 canvas buffer (~200-460 KB)
+    //    overflows the ESP32's ~128 KB LVGL pool and freezes the screen. Its gray background
+    //    is the quiet-zone field (so a rare encode failure shows a clean gray, not garbage);
+    //    qr_draw_cb paints the black modules on top with no large buffer. See qr_draw_cb.
+    int32_t screen_width  = lv_display_get_horizontal_resolution(NULL);
+    int32_t screen_height = lv_display_get_vertical_resolution(NULL);
+    int32_t short_side = screen_width < screen_height ? screen_width : screen_height;
+    ctx->qr_side = short_side;
+    ctx->qr_obj  = lv_obj_create(screen_root);
     lv_obj_remove_style_all(ctx->qr_obj);
-    lv_obj_set_size(ctx->qr_obj, sd, sd);
+    lv_obj_set_size(ctx->qr_obj, short_side, short_side);
     lv_obj_center(ctx->qr_obj);
-    lv_obj_set_style_bg_color(ctx->qr_obj, qr_gray(ctx->brightness), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ctx->qr_obj, qr_display_gray(ctx->brightness), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ctx->qr_obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_remove_flag(ctx->qr_obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(ctx->qr_obj, qr_draw_cb, LV_EVENT_DRAW_MAIN_END, ctx);
 
+    // 4. Host-push registration + the initial frame (subsequent frames arrive through
+    //    qr_display_set_frame(), which re-encodes into ctx->out and invalidates).
     g_qr_ctx = ctx;
 
-    // Initial frame.
     qr_encode_and_paint(ctx, payload.data(), payload.size());
 
-    if (show_tips) qr_build_toast(ctx, brighter, darker);
+    // 5. Brightness toast, built hidden; input raises it.
+    if (show_tips) qr_display_build_toast(ctx, brighter, darker);
 
-    if (imode == INPUT_MODE_HARDWARE) {
+    // --- Input wiring ---
+
+    // Chrome-free tier: input is self-owned — no bind_screen_navigation. Hardware gets a
+    // keypad sink; touch gets tap/slider/close affordances.
+    if (input_mode == INPUT_MODE_HARDWARE) {
         // Keypad sink in a dedicated group: UP/DOWN = brightness, any other key exits.
-        lv_obj_t *sink = lv_obj_create(scr);
+        // (This sink+group+indev-assign block is the chrome-free keypad idiom shared with
+        // the transcribe/splash/screensaver screens — slated for extraction at the rollout
+        // decision, ledger #11.)
+        lv_obj_t *sink = lv_obj_create(screen_root);
         lv_obj_set_size(sink, 1, 1);
         lv_obj_set_pos(sink, 0, 0);
         lv_obj_set_style_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -502,7 +592,7 @@ void qr_display_screen(void *ctx_json) {
 
         ctx->group = lv_group_create();
         lv_group_add_obj(ctx->group, sink);
-        lv_obj_add_event_cb(sink, qr_key_cb, LV_EVENT_KEY, ctx);
+        lv_obj_add_event_cb(sink, qr_display_key_cb, LV_EVENT_KEY, ctx);
 
         lv_indev_t *indev = NULL;
         while ((indev = lv_indev_get_next(indev)) != NULL) {
@@ -512,11 +602,15 @@ void qr_display_screen(void *ctx_json) {
             }
         }
     } else {
-        // Touch: tap the QR to raise the toast; explicit top-right X to close.
+        // Touch: tap the QR to raise the toast; an explicit top-right X (the shared
+        // qr_core gutter close button) to exit — parity screens exit via any key on
+        // hardware, but touch has no keys, so it gets an affordance clear of the toast.
         lv_obj_add_flag(ctx->qr_obj, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(ctx->qr_obj, qr_canvas_tap_cb, LV_EVENT_CLICKED, ctx);
-        qr_build_close_button(ctx);
+        lv_obj_add_event_cb(ctx->qr_obj, qr_display_tap_cb, LV_EVENT_CLICKED, ctx);
+        build_gutter_close_button(ctx->screen, qr_display_close_cb, ctx);
     }
+
+    // --- Load ---
 
     // Brightness panel visibility on load:
     //  - cfg "tips_visible" (gallery/demo aid): shown persistently (ms=0), incl. static stills.
@@ -527,14 +621,14 @@ void qr_display_screen(void *ctx_json) {
     //    stay clean: seedsigner_lvgl_is_static_render() creates no auto-hide timer, so we skip the on-start show.
     if (show_tips) {
         if (cfg.value("tips_visible", false)) {
-            qr_show_toast(ctx, 0);
+            qr_display_show_toast(ctx, 0);
         } else if (!seedsigner_lvgl_is_static_render()) {
-            qr_show_toast(ctx, ctx->input_mode == INPUT_MODE_HARDWARE
-                                   ? QR_TOAST_MS_HARDWARE : QR_TOAST_MS_TOUCH);
+            qr_display_show_toast(ctx, ctx->input_mode == INPUT_MODE_HARDWARE
+                                           ? QR_DISPLAY_TOAST_MS_HARDWARE : QR_DISPLAY_TOAST_MS_TOUCH);
         }
     }
 
-    lv_obj_add_event_cb(scr, qr_cleanup_cb, LV_EVENT_DELETE, ctx);
-    load_screen_and_cleanup_previous(scr);
+    lv_obj_add_event_cb(screen_root, qr_display_cleanup_cb, LV_EVENT_DELETE, ctx);
+    load_screen_and_cleanup_previous(screen_root);
 #endif  // LV_USE_QRCODE
 }

@@ -1,81 +1,116 @@
-#include "seedsigner.h"
-#include "screen_scaffold.h"
-#include "screen_helpers.h"
-#include "components.h"
-#include "camera_preview_overlay.h"
-#include "camera_entropy_overlay.h"
-#include "keyboard_core.h"
-#include "gui_constants.h"
-#include "navigation.h"
-#include "input_profile.h"
-#include "font_registry.h"
-#include "glyph_runs.h"
-#include "locale_loader.h"
-#include "locale_picker.h"
-#include "overlay_manager.h"
+// main_menu_screen
+//
+// Python provenance: MainMenuScreen (screen.py), a LargeButtonScreen subclass —
+// the grid geometry below ports LargeButtonScreen's 4-button layout math.
+//
+// The Home menu: a fixed 2x2 grid of four large icon buttons (Scan / Seeds /
+// Tools / Settings) under a title bar. Pressing a tile returns its index through
+// the standard navigation callback. The four icons never localize; the title and
+// the four labels do (host-supplied via cfg).
+//
+// Bespoke-grid tier (spec §8): listed under the chrome-free / scaffold-bypass
+// tier as the bespoke Python-parity grid. It KEEPS the scaffold's top-nav chrome
+// (create_top_nav_screen_scaffold) but bypasses the scaffold's button_list
+// layout, laying out its own absolute-positioned 2x2 grid (no flex, no lv_grid)
+// to match Python's LargeButtonScreen pixel math.
+//
+// Documented deviations from Python:
+//   - Button WIDTH is capped to the 320x240 (4:3) profile's proportions so wider-
+//     than-4:3 displays pillar-box the grid instead of stretching the tiles;
+//     Python renders full-width 2-across. 240x240 and 320x240 stay under the cap
+//     and are byte-identical.
+//   - button_list must carry EXACTLY four labels; any other count silently keeps
+//     the English defaults (flagged low-severity; kept as documented behavior so a
+//     malformed cfg still renders a legible menu rather than blanks).
+//
+// BOOT-TIER EXCEPTION (spec §5 content policy): main_menu is one of the two
+// boot/NULL-ctx screens that KEEP built-in English content defaults (title
+// "Home"; labels Scan/Seeds/Tools/Settings) by documented contract — it can be
+// shown before any host view layer exists to supply localized cfg. So, unlike
+// every scaffold screen, its user-visible strings are NOT converted to required-
+// throws, and a NULL ctx is tolerated (parse_optional_screen_json_ctx). The
+// merge-patch RFC-7396 null-delete of a defaulted title, and the wrong-count
+// English label fallback, are known low-severity behaviors, left as-is.
+//
+// Lifecycle: Tier 1 (stateless) — no timers / heap ctx / cleanup callback; the
+// two function-local static arrays are const data with no teardown concern. Ends
+// with load_screen_and_cleanup_previous.
+//
+// cfg — the ctx itself is OPTIONAL (boot tier): parse_optional_screen_json_ctx
+// turns a NULL/empty ctx into an empty object, so the built-in defaults below
+// render the menu before any host view layer exists. A present ctx is merged over
+// those defaults (RFC 7396 merge-patch), so a host overrides only the keys it
+// supplies.
+//   top_nav.title              (string, default "Home")   RESERVED English boot default.
+//   top_nav.show_back_button   (bool,   default false)    Python MainMenuScreen override.
+//   top_nav.show_power_button  (bool,   default true)     Python MainMenuScreen override.
+//   button_list                (array of 4 label strings, optional)  the four localized
+//            tile labels; used ONLY when it supplies exactly four (else the English
+//            defaults, see the deviation above). Erased before the scaffold so it stays
+//            in no-button_list mode and this screen lays out the bespoke 2x2 grid.
+//   allow_screensaver          (bool, default true)  [read by scaffold]  per-screen saver
+//            opt-out; false stamps SS_OBJ_FLAG_NO_SCREENSAVER on the root.
+//   top_nav.icon / top_nav.icon_color  (string, optional)  [read by scaffold]  optional
+//            contextual glyph beside the title; unused by the reference home menu.
+//   input.mode                 (string "touch"|"hardware", optional)  [read by nav]
+//            input-mode override.
+//   input.keys.key1/key2/key3  (string "enter"|"noop"|"emit", default "enter")  [read by nav]
+//            hardware aux-key policy.
+//   initial_selected_index     (int, default 0)  [read by nav]  initially focused tile.
 
-#include "lvgl.h"
+#include "screen_scaffold.h"  // parse_optional_screen_json_ctx, create_top_nav_screen_scaffold, bind_screen_navigation, load_screen_and_cleanup_previous, screen_scaffold_t
+#include "seedsigner.h"       // main_menu_screen decl
+#include "components.h"       // large_icon_button
+#include "gui_constants.h"    // MAIN_MENU_TITLE_FONT, SeedSignerIconConstants, TOP_NAV_HEIGHT, COMPONENT_PADDING, EDGE_PADDING
+#include "navigation.h"       // NAV_BODY_GRID (nav_body_layout_t)
+#include "screen_helpers.h"   // read_button_list_labels
 
-#if LV_USE_QRCODE
-#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"
-#endif
+#include "lvgl.h"             // lv_obj_get_content_width / lv_obj_get_height / lv_obj_set_size / lv_obj_set_pos
 
-#include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
-#include <cctype>
-#include <set>
-#include <map>
-#include <algorithm>
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#endif
+#include <nlohmann/json.hpp>  // json (defaults literal + merge_patch + cfg reads)
+
+#include <string>             // std::string
+#include <utility>            // std::move (labels adopt the parsed cfg vector)
+#include <vector>             // std::vector (the label list)
 
 using json = nlohmann::json;
 
-void main_menu_screen(void *ctx_json)
-{
-    // The home menu's structure is fixed (a 2x2 grid of four icon buttons), but
-    // its DISPLAY TEXT — the top-nav title and the four button labels — must
-    // localize. So those come from the JSON context (translated upstream by the
-    // scenario localizer / Python view layer); the four icons never translate.
-    //
-    // Defaults below reproduce the original English home menu, so the screen
-    // still renders correctly when called with no context (ctx_json == NULL).
+
+void main_menu_screen(void *ctx_json) {
+    // --- Config ---
+
+    // Boot-tier defaults: reproduce the original English home menu so the screen
+    // still renders when called with no context (ctx_json == NULL). These are the
+    // Python MainMenuScreen overrides (title font 26 via MAIN_MENU_TITLE_FONT below,
+    // show_back_button=False, show_power_button=True) plus the RESERVED English title
+    // (see the boot-tier exception in the banner).
     json cfg = {
         {"top_nav", {{"title", "Home"}, {"show_back_button", false}, {"show_power_button", true}}},
     };
 
-    // Merge any provided context over the defaults (RFC 7396 merge-patch): a
-    // caller can override just the keys it cares about (e.g. only button_list).
+    // Merge any provided context over the defaults (RFC 7396 merge-patch): a caller
+    // can override just the keys it cares about (e.g. only button_list). The shared
+    // optional parse turns a missing context into an empty (normalized) object, so
+    // the defaults above survive untouched.
     const char *json_str = (const char *)ctx_json;
-    if (json_str) {
-        json incoming;
-        try {
-            incoming = json::parse(json_str);
-        } catch (...) {
-            throw std::runtime_error("invalid JSON syntax");
-        }
-        if (!incoming.is_object()) {
-            throw std::runtime_error("screen config must be a JSON object");
-        }
-        cfg.merge_patch(incoming);
-    }
+    json incoming;
+    parse_optional_screen_json_ctx(json_str, incoming);
+    cfg.merge_patch(incoming);
 
-    // Button labels come from cfg["button_list"] when it supplies exactly the
-    // four the grid needs; otherwise fall back to the English defaults. (The
-    // grid is a fixed 2x2, so a mismatched count means an ill-formed context —
-    // defaulting keeps the screen legible rather than rendering blanks.)
-    static const char *default_labels[] = {"Scan", "Seeds", "Tools", "Settings"};
-    std::vector<std::string> labels(default_labels, default_labels + 4);
+    // Button labels come from cfg["button_list"] when it supplies exactly the four
+    // the grid needs; otherwise fall back to the English defaults. (The grid is a
+    // fixed 2x2, so a mismatched count means an ill-formed context — defaulting keeps
+    // the screen legible rather than rendering blanks.)
+    //
+    // read_button_list_labels lives in screen_helpers though this file is currently
+    // its sole caller; that single-caller consolidation is slated for a rollout
+    // decision (spec §12), not resolved here.
+    static const char *main_menu_default_labels[] = {"Scan", "Seeds", "Tools", "Settings"};
+    std::vector<std::string> labels(main_menu_default_labels, main_menu_default_labels + 4);
     {
-        std::vector<std::string> from_cfg;
-        if (read_button_list_labels(cfg, from_cfg) && from_cfg.size() == 4) {
-            labels = std::move(from_cfg);
+        std::vector<std::string> labels_from_cfg;
+        if (read_button_list_labels(cfg, labels_from_cfg) && labels_from_cfg.size() == 4) {
+            labels = std::move(labels_from_cfg);
         }
     }
 
@@ -85,83 +120,108 @@ void main_menu_screen(void *ctx_json)
     // list in the body, which bleeds through the gaps behind the grid.
     cfg.erase("button_list");
 
-    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false, &MAIN_MENU_TITLE_FONT);
-    lv_obj_t *scr = screen.screen;
-    lv_obj_t *body_content = screen.body;
+    // --- Scaffold ---
 
-    static const char *icons[] = {
+    // Chrome only: the scaffold builds the top-nav (with the 26px MainMenuScreen
+    // title font) and an empty body; this screen fills that body with its own grid.
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, /*scrollable=*/false, &MAIN_MENU_TITLE_FONT);
+
+    // The four fixed home-menu glyphs, parallel to `labels` (Scan/Seeds/Tools/
+    // Settings). Icons never localize, so they are a static table, not cfg-driven.
+    static const char *main_menu_icons[] = {
         SeedSignerIconConstants::SCAN,
         SeedSignerIconConstants::SEEDS,
         SeedSignerIconConstants::TOOLS,
         SeedSignerIconConstants::SETTINGS,
     };
 
-    const int32_t available_w = lv_obj_get_content_width(body_content);
-    const int32_t screen_h = lv_obj_get_height(scr);
-
-    // Match the Python LargeButtonScreen button sizing:
-    //   button_height = int((canvas_height - top_nav.height - 2*COMPONENT_PADDING - EDGE_PADDING) / 2)
-    int32_t button_h = (screen_h - TOP_NAV_HEIGHT - 2 * COMPONENT_PADDING - EDGE_PADDING) / 2;
-    int32_t button_w = (available_w - COMPONENT_PADDING) / 2;
-
-    // Cap the button width to the 320x240 profile's button proportions so wider-
-    // than-4:3 displays don't stretch the 2x2 grid buttons too far. Keep the full
-    // button HEIGHT (the grid still fills the screen vertically) but limit the
-    // WIDTH to the reference aspect, then center the grid (below) so the body
-    // pillar-boxes symmetrically. The top_nav spans the full width regardless, so
-    // its power button stays pinned to the far right.
+    // --- Geometry ---
     //
-    // Reference = the 320x240 buttons (the widest small/4:3 profile), computed from
-    // that profile's geometry. 320x240 renders at PX_MULTIPLIER_100, so these are
-    // the unscaled base constants (EDGE_PADDING=8, COMPONENT_PADDING=8,
-    // top_nav_height=48):
-    //   ref_h = (240 - 48 - 2*8 - 8) / 2          = 84
-    //   ref_w = (320 - 2*8 [body pad] - 8) / 2    = 148
-    // 240x240 (ref_w would be 108) and 320x240 (exactly 148) stay below the cap, so
-    // both are left byte-identical; only 480/800 narrow + pillar-box.
-    constexpr int32_t REF_BTN_W = 148;   // 320x240 button width
-    constexpr int32_t REF_BTN_H = 84;    // 320x240 button height
-    int32_t max_button_w = button_h * REF_BTN_W / REF_BTN_H;
-    if (button_w > max_button_w) {
-        button_w = max_button_w;
+    // Fully manual, absolute-positioned 2x2 grid (Python LargeButtonScreen parity):
+    // derive the button box size and the pillar-box centering offsets from the parent
+    // dimensions here, THEN create and place the four buttons in the Body section
+    // below. No flex, no lv_grid — the scaffold supplied only chrome + an empty body.
+    const int32_t available_width = lv_obj_get_content_width(screen.body);
+    const int32_t screen_height   = lv_obj_get_height(screen.screen);
+
+    // Button-sizing pass — match Python LargeButtonScreen:
+    //   button_height = int((canvas_height - top_nav.height - 2*COMPONENT_PADDING - EDGE_PADDING) / 2)
+    //   button_width  = int((canvas_width  - 2*EDGE_PADDING [body pad] - COMPONENT_PADDING) / 2)
+    // available_width is already the body's CONTENT width (canvas minus the body's
+    // 2*EDGE_PADDING), so only the single inter-column COMPONENT_PADDING is subtracted.
+    int32_t button_height = (screen_height - TOP_NAV_HEIGHT - 2 * COMPONENT_PADDING - EDGE_PADDING) / 2;
+    int32_t button_width  = (available_width - COMPONENT_PADDING) / 2;
+
+    // Width-cap pass (documented deviation from Python) — cap the button WIDTH to the
+    // 320x240 profile's button proportions so wider-than-4:3 displays don't stretch the
+    // grid. Keep the full button HEIGHT (the grid still fills the screen vertically) but
+    // limit the WIDTH to the reference aspect, then center the grid (below) so the body
+    // pillar-boxes symmetrically. The top_nav spans the full width regardless, so its
+    // power button stays pinned to the far right.
+    //
+    // Reference = the 320x240 buttons (the widest small/4:3 profile), computed from that
+    // profile's geometry. 320x240 renders at PX_MULTIPLIER_100, so these are the
+    // unscaled base constants (EDGE_PADDING=8, COMPONENT_PADDING=8, top_nav_height=48):
+    //   REFERENCE_BUTTON_HEIGHT = (240 - 48 - 2*8 - 8) / 2       = 84
+    //   REFERENCE_BUTTON_WIDTH  = (320 - 2*8 [body pad] - 8) / 2 = 148
+    // 240x240 (uncapped width would be 108) and 320x240 (exactly 148) stay below the
+    // cap, so both are left byte-identical; only 480/800 narrow + pillar-box.
+    constexpr int32_t REFERENCE_BUTTON_WIDTH  = 148;   // 320x240 button width
+    constexpr int32_t REFERENCE_BUTTON_HEIGHT = 84;    // 320x240 button height
+    int32_t max_button_width = button_height * REFERENCE_BUTTON_WIDTH / REFERENCE_BUTTON_HEIGHT;
+    if (button_width > max_button_width) {
+        button_width = max_button_width;
     }
 
-    // Vertically center the 2x2 grid, matching the Python LargeButtonScreen:
+    // Vertical-centering pass — center the 2x2 grid, matching Python LargeButtonScreen:
     //   button_start_y = top_nav_h + (canvas_h - (top_nav_h + CP) - 2*button_h - CP) / 2
-    // Computed relative to the body origin (which sits at top_nav bottom).
-    int32_t below_nav = screen_h - TOP_NAV_HEIGHT;
-    int32_t y_offset = (below_nav - COMPONENT_PADDING - 2 * button_h - COMPONENT_PADDING) / 2;
+    // Computed relative to the body origin (which sits at the top_nav bottom).
+    int32_t below_top_nav = screen_height - TOP_NAV_HEIGHT;
+    int32_t y_offset = (below_top_nav - COMPONENT_PADDING - 2 * button_height - COMPONENT_PADDING) / 2;
 
-    // Horizontally center the (possibly width-capped) grid within the body so wide
-    // displays pillar-box symmetrically; x_offset is 0 when the grid fills the width.
-    int32_t grid_w = 2 * button_w + COMPONENT_PADDING;
-    int32_t x_offset = (available_w - grid_w) / 2;
+    // Horizontal-centering pass — center the (possibly width-capped) grid within the
+    // body so wide displays pillar-box symmetrically; x_offset is 0 when the grid
+    // already fills the width.
+    int32_t grid_width = 2 * button_width + COMPONENT_PADDING;
+    int32_t x_offset = (available_width - grid_width) / 2;
     if (x_offset < 0) x_offset = 0;
 
+    // --- Body ---
+
+    // Build the four large icon buttons into the body and size each to the derived
+    // button box; the explicit positions are set immediately after.
     lv_obj_t *buttons[4] = {NULL, NULL, NULL, NULL};
     for (uint32_t i = 0; i < 4; ++i) {
-        lv_obj_t *btn = large_icon_button(body_content, icons[i], labels[i].c_str(), NULL);
-        lv_obj_set_size(btn, button_w, button_h);
-        buttons[i] = btn;
+        // align_to is NULL: these tiles are absolutely positioned (lv_obj_set_pos
+        // below), not chain-aligned to a sibling.
+        lv_obj_t *button = large_icon_button(screen.body, main_menu_icons[i], labels[i].c_str(), /*align_to=*/NULL);
+        lv_obj_set_size(button, button_width, button_height);
+        buttons[i] = button;
     }
 
-    // first row
+    // First row: the two top tiles at the grid's top-left / top-right.
     lv_obj_set_pos(buttons[0], x_offset, y_offset);
-    lv_obj_set_pos(buttons[1], x_offset + button_w + COMPONENT_PADDING, y_offset);
+    lv_obj_set_pos(buttons[1], x_offset + button_width + COMPONENT_PADDING, y_offset);
 
-    // second row
-    lv_obj_set_pos(buttons[2], x_offset, y_offset + button_h + COMPONENT_PADDING);
-    lv_obj_set_pos(buttons[3], x_offset + button_w + COMPONENT_PADDING, y_offset + button_h + COMPONENT_PADDING);
+    // Second row: the two bottom tiles, one button-height + gutter below the first.
+    lv_obj_set_pos(buttons[2], x_offset, y_offset + button_height + COMPONENT_PADDING);
+    lv_obj_set_pos(buttons[3], x_offset + button_width + COMPONENT_PADDING, y_offset + button_height + COMPONENT_PADDING);
 
-    // Bind shared nav behavior using this screen's body focusables/layout.
+    // --- Navigation + load ---
+
+    // Grid navigation over the four tiles (NAV_BODY_GRID: the joystick moves across
+    // the 2x2). Menu-style default index 0 — the home menu always has a tile focused;
+    // a host may override via cfg initial_selected_index. main_menu stays on the FULL
+    // bind_screen_navigation overload (custom item array + grid layout), not the
+    // scaffold-buttons convenience form.
     bind_screen_navigation(
         cfg,
         screen,
         buttons,
         4,
         NAV_BODY_GRID,
-        0
+        /*default_initial_index=*/0
     );
 
-    load_screen_and_cleanup_previous(scr);
+    load_screen_and_cleanup_previous(screen.screen);
 }

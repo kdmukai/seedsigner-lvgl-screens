@@ -60,6 +60,16 @@ void label_set_line_autoscroll(lv_obj_t* label, uint32_t begin_hold_ms, uint32_t
 // presentation forms) — use seedsigner_label_run_overflows() for those.
 int32_t label_subset_text_width(lv_obj_t* label, const lv_font_t* font);
 
+// One monospace cell advance (px) of `font` — the canonical fixed-width metric every
+// monospace-grid screen shares. Measures a run of `run_length` '0' glyphs with
+// lv_text_get_size (letter/line space 0, unconstrained width, LV_TEXT_FLAG_NONE) and
+// divides by the run length, so any sub-pixel rounding in the per-glyph advance
+// averages out. Clamped to >= 1 so callers can safely divide by the result.
+// Callers laying out an N-column grid pass run_length = N so the measured run (and
+// its N-1 kern pairs) matches their grid arithmetic exactly (e.g. an 11-bit-column
+// grid passes 11).
+int32_t monospace_char_width(const lv_font_t *font, int run_length = 10);
+
 // Button visual style, mirroring Python ButtonListScreen.Button_cls:
 //   DEFAULT           — plain button (optional inline icons).
 //   CHECKBOX          — multi-select: a leading checkbox glyph, ticked when checked

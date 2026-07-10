@@ -1,12 +1,9 @@
 #include "navigation.h"
+#include "seedsigner.h"      // seedsigner_lvgl_on_aux_key host hook (weak default in components.cpp)
 #include "components.h"
 #include "input_profile.h"
 
 #include <cmath>
-
-extern "C" __attribute__((weak)) void seedsigner_lvgl_on_aux_key(const char *key_name) {
-    (void)key_name;
-}
 
 typedef struct {
     lv_group_t   *group;
@@ -27,20 +24,23 @@ typedef struct {
 // Aux-key helpers
 // ---------------------------------------------------------------------------
 
-static bool is_aux_key(uint32_t key, int *idx_out) {
+// Public shared recognizer (declared in navigation.h). Keep the #ifdef branches:
+// LV_KEY_F1..F3 are the documented forward-compat contract for on-device keycodes,
+// even though no current build defines them (they compile out everywhere today).
+int nav_aux_key_index(uint32_t key) {
 #ifdef LV_KEY_F1
-    if (key == LV_KEY_F1) { *idx_out = 1; return true; }
+    if (key == LV_KEY_F1) return 1;
 #endif
 #ifdef LV_KEY_F2
-    if (key == LV_KEY_F2) { *idx_out = 2; return true; }
+    if (key == LV_KEY_F2) return 2;
 #endif
 #ifdef LV_KEY_F3
-    if (key == LV_KEY_F3) { *idx_out = 3; return true; }
+    if (key == LV_KEY_F3) return 3;
 #endif
-    if (key == (uint32_t)'1') { *idx_out = 1; return true; }
-    if (key == (uint32_t)'2') { *idx_out = 2; return true; }
-    if (key == (uint32_t)'3') { *idx_out = 3; return true; }
-    return false;
+    if (key == (uint32_t)'1') return 1;
+    if (key == (uint32_t)'2') return 2;
+    if (key == (uint32_t)'3') return 3;
+    return 0;
 }
 
 static nav_aux_action_t action_for_aux(const nav_ctx_t *ctx, int idx) {
@@ -234,8 +234,8 @@ static void nav_key_handler(lv_event_t *e) {
     uint32_t key = lv_event_get_key(e);
 
     // --- Aux keys (KEY1 / KEY2 / KEY3) ---
-    int aux_idx = 0;
-    if (is_aux_key(key, &aux_idx)) {
+    int aux_idx = nav_aux_key_index(key);
+    if (aux_idx != 0) {
         nav_aux_action_t action = action_for_aux(ctx, aux_idx);
         if (action == NAV_AUX_ENTER) {
             lv_obj_t *item = get_focused_item(ctx);

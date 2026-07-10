@@ -289,35 +289,19 @@ lv_obj_t *make_body_text_label(lv_obj_t *parent, const char *text, int32_t width
 
 
 // ---------------------------------------------------------------------------
-// large_icon_status_screen
+// Status-type trio: the status-screen family's shared config layer.
+//
+// status_type_t / status_type_defaults_t are defined in screen_helpers.h.
+// defaults_for_status_type() is the per-status lookup table — hero icon glyph,
+// status color, reserved default title / button label, warning-edges default,
+// and text-inset multiplier. parse_status_type() reads and validates
+// cfg["status_type"] against the enumerated values. apply_status_type_defaults()
+// injects the table's defaults into a screen cfg (and forces is_bottom_list)
+// before the scaffold reads it. Consumed by large_icon_status_screen — see that
+// file's banner for the screen contract; Python's Success / Warning /
+// DireWarning / Error variants all funnel through this table.
 // ---------------------------------------------------------------------------
-//
-// Ports Python's `LargeIconStatusScreen` family — Success / Warning /
-// DireWarning / Error — to LVGL. The Python class hierarchy collapses into a
-// single function with a `status_type` enum.
-//
-// Layout (built on `create_top_nav_screen_scaffold` with cfg.button_list +
-// cfg.is_bottom_list = true):
-//
-//   ┌────────────────────────────────┐
-//   │ TopNav (title; optional back)  │
-//   ├────────────────────────────────┤
-//   │  [hero icon, status_color]     │
-//   │  [headline, status_color]      │
-//   │  [body text, body color]       │
-//   │  ┄ ┄ ┄ flex spacer ┄ ┄ ┄ ┄ ┄  │
-//   │  [ OK / I understand ]         │
-//   └────────────────────────────────┘
-//
-// When `cfg.warning_edges` is true a pulsing colored border is rendered on top
-// of the screen (see `add_warning_edges_overlay`).
-//
-// `large_icon_status_screen` itself only adds the icon, headline, and body
-// text into `scaffold.upper_body`; the scaffold owns the spacer and the
-// button.
 
-// status_type_t + status_type_defaults_t are defined in screen_helpers.h (shared
-// with the status-family screens that move out).
 status_type_defaults_t defaults_for_status_type(status_type_t st) {
     switch (st) {
         case status_type_t::SUCCESS:
@@ -370,6 +354,12 @@ status_type_t parse_status_type(const json &cfg) {
 // `is_bottom_list` get sensible per-status defaults if the JSON omits them.
 // `is_bottom_list` is forced to true for status screens, matching
 // LargeIconStatusScreen.__post_init__.
+//
+// NOTE (rollout): the English content defaults below (title, button label)
+// predate the content policy (docs/screen-conformance-spec.md) — user-visible
+// text must come localized from the host, so when the status family goes
+// through conformance these become require-and-throw and the structural parts
+// rebuild on ensure_top_nav_structure. Unchanged until then.
 void apply_status_type_defaults(json &cfg, const status_type_defaults_t &defaults) {
     if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) {
         cfg["top_nav"] = json::object();
@@ -383,6 +373,46 @@ void apply_status_type_defaults(json &cfg, const status_type_defaults_t &default
 
     // LargeIconStatusScreen always pins the button to the bottom.
     cfg["is_bottom_list"] = true;
+}
+
+
+// ---------------------------------------------------------------------------
+// top_nav chrome normalization (structural defaults + content validation).
+//
+// Content policy (docs/screen-conformance-spec.md): user-visible strings —
+// including the top-nav title — arrive LOCALIZED from the host view layer via
+// cfg; a screen never injects an English content default. Structural flags
+// (never rendered as text) keep write-if-absent defaults — a host-provided
+// value always wins. Forced (non-defaulted) overrides — e.g. unconditionally
+// hiding the back button — stay explicit assignments at the call site AFTER
+// the call, preserving each screen's guarded-vs-forced host-override contract
+// instead of burying it in parameters.
+
+void ensure_top_nav_structure(json &cfg,
+                              bool default_show_back_button, bool default_show_power_button) {
+    // Match the inline blocks this replaces: an absent OR non-object top_nav is
+    // replaced with a fresh object (a non-object would throw in the scaffold).
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) {
+        cfg["top_nav"] = json::object();
+    }
+
+    if (!cfg["top_nav"].contains("show_back_button")) {
+        cfg["top_nav"]["show_back_button"] = default_show_back_button;
+    }
+    if (!cfg["top_nav"].contains("show_power_button")) {
+        cfg["top_nav"]["show_power_button"] = default_show_power_button;
+    }
+}
+
+
+// Missing localized content is a developer error in the host view layer —
+// surface it as a screen-named throw, never patch over it with English text.
+void require_top_nav_title(const json &cfg, const char *screen_name) {
+    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object() ||
+        !cfg["top_nav"].contains("title") || !cfg["top_nav"]["title"].is_string()) {
+        throw std::runtime_error(std::string(screen_name) +
+                                 ": top_nav.title is required (localized content comes from the host)");
+    }
 }
 
 

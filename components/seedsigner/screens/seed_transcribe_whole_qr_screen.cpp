@@ -1,22 +1,27 @@
-// seed_transcribe_whole_qr_screen — the "whole QR" overview step of the SeedQR
-// hand-transcription flow (Python SeedTranscribeSeedQRWholeQRScreen, a
-// WarningEdgesMixin + ButtonListScreen). It shows the COMPLETE SeedQR /
-// CompactSeedQR as a small grid overview so the user can see the whole pattern
-// before zooming in to copy it cell-by-cell, with a single bottom "Begin NxN"
-// button and the pulsing ORANGE WarningEdges (the seed is on screen).
+// seed_transcribe_whole_qr_screen
+//
+// Python provenance: SeedTranscribeSeedQRWholeQRScreen (seed_screens.py)
+//
+// The "whole QR" overview step of the SeedQR hand-transcription flow (Python:
+// a WarningEdgesMixin + ButtonListScreen). Shows the COMPLETE SeedQR /
+// CompactSeedQR as a small on-screen grid so the user can take in the whole
+// pattern before zooming in to copy it cell-by-cell
+// (seed_transcribe_zoomed_qr_screen). The single bottom button advances into
+// the zoomed flow through the standard navigation callback, and the pulsing
+// DIRE_WARNING WarningEdges border signals that seed material is on screen.
 //
 // Layout parity with Python __post_init__:
-//   - Standard ButtonListScreen chrome (TopNav title "Transcribe SeedQR", one
-//     bottom button "Begin {N}x{N}", is_bottom_list=True, DIRE_WARNING status).
-//   - A square QR image, centered horizontally, whose top edge sits directly
-//     below the TopNav and whose height fills the gap down to the button minus
+//   - Standard ButtonListScreen chrome: localized TopNav title, one bottom
+//     button, is_bottom_list forced true, DIRE_WARNING status color.
+//   - A square QR field, centered horizontally, whose top edge sits directly
+//     below the TopNav and whose side fills the gap down to the button minus
 //     one COMPONENT_PADDING:
 //         qr_side = button.top - top_nav.bottom - COMPONENT_PADDING
 //     The QR is a WHITE field (1-module quiet zone) with black modules; this
 //     mirrors python-qrcode's StyledPilImage, whose back_color is white.
 //
 // QR rendering: the module matrix is DIRECT-DRAWN in a DRAW_MAIN_END callback
-// (per-module rects on the object's own white background), exactly like
+// (per-module shapes over the object's own white background), exactly like
 // qr_display_screen — NEVER a full-image lv_canvas, which OOMs the ESP32's small
 // internal-DRAM LVGL pool. Unlike qr_display's machine-scanned QRs (fast
 // qrcodegen auto-mask), a TRANSCRIPTION QR is hand-copied, so its mask pattern
@@ -24,38 +29,89 @@
 // replicate python-qrcode's best_mask_pattern() selection here (an 8-mask
 // penalty pass over qr_python_lost_point) rather than using qrcodegen's auto
 // mask. See the mask-parity block below.
+//
+// Lifecycle: Tier 2 (stateful) in its minimal form — one heap ctx (the encoded
+// matrix + draw parameters) with one LV_EVENT_DELETE cleanup callback,
+// registered on the QR object rather than the screen root; the QR object lives
+// exactly as long as the screen, so teardown timing is identical. No timers,
+// no animations owned here, no host-push state.
+//
+// cfg:
+//   qr_data        (string, required, non-empty)  the SeedQR payload: a numeric
+//          digit stream (standard SeedQR) or hex-encoded entropy bytes
+//          (CompactSeedQR).
+//   data_encoding  (string, default "utf8")  "utf8" (payload bytes = the string
+//          bytes) | "hex" (payload arrives hex-encoded; JSON cannot carry raw
+//          bytes). Deliberately narrower than qr_core's shared decoder: no
+//          base64 — SeedQR payloads are digits or hex only.
+//   qr_mode        (string, default "auto")  "numeric" | "alphanumeric" |
+//          "byte" | "auto" (probe order numeric > alphanumeric > byte). Must
+//          name the mode the Pi Zero encoder used so the module matrix matches;
+//          an unrecognized string throws.
+//   border         (int, default 1)   quiet-zone modules around the matrix
+//          (Python: qr.qrimage(border=1)). Accepted unvalidated (qr_display
+//          clamps 0..20): a negative value silently mis-maps the module grid —
+//          kept as-is, tracked in the conformance bug ledger.
+//   top_nav.title  (string, required)  localized title (Python:
+//          _("Transcribe SeedQR")).
+//   top_nav.show_back_button  (bool, default true)   Python ButtonListScreen default.
+//   top_nav.show_power_button (bool, default false)  Python ButtonListScreen default.
+//   button_list    (array, required, non-empty)  the localized action button.
+//          Python formats _("Begin {}x{}") with the QR module count
+//          (TRANSLATOR_NOTE: refers to the QR size — 21x21, 25x25, or 29x29),
+//          so the host supplies the already-formatted "Begin NxN" label.
+//   is_bottom_list  forced true (Python: is_bottom_list = True); a host-supplied
+//          value is ignored.
+//   initial_selected_index    (int, optional)        overrides the default initial
+//            focus of 0 (navigation layer; Python selected_button).
+//   input.mode                (string, optional)     "touch" | "hardware" input-mode
+//            override (navigation layer).
+//   input.keys.key1/key2/key3 (string, optional)     per-aux-key policy "enter" |
+//            "noop" | "emit" (navigation layer).
+//   allow_screensaver         (bool, default true)   per-screen screensaver policy
+//            (normalized by parse_screen_json_ctx, stamped by the scaffold).
 
-#include "seedsigner.h"
-#include "navigation.h"
-#include "gui_constants.h"
-#include "screen_scaffold.h"
+#include "screen_scaffold.h"  // parse_screen_json_ctx / create_top_nav_screen_scaffold / add_warning_edges_overlay / bind_screen_navigation / load_screen_and_cleanup_previous
+#include "seedsigner.h"       // seed_transcribe_whole_qr_screen decl, screen_scaffold_t fields
+#include "gui_constants.h"    // BACKGROUND_COLOR, COMPONENT_PADDING, DIRE_WARNING_COLOR
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title
 
-#include "lvgl.h"
+#include "lvgl.h"             // lv_obj tree, draw-event direct rendering, display resolution queries
 
+#include <nlohmann/json.hpp>  // json (cfg reads + structural-default writes)
+
+#include <cctype>             // isspace (hex-payload whitespace skip)
+#include <cmath>              // llround (drift-free module-grid mapping)
+#include <cstdint>            // uint8_t (qrcodegen matrix bytes)
+#include <cstring>            // memcpy (byte-mode encode scratch)
+#include <stdexcept>          // std::runtime_error (required-field validation)
+#include <string>             // std::string
+#include <vector>             // std::vector (decoded payload bytes)
+
+// Feature-gated last: the bundled qrcodegen lives inside the LVGL source tree.
+// This file sits one level deeper (screens/) than the component root, so the
+// repo-root-relative reach needs the extra ../.
 #if LV_USE_QRCODE
-// File lives one level deeper (screens/), so this repo-root-relative reach to
-// LVGL's bundled qrcodegen needs an extra ../ vs. the component-root copy.
-#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"
+#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"  // qrcodegen_* encoder + module accessors
 #endif
-
-#include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <cctype>
 
 using json = nlohmann::json;
 
-namespace {
 
 #if LV_USE_QRCODE
+
+namespace {
+
+// NOTE: the decode + mask-parity region below duplicates qr_core internals;
+// slated for merge into qr_core at the rollout consolidation decision — kept
+// verbatim-identical to qr_core's copies until then so the two stay diffable.
 
 // -------------------------------------------------------------------------
 // Payload decoding: JSON cannot carry raw bytes, so a binary CompactSeedQR
 // payload arrives hex-encoded (data_encoding:"hex"); a numeric SeedQR digit
-// string arrives as-is (utf8). Mirrors qr_display_screen's qr_decode_payload.
+// string arrives as-is (utf8). Mirrors qr_core's shared qr_decode_payload
+// hex/utf8 paths (base64 deliberately dropped — SeedQR payloads are digits
+// or hex only).
 // -------------------------------------------------------------------------
 bool hexval(char c, int &v) {
     if (c >= '0' && c <= '9') { v = c - '0';        return true; }
@@ -96,8 +152,10 @@ std::vector<uint8_t> decode_payload(const std::string &s, const std::string &enc
 // qr_python_lost_point transcribes qrcode/util.py lost_point (rules 1-4).
 //
 // This is the same algorithm proven matrix-identical in the SeedQR zoomed-in /
-// qr_display parity work; kept self-contained here so the shared qr_display path
-// stays on its fast auto-mask.
+// qr_display parity work. The identical pass also lives in qr_core.cpp behind
+// qr_encode_bytes' match_python_mask flag (the path
+// seed_transcribe_zoomed_qr_screen consumes); this file still carries its own
+// private copy — see the merge-slated NOTE at the top of this region.
 // -------------------------------------------------------------------------
 
 // Format-info modules (two 15-bit strips by the finders + the fixed dark module),
@@ -219,18 +277,21 @@ bool encode_transcription_qr(const std::string &mode, const std::vector<uint8_t>
 // -------------------------------------------------------------------------
 // Direct-draw QR grid.
 // -------------------------------------------------------------------------
-struct whole_qr_ctx_t {
-    uint8_t *out;      // qrcodegen matrix, owned; freed on qr_obj delete
-    int      border;   // quiet-zone modules around the matrix (1, like Python)
+
+// Draw context. Pure POD (pointer + ints) -> lv_malloc + lv_memzero + lv_free
+// (no C++ members, so there are no ctors/dtors an lv_malloc would skip).
+struct seed_transcribe_whole_qr_ctx_t {
+    uint8_t  *qr_matrix;  // qrcodegen matrix, owned; freed on qr_obj delete
+    int       border;     // quiet-zone modules around the matrix (1, like Python)
     lv_obj_t *qr_obj;
 };
 
-// Map module-grid index m (0..total) to a pixel offset within the QR object,
-// distributing the (generally non-integer) module size so the cells tile the
-// full `side` exactly with no accumulated drift — matching PIL's resize of the
-// box_size=5 native image up to the on-screen qr_width.
-static inline int cell_off(int m, int total, int side) {
-    return (int)llround((double)m * (double)side / (double)total);
+// Map module-grid index module_index (0..total) to a pixel offset within the QR
+// object, distributing the (generally non-integer) module size so the cells tile
+// the full `side` exactly with no accumulated drift — matching PIL's resize of
+// the box_size=5 native image up to the on-screen qr_width.
+int seed_transcribe_whole_qr_cell_offset(int module_index, int total, int side) {
+    return (int)llround((double)module_index * (double)side / (double)total);
 }
 
 // Paint the black modules on top of the object's white background (DRAW_MAIN_END).
@@ -244,25 +305,30 @@ static inline int cell_off(int m, int total, int side) {
 // between their centers. The union yields exactly the reference look — isolated
 // modules are dots, runs are rounded capsules, and solid regions (finder
 // patterns, dense data) fill in with rounded OUTER corners.
-void whole_qr_draw_cb(lv_event_t *e) {
-    whole_qr_ctx_t *ctx   = (whole_qr_ctx_t *)lv_event_get_user_data(e);
-    lv_layer_t     *layer = lv_event_get_layer(e);
-    if (!ctx || !layer || !ctx->out) return;
+void seed_transcribe_whole_qr_draw_cb(lv_event_t *e) {
+    seed_transcribe_whole_qr_ctx_t *ctx =
+        (seed_transcribe_whole_qr_ctx_t *)lv_event_get_user_data(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    if (!ctx || !layer || !ctx->qr_matrix) return;
 
     lv_area_t obj_area;
     lv_obj_get_coords(ctx->qr_obj, &obj_area);
     int side = obj_area.x2 - obj_area.x1 + 1;   // square: width == height
 
-    int size  = qrcodegen_getSize(ctx->out);
-    int total = size + 2 * ctx->border;
-    int b     = ctx->border;
+    int size   = qrcodegen_getSize(ctx->qr_matrix);
+    int total  = size + 2 * ctx->border;
+    int border = ctx->border;
 
-    // Cell pixel edges for module-grid index m (border-inclusive), absolute.
-    auto ex = [&](int m) { return obj_area.x1 + cell_off(m, total, side); };
-    auto ey = [&](int m) { return obj_area.y1 + cell_off(m, total, side); };
-    auto dark = [&](int qx, int qy) {
-        return qx >= 0 && qy >= 0 && qx < size && qy < size &&
-               qrcodegen_getModule(ctx->out, qx, qy);
+    // Cell pixel edges for module-grid index module_index (border-inclusive), absolute.
+    auto edge_x = [&](int module_index) {
+        return obj_area.x1 + seed_transcribe_whole_qr_cell_offset(module_index, total, side);
+    };
+    auto edge_y = [&](int module_index) {
+        return obj_area.y1 + seed_transcribe_whole_qr_cell_offset(module_index, total, side);
+    };
+    auto dark = [&](int module_x, int module_y) {
+        return module_x >= 0 && module_y >= 0 && module_x < size && module_y < size &&
+               qrcodegen_getModule(ctx->qr_matrix, module_x, module_y);
     };
 
     lv_draw_rect_dsc_t dot;   // inscribed circle per module
@@ -277,109 +343,145 @@ void whole_qr_draw_cb(lv_event_t *e) {
     bridge.bg_opa   = LV_OPA_COVER;
     bridge.radius   = 0;
 
-    for (int qy = 0; qy < size; qy++) {
-        int cy1 = ey(b + qy);
-        int cy2 = ey(b + qy + 1) - 1;
-        int cym = (cy1 + cy2) / 2;
-        for (int qx = 0; qx < size; qx++) {
-            if (!dark(qx, qy)) continue;
-            int cx1 = ex(b + qx);
-            int cx2 = ex(b + qx + 1) - 1;
-            int cxm = (cx1 + cx2) / 2;
+    for (int module_y = 0; module_y < size; module_y++) {
+        int cell_top      = edge_y(border + module_y);
+        int cell_bottom   = edge_y(border + module_y + 1) - 1;
+        int cell_center_y = (cell_top + cell_bottom) / 2;
+        for (int module_x = 0; module_x < size; module_x++) {
+            if (!dark(module_x, module_y)) continue;
+            int cell_left     = edge_x(border + module_x);
+            int cell_right    = edge_x(border + module_x + 1) - 1;
+            int cell_center_x = (cell_left + cell_right) / 2;
 
-            lv_area_t a = { cx1, cy1, cx2, cy2 };
-            lv_draw_rect(layer, &dot, &a);   // the module's circle
+            lv_area_t cell_area = { cell_left, cell_top, cell_right, cell_bottom };
+            lv_draw_rect(layer, &dot, &cell_area);   // the module's circle
 
-            if (dark(qx + 1, qy)) {          // bridge to the right neighbor
-                int nx2 = ex(b + qx + 2) - 1;
-                int nxm = (ex(b + qx + 1) + nx2) / 2;
-                lv_area_t hb = { cxm, cy1, nxm, cy2 };
-                lv_draw_rect(layer, &bridge, &hb);
+            if (dark(module_x + 1, module_y)) {      // bridge to the right neighbor
+                int neighbor_right    = edge_x(border + module_x + 2) - 1;
+                int neighbor_center_x = (edge_x(border + module_x + 1) + neighbor_right) / 2;
+                lv_area_t right_bridge = { cell_center_x, cell_top, neighbor_center_x, cell_bottom };
+                lv_draw_rect(layer, &bridge, &right_bridge);
             }
-            if (dark(qx, qy + 1)) {          // bridge to the bottom neighbor
-                int ny2 = ey(b + qy + 2) - 1;
-                int nym = (ey(b + qy + 1) + ny2) / 2;
-                lv_area_t vb = { cx1, cym, cx2, nym };
-                lv_draw_rect(layer, &bridge, &vb);
+            if (dark(module_x, module_y + 1)) {      // bridge to the bottom neighbor
+                int neighbor_bottom   = edge_y(border + module_y + 2) - 1;
+                int neighbor_center_y = (edge_y(border + module_y + 1) + neighbor_bottom) / 2;
+                lv_area_t down_bridge = { cell_left, cell_center_y, cell_right, neighbor_center_y };
+                lv_draw_rect(layer, &bridge, &down_bridge);
             }
         }
     }
 }
 
-void whole_qr_cleanup_cb(lv_event_t *e) {
+// LV_EVENT_DELETE teardown, registered on the QR object (which lives exactly as
+// long as the screen): free the owned matrix, then the ctx.
+void seed_transcribe_whole_qr_cleanup_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
-    whole_qr_ctx_t *ctx = (whole_qr_ctx_t *)lv_event_get_user_data(e);
+    seed_transcribe_whole_qr_ctx_t *ctx =
+        (seed_transcribe_whole_qr_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
-    if (ctx->out) lv_free(ctx->out);
+    if (ctx->qr_matrix) lv_free(ctx->qr_matrix);
     lv_free(ctx);
 }
 
-#endif  // LV_USE_QRCODE
-
 }  // namespace
 
+#endif  // LV_USE_QRCODE
 
-extern "C" void seed_transcribe_whole_qr_screen(void *ctx_json) {
+
+void seed_transcribe_whole_qr_screen(void *ctx_json) {
 #if !LV_USE_QRCODE
     // Built without the bundled QR encoder (no shipping build does this). Load a
     // blank screen so the entry point exists and navigation does not crash.
     (void)ctx_json;
-    lv_obj_t *scr = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
-    load_screen_and_cleanup_previous(scr);
+    lv_obj_t *blank_screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(blank_screen, lv_color_hex(BACKGROUND_COLOR), LV_PART_MAIN);
+    load_screen_and_cleanup_previous(blank_screen);
 #else
-    json cfg;
-    parse_screen_json_ctx((const char *)ctx_json, cfg);
+    // --- Config ---
 
+    const char *json_str = (const char *)ctx_json;
+
+    json cfg;
+    parse_screen_json_ctx(json_str, cfg);
+
+    // Required fields: one throw per field, before any allocation and before the
+    // scaffold exists, so no throw path can leak buffers or LVGL objects.
     if (!cfg.contains("qr_data") || !cfg["qr_data"].is_string() ||
         cfg["qr_data"].get<std::string>().empty()) {
-        throw std::runtime_error("seed_transcribe_whole_qr_screen: non-empty qr_data (string) is required");
+        throw std::runtime_error("seed_transcribe_whole_qr_screen: qr_data is required and must be a non-empty string");
     }
-    std::string qr_data = cfg["qr_data"].get<std::string>();
-    std::string mode    = cfg.value("qr_mode", std::string("auto"));
-    std::string enc     = cfg.value("data_encoding", std::string("utf8"));
-    if (enc != "utf8" && enc != "hex")
+    std::string qr_data       = cfg["qr_data"].get<std::string>();
+    std::string qr_mode       = cfg.value("qr_mode", std::string("auto"));
+    std::string data_encoding = cfg.value("data_encoding", std::string("utf8"));
+    if (data_encoding != "utf8" && data_encoding != "hex") {
         throw std::runtime_error("seed_transcribe_whole_qr_screen: data_encoding must be utf8|hex");
-    int border = cfg.value("border", 1);   // Python WholeQR uses border=1
+    }
 
-    // Encode up front so we know the module count (drives the "Begin NxN" label).
-    std::vector<uint8_t> payload = decode_payload(qr_data, enc);
-    uint8_t *tmp = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
-    uint8_t *out = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
-    if (!tmp || !out) {
-        if (tmp) lv_free(tmp);
-        if (out) lv_free(out);
+    // qr_mode selects WHICH encoder mode reproduces the Pi Zero's matrix. For a
+    // hand-transcription screen a silently different mode yields a validly-encoded
+    // but WRONG module pattern (the user copies a QR the device never rendered),
+    // so an unrecognized string is a developer error and throws — the same policy
+    // as the sibling QR screens.
+    if (qr_mode != "auto" && qr_mode != "numeric" && qr_mode != "alphanumeric" && qr_mode != "byte") {
+        throw std::runtime_error("seed_transcribe_whole_qr_screen: qr_mode must be auto|numeric|alphanumeric|byte");
+    }
+
+    // button_list is user-visible CONTENT and always arrives localized from the
+    // host view layer (Python formats the TRANSLATOR-noted _("Begin {}x{}") with
+    // the module count host-side); a string literal baked here would be
+    // English-only by construction.
+    if (!cfg.contains("button_list") || !cfg["button_list"].is_array() || cfg["button_list"].empty()) {
+        throw std::runtime_error("seed_transcribe_whole_qr_screen: button_list is required and must be a non-empty array");
+    }
+
+    // Structural defaults (write-if-absent, never user-visible text). Python
+    // ButtonListScreen defaults: show_back_button=True, show_power_button=False.
+    // The localized title itself is content and must come from the host.
+    ensure_top_nav_structure(cfg, /*default_show_back_button=*/true,
+                                  /*default_show_power_button=*/false);
+    require_top_nav_title(cfg, "seed_transcribe_whole_qr_screen");
+
+    cfg["is_bottom_list"] = true;   // forced, not defaulted — Python: is_bottom_list = True
+
+    int border = cfg.value("border", 1);   // structural default — Python: qr.qrimage(border=1)
+
+    // --- QR encode ---
+
+    // Encode up front, before any LVGL object exists: payload decode/encode
+    // failures throw leak-free, and the finished matrix is handed to the draw
+    // callback below.
+    std::vector<uint8_t> payload = decode_payload(qr_data, data_encoding);
+    uint8_t *temp_buffer = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
+    uint8_t *qr_matrix   = (uint8_t *)lv_malloc(qrcodegen_BUFFER_LEN_MAX);
+    if (!temp_buffer || !qr_matrix) {
+        if (temp_buffer) lv_free(temp_buffer);
+        if (qr_matrix) lv_free(qr_matrix);
         throw std::runtime_error("seed_transcribe_whole_qr_screen: QR buffer alloc failed");
     }
-    bool ok = encode_transcription_qr(mode, payload, tmp, out);
-    lv_free(tmp);  // scratch only needed during encode
-    if (!ok) {
-        lv_free(out);
+    bool encode_succeeded = encode_transcription_qr(qr_mode, payload, temp_buffer, qr_matrix);
+    lv_free(temp_buffer);  // scratch only needed during encode
+    if (!encode_succeeded) {
+        lv_free(qr_matrix);
         throw std::runtime_error("seed_transcribe_whole_qr_screen: payload too large to encode");
     }
-    int num_modules = qrcodegen_getSize(out);
 
-    // --- Chrome config (ButtonListScreen parity) ---------------------------
-    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
-    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Transcribe SeedQR";
-    cfg["is_bottom_list"] = true;
-    if (!cfg.contains("button_list")) {
-        // TRANSLATOR note (Python): "Begin {}x{}" — the QR module dimensions.
-        std::string label = "Begin " + std::to_string(num_modules) + "x" + std::to_string(num_modules);
-        cfg["button_list"] = json::array({ label });
-    }
+    // --- Scaffold ---
 
-    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, /*scrollable=*/false);
 
-    // --- QR object (white field; modules direct-drawn) ---------------------
-    // Added to the screen ROOT (not the flex body) and absolutely positioned
-    // after layout, mirroring Python's paste at ((canvas_w - qr_w)/2, top_nav.h).
-    // A plain object with a white background is the quiet-zone field; the black
-    // modules are painted on top in whole_qr_draw_cb (no large canvas buffer).
-    whole_qr_ctx_t *ctx = (whole_qr_ctx_t *)lv_malloc(sizeof(whole_qr_ctx_t));
+    // --- Body ---
+
+    // 1. QR object: a plain object whose white background is the quiet-zone
+    //    field; the black modules are painted on top in
+    //    seed_transcribe_whole_qr_draw_cb (no large canvas buffer). Parented to
+    //    the screen ROOT — not the flex body — to escape the body's layout and
+    //    clipping, then absolutely positioned in the Geometry pass below,
+    //    mirroring Python's paste at ((canvas_w - qr_w)/2, top_nav.height).
+    seed_transcribe_whole_qr_ctx_t *ctx =
+        (seed_transcribe_whole_qr_ctx_t *)lv_malloc(sizeof(seed_transcribe_whole_qr_ctx_t));
     lv_memzero(ctx, sizeof(*ctx));
-    ctx->out    = out;      // ownership transfers to ctx; freed in cleanup cb
-    ctx->border = border;
+    ctx->qr_matrix = qr_matrix;   // ownership transfers to ctx; freed in the cleanup cb
+    ctx->border    = border;
 
     lv_obj_t *qr_obj = lv_obj_create(screen.screen);
     lv_obj_remove_style_all(qr_obj);
@@ -387,40 +489,49 @@ extern "C" void seed_transcribe_whole_qr_screen(void *ctx_json) {
     lv_obj_set_style_bg_opa(qr_obj, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_remove_flag(qr_obj, LV_OBJ_FLAG_SCROLLABLE);
     ctx->qr_obj = qr_obj;
-    lv_obj_add_event_cb(qr_obj, whole_qr_draw_cb, LV_EVENT_DRAW_MAIN_END, ctx);
-    lv_obj_add_event_cb(qr_obj, whole_qr_cleanup_cb, LV_EVENT_DELETE, ctx);
+    lv_obj_add_event_cb(qr_obj, seed_transcribe_whole_qr_draw_cb, LV_EVENT_DRAW_MAIN_END, ctx);
+    lv_obj_add_event_cb(qr_obj, seed_transcribe_whole_qr_cleanup_cb, LV_EVENT_DELETE, ctx);
 
-    // WarningEdgesMixin — pulsing ORANGE border (seed material on screen).
+    // 2. WarningEdgesMixin — pulsing ORANGE border (seed material on screen).
     add_warning_edges_overlay(screen.screen, DIRE_WARNING_COLOR);
 
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, 0);
+    // --- Geometry ---
 
-    // --- Geometry: size + center the QR from the laid-out chrome ------------
+    // Free-band fit pass (the single measure-and-place pass): size + center the
+    // QR from the laid-out chrome.
     // Python: qr_side = buttons[0].screen_y - top_nav.height - COMPONENT_PADDING,
     //         pasted at ((canvas_w - qr_side)/2, top_nav.height).
     lv_obj_update_layout(screen.screen);
 
-    lv_area_t nav_a, btn_a;
-    lv_obj_get_coords(screen.top_nav, &nav_a);
-    int qr_top = nav_a.y2 + 1;   // directly below the TopNav (Python top_nav.height)
+    lv_area_t top_nav_area, button_area;
+    lv_obj_get_coords(screen.top_nav, &top_nav_area);
+    int qr_top = top_nav_area.y2 + 1;   // directly below the TopNav (Python top_nav.height)
 
+    // Band bottom measured from button_list[0] directly (deliberately NOT the
+    // shared bottom_button_top_y helper: its no-button fallback is
+    // display_height - BUTTON_HEIGHT, this screen's fills to the display bottom).
     int qr_side;
     if (screen.button_list_count > 0) {
-        lv_obj_get_coords(screen.button_list[0], &btn_a);
-        qr_side = btn_a.y1 - qr_top - COMPONENT_PADDING;
+        lv_obj_get_coords(screen.button_list[0], &button_area);
+        qr_side = button_area.y1 - qr_top - COMPONENT_PADDING;
     } else {
-        // Defensive: no button (shouldn't happen) — fill to the display bottom.
+        // Defensive only — unreachable now that button_list is validated
+        // non-empty above: fill to the display bottom.
         qr_side = lv_display_get_vertical_resolution(NULL) - qr_top - COMPONENT_PADDING;
     }
     if (qr_side < 1) qr_side = 1;
 
-    int screen_w = lv_display_get_horizontal_resolution(NULL);
-    int qr_x = (screen_w - qr_side) / 2;
+    int screen_width = lv_display_get_horizontal_resolution(NULL);
+    int qr_x = (screen_width - qr_side) / 2;
 
     lv_obj_set_size(qr_obj, qr_side, qr_side);
     lv_obj_align(qr_obj, LV_ALIGN_TOP_LEFT, qr_x, qr_top);
+
+    // --- Navigation + load ---
+
+    // Menu-style default index: the single action button starts focused (the
+    // host may override via cfg initial_selected_index).
+    bind_screen_navigation(cfg, screen, /*default_initial_index=*/0);
 
     load_screen_and_cleanup_previous(screen.screen);
 #endif

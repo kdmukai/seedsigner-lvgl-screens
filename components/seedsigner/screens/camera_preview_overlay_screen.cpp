@@ -1,74 +1,77 @@
-#include "seedsigner.h"
-#include "screen_scaffold.h"
-#include "screen_helpers.h"
-#include "components.h"
-#include "camera_preview_overlay.h"
-#include "camera_entropy_overlay.h"
-#include "keyboard_core.h"
-#include "gui_constants.h"
-#include "navigation.h"
-#include "input_profile.h"
-#include "font_registry.h"
-#include "glyph_runs.h"
-#include "locale_loader.h"
-#include "locale_picker.h"
-#include "overlay_manager.h"
+// camera_preview_overlay_screen
+//
+// Python provenance: no direct screen class — desktop-tooling host for the
+// camera_preview_overlay module, whose overlay UI ports ScanScreen (scan_screens.py).
+//
+// On device the overlay (camera_preview_overlay.{h,cpp}) is composited over LIVE
+// camera pixels the camera adapter owns, and the host pushes state through
+// set_scanning()/set_progress(). This wrapper lets the screenshot generator and the
+// runners exercise the SAME overlay spec WITHOUT a camera: it synthesizes a
+// placeholder square "preview" background and renders the overlay onto it from a
+// static, JSON-described state. Every real affordance (status bar, instruction text,
+// gutter back button) belongs to the overlay module — this file owns only the
+// synthetic background and the one-shot spec, and it neither navigates nor pushes
+// live updates.
+//
+// Chrome-free tier: no top-nav scaffold — a bare root screen holds the placeholder
+// preview panel and the module's overlay; the mandatory load_screen_and_cleanup_previous
+// tail still applies. The sibling camera_entropy_overlay_screen wraps the entropy
+// overlay the same way, and the two share the synthetic-preview-background builder
+// verbatim (kept byte-exact pending the camera_overlay_common extraction).
+//
+// Lifecycle: Tier 1 (stateless) — no statics, no timers, no cleanup callback. The
+// overlay handle is created and immediately destroyed; destroy() frees only the
+// handle struct, leaving the widgets parented on the screen tree.
+//
+// The back affordance is chosen by the overlay module from input_profile_get_mode(),
+// which the tools set per resolution (240 = hardware -> on-preview instruction text;
+// larger = touch -> gutter back button).
+//
+// cfg — the ctx itself is optional (parse_optional_screen_json_ctx: NULL/empty ctx
+// yields an empty config; any present ctx gets the same strict validation as every
+// other screen). All keys are optional:
+//   instructions_text  (string, optional)   full hardware-mode bottom line, already
+//            composed + localized by the host (e.g. "< back  |  Scan a QR code");
+//            NULL/empty -> no instruction text. The overlay ignores it in touch mode.
+//   scanning           (bool,   default false)  show the status bar instead of the
+//            back affordance.
+//   progress           (int 0..100, default 0)  animated-QR decode percent; any value
+//            > 0 forces scanning on.
+//   frame_status       (int 0..3, default 0)  most-recent-frame decode status dot
+//            (0 none / 1 added / 2 repeated / 3 miss).
+//   fill_landscape     (bool, default: short display dim <= 240)  preview geometry.
+//            Higher-res DSI panels (short dim > 240) default false = a center-cut
+//            SQUARE with static side gutters; the Pi Zero (<= 240) defaults true =
+//            fill the display. Set either way to override the per-resolution default.
+//   square             (object {x,y,w,h}, optional)  explicit preview-square rect;
+//            overrides the fill_landscape-derived rect in whole or per-field.
 
-#include "lvgl.h"
+#include "screen_scaffold.h"          // parse_optional_screen_json_ctx, load_screen_and_cleanup_previous
+#include "seedsigner.h"               // camera_preview_overlay_screen entry-point declaration
+#include "camera_preview_overlay.h"   // camera_preview_overlay_spec_t, camera_preview_overlay_create/_destroy, camera_overlay_frame_status_t
 
-#if LV_USE_QRCODE
-#include "../../../third_party/lvgl/src/libs/qrcode/qrcodegen.h"
-#endif
+#include "lvgl.h"                      // bare-root + placeholder lv_obj build, per-object style setters, lv_display_get_*_resolution, lv_memzero
 
-#include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
-#include <cctype>
-#include <set>
-#include <map>
-#include <algorithm>
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#endif
+#include <nlohmann/json.hpp>          // json (optional cfg read)
+
+#include <string>                     // std::string (instructions_text)
 
 using json = nlohmann::json;
 
-// ---------------------------------------------------------------------------
-// camera_preview_overlay_screen — tooling host for the camera live-preview overlay
-// ---------------------------------------------------------------------------
-// On device the overlay (camera_preview_overlay.{h,cpp}) is composited over LIVE
-// camera pixels the camera adapter owns; the host pushes state via set_scanning()/
-// set_progress(). This entry point lets the screenshot generator + runners exercise
-// the SAME spec without a camera by synthesizing a placeholder square "preview"
-// background and rendering the overlay onto it with a static, JSON-described state.
-// The back affordance follows input_profile_get_mode(), which the tools set per
-// resolution (240 = hardware → instruction text; larger = touch → gutter button).
-//
-// JSON config (all optional):
-//   instructions_text : full hardware-mode bottom line (host composes "< back | ...")
-//   scanning          : bool — show the status bar instead of the back affordance
-//   progress          : 0..100 — animated-QR percent (implies scanning)
-//   frame_status      : 0 none / 1 added / 2 repeated / 3 miss — status dot
-//   fill_landscape    : bool — preview geometry. Default depends on resolution: the
-//                       higher-res DSI panels (short dim > 240) default to a center-cut
-//                       SQUARE with static side gutters (false); the Pi Zero (<= 240)
-//                       fills the display (true). Set true on a DSI panel to opt into
-//                       full landscape width; set false on the Pi Zero to force a square.
-//   square            : {x,y,w,h} — explicit preview-square rect (overrides the above)
+
 void camera_preview_overlay_screen(void *ctx_json) {
+    // --- Config ---
+
     const char *json_str = (const char *)ctx_json;
 
     json cfg;
-    if (json_str && json_str[0]) {
-        parse_screen_json_ctx(json_str, cfg);  // validates shape; every field optional
-    } else {
-        cfg = json::object();
-    }
+    parse_optional_screen_json_ctx(json_str, cfg);  // boot/overlay tier: NULL/empty ctx -> empty config
 
+    // --- Bare-root build ---
+
+    // Bare root screen (chrome-free: no top-nav scaffold), solid black background,
+    // nothing scrolls. [slated for extraction: create_bare_root_screen() chrome-free
+    // helper, extraction ledger #11]
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
@@ -77,6 +80,12 @@ void camera_preview_overlay_screen(void *ctx_json) {
     lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
+    // --- Body ---
+
+    // 1. Preview geometry + synthetic placeholder background. This block is duplicated
+    //    verbatim with camera_entropy_overlay_screen and kept byte-exact for a clean
+    //    future lift. [slated for extraction: camera_overlay_common synthetic-preview
+    //    builder, consolidation ledger §12]
     int32_t screen_w = lv_display_get_horizontal_resolution(NULL);
     int32_t screen_h = lv_display_get_vertical_resolution(NULL);
 
@@ -124,14 +133,18 @@ void camera_preview_overlay_screen(void *ctx_json) {
     lv_obj_set_style_bg_opa(preview, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_remove_flag(preview, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
-    std::string instr;
+    // 2. Overlay spec assembled from the static cfg state. instructions_text is optional
+    //    content (NULL/empty -> no line), matching the module's documented contract; the
+    //    remaining fields are structural (geometry + status), read with cfg.value()
+    //    defaults. A non-zero progress implies the scanning bar (module parity).
+    std::string instructions_text;
     if (cfg.contains("instructions_text") && cfg["instructions_text"].is_string()) {
-        instr = cfg["instructions_text"].get<std::string>();
+        instructions_text = cfg["instructions_text"].get<std::string>();
     }
 
     camera_preview_overlay_spec_t spec;
     lv_memzero(&spec, sizeof(spec));
-    spec.instructions_text  = instr.empty() ? nullptr : instr.c_str();
+    spec.instructions_text  = instructions_text.empty() ? nullptr : instructions_text.c_str();
     spec.square_x = sx; spec.square_y = sy; spec.square_w = sw; spec.square_h = sh;
     spec.scanning_active    = cfg.value("scanning", false);
     spec.progress_percent   = cfg.value("progress", 0);
@@ -144,6 +157,8 @@ void camera_preview_overlay_screen(void *ctx_json) {
     // On device the host instead retains the handle to push set_scanning/set_progress.
     camera_preview_overlay_t *overlay = camera_preview_overlay_create(scr, &spec);
     camera_preview_overlay_destroy(overlay);
+
+    // --- Load ---
 
     load_screen_and_cleanup_previous(scr);
 }

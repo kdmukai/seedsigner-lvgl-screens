@@ -1,78 +1,140 @@
 // seed_sign_message_confirm_message_screen
 //
-// LVGL port of Python's SeedSignMessageConfirmMessageScreen (seed_screens.py:1605).
-// Reviews the FULL message about to be signed.
+// Python provenance: SeedSignMessageConfirmMessageScreen (seed_screens.py)
 //
-// The entire message is shown as ONE left-aligned, scrollable body over a bottom-pinned
-// "Next" button. When the message overflows the viewport, bind_screen_navigation's
-// scroll-then-buttons navigation scrolls the content (joystick down / touch swipe) until
-// the Next button is revealed and selectable; a short message just shows Next at the
-// bottom. The host passes the whole message — no paging, no per-page hand-off.
+// "Review Message" step of the message-signing flow: shows the FULL message
+// about to be signed as ONE left-aligned wrapped body label (Python TextArea
+// with is_text_centered=False) above a bottom-pinned "Next" button; the pressed
+// button index returns through the standard navigation callback.
 //
-// (This replaces an earlier screen-owned paging design; per the UI decision, plain vertical
-// scroll to reveal the bottom button is used instead.)
+// Layout note — documented deviation from Python: Python reflows the message
+// into fixed-height PIL pages (reflow_text_into_pages + page_num, titling
+// overflow pages "Message (pt x/y)") and re-enters the screen once per page.
+// This port uses plain vertical scroll instead of paging: the host passes the
+// whole message once; when it overflows the viewport, bind_screen_navigation's
+// scroll-then-buttons mode scrolls the content (joystick down / touch swipe)
+// until the Next button is revealed and selectable, while a short message just
+// shows Next pinned at the bottom. No paging, no per-page hand-off.
+//
+// Stateless (lifecycle Tier 1): no statics, no timers, no cleanup callback.
 //
 // cfg:
-//   message (str, req.)  — the full message to review.
-//   top_nav.title (str)  — default "Review Message".
-//   button_list (array)  — default ["Next"].
+//   message                   (string, required)    the full message to review
+//            (rendered verbatim; an empty string renders no body label).
+//   top_nav.title             (string, required)    localized title (Python:
+//            _("Review Message"); the paged "Message (pt x/y)" titles have no
+//            LVGL counterpart — see the scroll-not-paging note above).
+//   top_nav.show_back_button  (bool, default true)   Python ButtonListScreen default.
+//   top_nav.show_power_button (bool, default false)  Python ButtonListScreen default.
+//   button_list               (array, required, non-empty)  the localized action
+//            button(s) (Python: [ButtonOption("Next")]).
+//   is_bottom_list            forced true (Python: is_bottom_list = True); a
+//            host-supplied value is ignored.
+//   is_button_text_centered   (bool, default true)   read by the scaffold; Python
+//            forces True, which the scaffold's default already provides.
+//   text                      (internal)  overwritten with `message` before the
+//            scaffold call (an inert write — see the Config comment); hosts must
+//            not supply it.
+//   initial_selected_index    (int, optional)        overrides the default initial
+//            focus of 0 (navigation layer; Python selected_button).
+//   input.mode                (string, optional)     "touch" | "hardware" input-mode
+//            override (navigation layer).
+//   input.keys.key1/key2/key3 (string, optional)     per-aux-key policy "enter" |
+//            "noop" | "emit" (navigation layer).
+//   allow_screensaver         (bool, default true)   per-screen screensaver policy
+//            (normalized by parse_screen_json_ctx, stamped by the scaffold).
 
-#include "screen_scaffold.h"   // parse/scaffold/nav/load helpers (defined in screen_scaffold.cpp)
-#include "seedsigner.h"        // screen_scaffold_t
-#include "gui_constants.h"     // BODY_FONT, colors
-#include "navigation.h"        // NAV_BODY_VERTICAL
+#include "screen_scaffold.h"  // parse_screen_json_ctx / create_top_nav_screen_scaffold / bind_screen_navigation / load_screen_and_cleanup_previous
+#include "seedsigner.h"       // seed_sign_message_confirm_message_screen decl, screen_scaffold_t fields
+#include "gui_constants.h"    // BODY_FONT, BODY_FONT_COLOR
+#include "navigation.h"       // NAV_INDEX_NONE
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, apply_body_tight_line_spacing
 
-#include "lvgl.h"
+#include "lvgl.h"             // lv_label + per-object style setters
 
-#include <nlohmann/json.hpp>
-#include <string>
+#include <nlohmann/json.hpp>  // json (cfg reads + structural-default writes)
+
+#include <stdexcept>          // std::runtime_error (required-field validation)
+#include <string>             // std::string
 
 using json = nlohmann::json;
 
-// Defined in screen_helpers.cpp: the status/intro body's tight, ink-derived
-// inter-line advance so multi-line body text matches the PIL reference.
-void apply_body_tight_line_spacing(lv_obj_t *label);
 
 void seed_sign_message_confirm_message_screen(void *ctx_json) {
+    // --- Config ---
+
+    const char *json_str = (const char *)ctx_json;
+
     json cfg;
-    parse_screen_json_ctx((const char *)ctx_json, cfg);
+    parse_screen_json_ctx(json_str, cfg);
 
-    std::string message = cfg.value("message", std::string());
+    // Required fields: message is the content this screen exists to put in front
+    // of the user before signing; button_list is user-visible CONTENT, which
+    // always arrives localized from the host view layer (a string literal baked
+    // here would be English-only by construction). One throw per field, before
+    // the scaffold exists, so no throw path can leak LVGL objects.
+    if (!cfg.contains("message") || !cfg["message"].is_string()) {
+        throw std::runtime_error("seed_sign_message_confirm_message_screen: message is required and must be a string");
+    }
+    if (!cfg.contains("button_list") || !cfg["button_list"].is_array() || cfg["button_list"].empty()) {
+        throw std::runtime_error("seed_sign_message_confirm_message_screen: button_list is required and must be a non-empty array");
+    }
+    std::string message = cfg["message"].get<std::string>();
 
-    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
-    if (!cfg["top_nav"].contains("title")) cfg["top_nav"]["title"] = "Review Message";
-    cfg["is_bottom_list"] = true;                                  // Python is_bottom_list = True
-    if (!cfg.contains("button_list")) cfg["button_list"] = json::array({ "Next" });
+    // Structural defaults (write-if-absent, never user-visible text). Python
+    // ButtonListScreen defaults: show_back_button=True, show_power_button=False
+    // (matching the scaffold's own implicit defaults). The localized title is
+    // content and must come from the host (Python: _("Review Message")).
+    ensure_top_nav_structure(cfg, /*default_show_back_button=*/true,
+                                  /*default_show_power_button=*/false);
+    require_top_nav_title(cfg, "seed_sign_message_confirm_message_screen");
 
-    // The scaffold gives a screen a separate, scrollable `upper_body` (above the buttons)
-    // only when cfg["text"] is a non-empty string — it builds the structure but does NOT
-    // render the text. Set it to the message to take that path, then render our OWN
-    // left-aligned body label into upper_body (Python is_text_centered = False; the generic
-    // intro-text path would center it). Overflow → scroll-then-buttons via the nav layer.
+    cfg["is_bottom_list"] = true;    // forced, not defaulted — Python: is_bottom_list = True
+
+    // Inert config write: the scaffold probes cfg["text"] (its has_intro_text
+    // check) only to decide whether a NON-bottom-pinned button list still needs
+    // a separate upper_body; the forced is_bottom_list=true above already
+    // selects the separate-upper_body flex path on its own, so this assignment
+    // changes nothing today. The scaffold never renders cfg["text"] itself —
+    // the message is rendered below as this screen's OWN left-aligned label
+    // (Python is_text_centered=False; the shared centered body-label form
+    // would not match).
     cfg["text"] = message;
 
-    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, true);
+    // --- Scaffold ---
 
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, /*scrollable=*/true);
+
+    // --- Body ---
+
+    // 1. The message body — one left-aligned wrapped label filling upper_body's
+    //    content width (derive-internally: the width comes from the container,
+    //    not the display resolution). Hand-built rather than
+    //    make_body_text_label because that helper centers and Python renders
+    //    this TextArea left-aligned (is_text_centered=False). Guarded: an empty
+    //    message renders no label, and the upper_body checks keep the label out
+    //    of a body that the scaffold did not split.
     if (!message.empty() && screen.upper_body && screen.upper_body != screen.body) {
-        lv_obj_t *msg = lv_label_create(screen.upper_body);
-        lv_label_set_text(msg, message.c_str());
-        lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(msg, lv_obj_get_content_width(screen.upper_body));
-        lv_obj_set_style_text_align(msg, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-        lv_obj_set_style_text_color(msg, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
-        lv_obj_set_style_text_font(msg, &BODY_FONT, LV_PART_MAIN);
-        // Match the PIL reference's tight, ink-based line advance (same as the status /
-        // intro body text) instead of LVGL's looser default.
-        apply_body_tight_line_spacing(msg);
+        lv_obj_t *message_label = lv_label_create(screen.upper_body);
+        lv_label_set_text(message_label, message.c_str());
+        lv_label_set_long_mode(message_label, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(message_label, lv_obj_get_content_width(screen.upper_body));
+        lv_obj_set_style_text_align(message_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        lv_obj_set_style_text_color(message_label, lv_color_hex(BODY_FONT_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_text_font(message_label, &BODY_FONT, LV_PART_MAIN);
+        // Match the PIL reference's tight, ink-based line advance (same as the
+        // status / intro body text) instead of LVGL's looser default.
+        apply_body_tight_line_spacing(message_label);
     }
 
-    // NAV_INDEX_NONE (like the status screens): when the message FITS, Next is active; when
-    // it OVERFLOWS, start UNFOCUSED at the TOP so the reader sees the message from its
-    // beginning and scrolls DOWN through it to reveal + focus the Next button — rather than
-    // loading pre-scrolled to the bottom with Next focused.
-    bind_screen_navigation(cfg, screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count, NAV_BODY_VERTICAL, NAV_INDEX_NONE);
+    // --- Navigation + load ---
+
+    // NAV_INDEX_NONE (like the status screens): when the message FITS, Next is
+    // active; when it OVERFLOWS, start UNFOCUSED at the TOP so the reader sees
+    // the message from its beginning and scrolls DOWN through it to reveal +
+    // focus the Next button — rather than loading pre-scrolled to the bottom
+    // with Next focused. (The host may override via cfg initial_selected_index.)
+    bind_screen_navigation(cfg, screen, NAV_INDEX_NONE);
 
     load_screen_and_cleanup_previous(screen.screen);
 }

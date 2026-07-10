@@ -1,24 +1,25 @@
-// ---------------------------------------------------------------------------
 // tools_calc_final_word_done_screen
-// ---------------------------------------------------------------------------
 //
-// The final step of the "Calc final word" tool (the LVGL port of Python's
-// ToolsCalcFinalWordDoneScreen, tools_screens.py). Structurally it is a
-// bottom-pinned ButtonListScreen (Load seed / Discard) with a back button;
-// above the buttons it shows two elements:
+// Python provenance: ToolsCalcFinalWordDoneScreen (tools_screens.py)
+//
+// The final step of the "Calc final word" tool: a bottom-pinned button-list
+// screen (host-supplied actions; Python builds LOAD "Load seed" + DISCARD
+// "Discard" with a red label) with a back button; above the buttons it shows
+// two elements:
 //
 //   1. the freshly-derived FINAL WORD, large and centered, wrapped in quotes
 //      (Python: TextArea(text=f'"{final_word}"', font_size=26, centered)).
 //   2. a centered fingerprint readout — the master-fingerprint hex under a
 //      small "fingerprint" label beside a blue fingerprint icon (Python:
-//      IconTextLine(icon=FINGERPRINT, icon_color=INFO_COLOR, label="fingerprint",
-//      value=fingerprint, is_text_centered=True)).
+//      IconTextLine(icon=FINGERPRINT, icon_color=INFO_COLOR,
+//      label_text=_("fingerprint"), value_text=fingerprint,
+//      is_text_centered=True)).
 //
-// The title is the ordinal word label — "12th Word" for a 12-word mnemonic,
-// "24th Word" for a 24-word mnemonic (Python derives this from
-// mnemonic_word_length in __post_init__). The View supplies the localized string
-// via top_nav.title; absent that we derive the English default from
-// mnemonic_word_length so a bare cfg still renders.
+// The title is the ordinal word label — Python derives "12th Word" / "24th Word"
+// from mnemonic_word_length in __post_init__ and localizes both via gettext, so
+// the host view layer supplies the already-localized string as top_nav.title.
+// is_bottom_list is forced true (Python: is_bottom_list = True); a host-supplied
+// value is ignored.
 //
 // Layout note: unlike seed_finalize_screen (which vertically CENTERS its single
 // readout in the gap), this screen is TOP-anchored — the word sits a
@@ -26,65 +27,90 @@
 // below the word (Python's absolute screen_y math), with the scaffold's bottom
 // spacer pushing the buttons to the viewport bottom.
 //
+// Lifecycle: Tier 1 (stateless) — no statics, timers, or heap ctx; all state is
+// widget-tree-owned or stack-local.
+//
 // cfg:
-//   top_nav: { title, show_power_button }. show_back_button defaults true
-//            (Python ButtonListScreen default; the reference shows the back arrow).
-//   final_word (string, required): the derived final mnemonic word (unquoted;
-//            this screen adds the surrounding quotes, matching Python).
-//   fingerprint (string, required): the master-fingerprint hex to display.
-//   fingerprint_label (string, optional): the small label above the value;
-//            defaults to "fingerprint" (localized upstream by the View / scenario).
-//   mnemonic_word_length (int, optional, default 12): drives the default title
-//            ordinal when top_nav.title is not supplied.
-//   button_list (array): the action buttons; defaults to Load seed / Discard,
-//            with Discard's label in red (Python DISCARD button_label_color="red").
+//   top_nav.title             (string, required)     localized ordinal title
+//            ("12th Word" / "24th Word", derived host-side from the mnemonic length).
+//   top_nav.show_back_button  (bool, default true)   Python ButtonListScreen default;
+//            the reference shows the back arrow.
+//   top_nav.show_power_button (bool, default false)  Python ButtonListScreen default.
+//   final_word                (string, required)     the derived final mnemonic word
+//            (unquoted; this screen adds the surrounding quotes, matching Python).
+//   fingerprint               (string, required)     the master-fingerprint hex to display.
+//   fingerprint_label         (string, required)     localized small label above the
+//            fingerprint value (Python: _("fingerprint")).
+//   button_list               (array, required, non-empty)  the localized action
+//            buttons (Python: LOAD "Load seed", DISCARD "Discard" with label_color red).
+//   initial_selected_index    (int, optional)        overrides the default initial
+//            focus of 0 (navigation layer; Python selected_button).
+//   input.mode                (string, optional)     "touch" | "hardware" input-mode
+//            override (navigation layer).
+//   input.keys.key1/key2/key3 (string, optional)     per-aux-key policy "enter" |
+//            "noop" | "emit" (navigation layer).
+//   allow_screensaver         (bool, default true)   per-screen screensaver policy
+//            (normalized by parse_screen_json_ctx, stamped by the scaffold).
 
 #include "screen_scaffold.h"  // parse_screen_json_ctx / create_top_nav_screen_scaffold / bind_screen_navigation / load_screen_and_cleanup_previous
 #include "seedsigner.h"       // tools_calc_final_word_done_screen decl, text_top_leading
 #include "components.h"       // icon_text_line, SEEDSIGNER_ICON_COLOR_DEFAULT
-#include "gui_constants.h"    // COMPONENT_PADDING, BODY_FONT_COLOR, INFO_COLOR, seedsigner_latin_font, SeedSignerIconConstants
+#include "gui_constants.h"    // COMPONENT_PADDING, BODY_FONT, BODY_FONT_COLOR, INFO_COLOR, seedsigner_latin_font, SeedSignerIconConstants
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title
 
-#include "lvgl.h"
+#include "lvgl.h"             // lv_label + per-object style setters
 
-#include <stdexcept>
-#include <string>
+#include <nlohmann/json.hpp>  // json (cfg reads + structural-default writes)
+
+#include <stdexcept>          // std::runtime_error (required-field validation)
+#include <string>             // std::string
+
+using json = nlohmann::json;
 
 
 void tools_calc_final_word_done_screen(void *ctx_json) {
+    // --- Config ---
+
     const char *json_str = (const char *)ctx_json;
 
     json cfg;
     parse_screen_json_ctx(json_str, cfg);
 
-    // final_word + fingerprint are required (this is a post-derivation results screen).
+    // Required fields: final_word + fingerprint are the post-derivation results
+    // this screen exists to show; fingerprint_label + button_list are user-visible
+    // CONTENT, which always arrives localized from the host view layer (a string
+    // literal baked here would be English-only by construction). One throw per
+    // field, before the scaffold exists, so no throw path can leak LVGL objects.
     if (!cfg.contains("final_word") || !cfg["final_word"].is_string()) {
-        throw std::runtime_error("tools_calc_final_word_done_screen requires a \"final_word\" string");
+        throw std::runtime_error("tools_calc_final_word_done_screen: final_word is required and must be a string");
     }
     if (!cfg.contains("fingerprint") || !cfg["fingerprint"].is_string()) {
-        throw std::runtime_error("tools_calc_final_word_done_screen requires a \"fingerprint\" string");
+        throw std::runtime_error("tools_calc_final_word_done_screen: fingerprint is required and must be a string");
+    }
+    if (!cfg.contains("fingerprint_label") || !cfg["fingerprint_label"].is_string()) {
+        throw std::runtime_error("tools_calc_final_word_done_screen: fingerprint_label is required and must be a string");
+    }
+    if (!cfg.contains("button_list") || !cfg["button_list"].is_array() || cfg["button_list"].empty()) {
+        throw std::runtime_error("tools_calc_final_word_done_screen: button_list is required and must be a non-empty array");
     }
     std::string final_word        = cfg["final_word"].get<std::string>();
     std::string fingerprint       = cfg["fingerprint"].get<std::string>();
-    std::string fingerprint_label = cfg.value("fingerprint_label", std::string("fingerprint"));
+    std::string fingerprint_label = cfg["fingerprint_label"].get<std::string>();
 
-    // Force the ToolsCalcFinalWordDoneScreen shape onto the scaffold cfg: a titled,
-    // back-button-bearing, bottom-pinned button list.
-    if (!cfg.contains("top_nav") || !cfg["top_nav"].is_object()) cfg["top_nav"] = json::object();
-    if (!cfg["top_nav"].contains("title")) {
-        // Python __post_init__ derives the title from mnemonic_word_length. Default 12.
-        int word_length = cfg.value("mnemonic_word_length", 12);
-        cfg["top_nav"]["title"] = (word_length == 12) ? "12th Word" : "24th Word";
-    }
-    cfg["is_bottom_list"] = true;    // Python: is_bottom_list = True
-    if (!cfg.contains("button_list")) {
-        // Python: [LOAD ("Load seed"), DISCARD ("Discard", label_color=red)].
-        cfg["button_list"] = json::array({
-            json("Load seed"),
-            json{ {"label", "Discard"}, {"label_color", "#ff0000"} },
-        });
-    }
+    // Structural defaults (write-if-absent, never user-visible text). Python
+    // ButtonListScreen defaults: show_back_button=True, show_power_button=False.
+    // The localized title itself is content and must come from the host.
+    ensure_top_nav_structure(cfg, /*default_show_back_button=*/true,
+                                  /*default_show_power_button=*/false);
+    require_top_nav_title(cfg, "tools_calc_final_word_done_screen");
 
-    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, false);
+    cfg["is_bottom_list"] = true;    // forced, not defaulted — Python: is_bottom_list = True
+
+    // --- Scaffold ---
+
+    screen_scaffold_t screen = create_top_nav_screen_scaffold(cfg, /*scrollable=*/false);
+
+    // --- Body ---
 
     // The bottom-list body is a flex column [upper_body][spacer grow=1][buttons].
     // Leave upper_body ungrown (top-anchored) so the word + fingerprint sit just
@@ -118,36 +144,34 @@ void tools_calc_final_word_done_screen(void *ctx_json) {
     //    size — so we leave icon_font/value_font/label_font unset and only color the
     //    icon blue. upper_body's cross-axis centering centers the whole block.
     //    Python spaces it 3*COMPONENT_PADDING below the word.
-    icon_text_line_opts_t fp = {};
-    fp.icon_glyph       = SeedSignerIconConstants::FINGERPRINT;
-    fp.icon_color       = INFO_COLOR;
-    fp.label_text       = fingerprint_label.c_str();
-    fp.value_text       = fingerprint.c_str();
-    fp.label_color      = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> LABEL_FONT_COLOR (gray)
-    fp.value_color      = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> BODY_FONT_COLOR
-    fp.is_text_centered = true;
-    lv_obj_t *fp_row = icon_text_line(screen.upper_body, &fp);
-    if (fp_row) {
+    icon_text_line_opts_t fingerprint_opts = {};
+    fingerprint_opts.icon_glyph       = SeedSignerIconConstants::FINGERPRINT;
+    fingerprint_opts.icon_color       = INFO_COLOR;
+    fingerprint_opts.label_text       = fingerprint_label.c_str();
+    fingerprint_opts.value_text       = fingerprint.c_str();
+    fingerprint_opts.label_color      = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> LABEL_FONT_COLOR (gray)
+    fingerprint_opts.value_color      = SEEDSIGNER_ICON_COLOR_DEFAULT;   // -> BODY_FONT_COLOR
+    fingerprint_opts.is_text_centered = true;
+    lv_obj_t *fingerprint_row = icon_text_line(screen.upper_body, &fingerprint_opts);
+    if (fingerprint_row) {
         // Python's 3*COMPONENT_PADDING is measured from the word TextArea's tight box
         // bottom to the IconTextLine's box top. LVGL's word label box is a full
-        // line-height tall (overshooting the visible glyph bottom), and the fp block's
-        // top line (the "fingerprint" label) carries its own leading above the caps.
-        // Reclaim both so the VISIBLE gap between the word and the readout matches PIL.
-        int32_t fp_gap = 3 * COMPONENT_PADDING
-                         - text_top_leading(word_font, quoted_word.c_str())
-                         - text_top_leading(&BODY_FONT, fingerprint_label.c_str());
-        if (fp_gap < 0) fp_gap = 0;
-        lv_obj_set_style_margin_top(fp_row, fp_gap, LV_PART_MAIN);
+        // line-height tall (overshooting the visible glyph bottom), and the
+        // fingerprint block's top line (the label) carries its own leading above the
+        // caps. Reclaim both so the VISIBLE gap between the word and the readout
+        // matches PIL.
+        int32_t fingerprint_gap = 3 * COMPONENT_PADDING
+                                  - text_top_leading(word_font, quoted_word.c_str())
+                                  - text_top_leading(&BODY_FONT, fingerprint_label.c_str());
+        if (fingerprint_gap < 0) fingerprint_gap = 0;
+        lv_obj_set_style_margin_top(fingerprint_row, fingerprint_gap, LV_PART_MAIN);
     }
 
-    bind_screen_navigation(
-        cfg,
-        screen,
-        screen.button_list_count > 0 ? screen.button_list : NULL,
-        screen.button_list_count,
-        NAV_BODY_VERTICAL,
-        0   // default the first action button (Load seed) selected, like button_list_screen
-    );
+    // --- Navigation + load ---
+
+    // Menu-style default index: an action list always has a selection, so the first
+    // button starts focused (the host may override via cfg initial_selected_index).
+    bind_screen_navigation(cfg, screen, /*default_initial_index=*/0);
 
     load_screen_and_cleanup_previous(screen.screen);
 }
