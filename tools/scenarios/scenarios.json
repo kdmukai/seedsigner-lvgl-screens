@@ -1057,7 +1057,8 @@
     "context": {
       "top_nav": {"title": "Settings QR", "show_back_button": false, "show_power_button": false},
       "config_name": "English noob mode",
-      "status_message": "Persistent Settings enabled. Settings saved to SD card."
+      "status_message": "Persistent Settings enabled. Settings saved to SD card.",
+      "button_list": ["Home"]
     },
     "variations": [
       { "name": "not_persistent",
@@ -1292,7 +1293,8 @@
         "name": "raw_hex",
         "context": {
           "text": null,
-          "hex": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          "hex": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+          "hex_label": "raw hex data"
         }
       }
     ]

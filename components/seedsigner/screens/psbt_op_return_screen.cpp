@@ -45,12 +45,9 @@
 //   hex                       (string)               Mode B payload: lowercase hex,
 //            no separators. ONE OF text/hex is required (both absent-or-empty
 //            throws); a non-empty hex takes precedence and selects Mode B.
-//   hex_label                 (string, default "raw hex data")  Mode B caption
-//            (Python: _("raw hex data")). English default RETAINED — a documented
-//            content-policy deviation: the raw_hex scenario does not supply the
-//            key, so converting it to require-and-throw would break the pixel
-//            gate; revisit once the scenario/host always sends the localized
-//            caption.
+//   hex_label                 (string, required in Mode B)  the Mode B caption
+//            (Python: _("raw hex data")) — localized content, required from the host
+//            whenever a hex payload is supplied.
 //   button_list               (array, required, non-empty)  the localized action
 //            buttons (Python: "Next"); built by the scaffold. is_bottom_list is
 //            forced true (Python: is_bottom_list = True).
@@ -108,6 +105,12 @@ void psbt_op_return_screen(void *ctx_json) {
     // contract's tiebreak is explicit.
     const bool hex_mode = !hex.empty();
 
+    // hex_label is the Mode-B caption ("raw hex data") — localized CONTENT, required
+    // from the host whenever Mode B renders (a literal baked here would ship English).
+    if (hex_mode && (!cfg.contains("hex_label") || !cfg["hex_label"].is_string())) {
+        throw std::runtime_error("psbt_op_return_screen: hex_label is required and must be a string when hex is provided");
+    }
+
     // Structural defaults (write-if-absent, never user-visible text). Python
     // ButtonListScreen defaults: show_back_button=True, show_power_button=False.
     // The localized title itself is content and must come from the host.
@@ -137,10 +140,10 @@ void psbt_op_return_screen(void *ctx_json) {
         // --- Mode B: raw hex fallback ---
 
         // 1. Small gray caption above the dump (Python: TextArea in
-        //    LABEL_FONT_COLOR at the label font size). The caption string is the
-        //    kept English default documented in the banner's cfg table.
+        //    LABEL_FONT_COLOR at the label font size). The caption is the required
+        //    localized hex_label (Python: _("raw hex data")).
         lv_obj_t *caption = lv_label_create(screen.upper_body);
-        lv_label_set_text(caption, cfg.value("hex_label", std::string("raw hex data")).c_str());
+        lv_label_set_text(caption, cfg["hex_label"].get<std::string>().c_str());
         lv_obj_set_style_text_color(caption, lv_color_hex(LABEL_FONT_COLOR), LV_PART_MAIN);
         lv_obj_set_style_text_font(caption, &BODY_FONT, LV_PART_MAIN);
 

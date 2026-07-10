@@ -55,10 +55,9 @@
 //            (the scaffold's implicit default; the reference cfg passes false —
 //            see the layout-notes deviation above).
 //   top_nav.show_power_button (bool, default false)  structural write-if-absent.
-//   button_list               (array, default ["Home"])  the bottom action row
-//            (Python: button_data = [ButtonOption("Home")]). English content
-//            default KEPT and flagged: the scenarios omit the key, so the §5
-//            required-throw conversion cannot be applied yet.
+//   button_list               (array, required, non-empty)  the localized bottom
+//            action row (Python: button_data = [ButtonOption("Home")]); host-supplied,
+//            passed through to the delegated chrome.
 //   All remaining keys (top_nav.icon / icon_color, is_button_text_centered,
 //   button_style, checked_buttons, initial_selected_index, input.mode,
 //   input.keys.*, allow_screensaver) pass through unchanged to the delegated
@@ -158,6 +157,12 @@ void settings_qr_confirmation_screen(void *ctx_json) {
     }
     std::string status_message = cfg["status_message"].get<std::string>();
 
+    // button_list is the localized bottom action (Python: [ButtonOption("Home")]) —
+    // required content; a literal baked here would ship English.
+    if (!cfg.contains("button_list") || !cfg["button_list"].is_array() || cfg["button_list"].empty()) {
+        throw std::runtime_error("settings_qr_confirmation_screen: button_list is required and must be a non-empty array");
+    }
+
     // config_name is a user-supplied string scanned from the SettingsQR — quoted,
     // never translated, and genuinely OPTIONAL (Python: config_name=None default
     // skips its TextArea entirely).
@@ -188,13 +193,9 @@ void settings_qr_confirmation_screen(void *ctx_json) {
     chrome.erase("config_name");
     chrome.erase("status_message");
     chrome["text"] = "";                 // forced — no flowed intro text; we overlay the blocks
-    if (!chrome.contains("button_list")) {
-        // Python: button_data = [ButtonOption("Home")]. Host may override. English
-        // content default KEPT (flagged): the scenarios omit button_list, so the §5
-        // required-throw conversion cannot be applied yet.
-        chrome["button_list"] = json::array({ "Home" });
-    }
     chrome["is_bottom_list"] = true;     // forced, not defaulted — Python: is_bottom_list = True
+    // button_list passes through from cfg (validated above) — the host supplies the
+    // localized bottom action.
 
     const std::string chrome_str = chrome.dump();
     button_list_screen((void *)chrome_str.c_str());
