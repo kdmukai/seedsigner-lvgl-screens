@@ -100,9 +100,22 @@ void loading_spinner_spin_timer_cb(lv_timer_t *timer) {
     if (lv_obj_is_valid(ctx->dim_arc)) lv_arc_set_rotation(ctx->dim_arc, rotation_deg);
 }
 
-// LV_EVENT_DELETE teardown on the screen root: stop the (not widget-owned) spin
-// timer, then free the ctx.
+// LV_EVENT_DELETE teardown on the screen root: reset the idle clock, stop the
+// (not widget-owned) spin timer, then free the ctx.
 void loading_spinner_cleanup_cb(lv_event_t *e) {
+    // The spinner is dismissed by the host loading the NEXT screen (this LV_EVENT_DELETE
+    // fires from that screen's load_screen_and_cleanup_previous). Unlike an ordinary screen
+    // swap, no user input drove it: a long host task (large-PSBT parse/sign, xpub calc) can
+    // outlast the screensaver timeout with zero input, so LVGL's idle clock
+    // (lv_display_get_inactive_time) is stale and the overlay manager would fire the
+    // screensaver over the freshly-rendered result. Count the dismissal as activity so the
+    // successor screen gets a full idle window. Same primitive the overlay manager uses when
+    // it wakes from the screensaver. It runs in the same context as the rest of this teardown
+    // (lv_timer_delete / delete ctx, driven by the successor's load_screen_and_cleanup_previous),
+    // so it needs no synchronization that path doesn't already hold on either backend.
+    // Platform-agnostic — one fix for ESP32 and Pi Zero.
+    lv_display_trigger_activity(NULL);
+
     loading_spinner_spin_ctx_t *ctx = (loading_spinner_spin_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
     if (ctx->timer) lv_timer_delete(ctx->timer);
