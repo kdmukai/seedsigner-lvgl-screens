@@ -119,7 +119,7 @@ std::string g_qr_mode = "auto";           // qr_display encode mode (from cfg) -
 
 // Synthesize + push a QR that renders at `px` px/module on the current screen.
 void apply_density_demo(int px) {
-    if (px < 3) px = 3;
+    if (px < 2) px = 2;
     if (px > 6) px = 6;
     int sd = g_width < g_height ? g_width : g_height;
     if (sd <= 0) return;

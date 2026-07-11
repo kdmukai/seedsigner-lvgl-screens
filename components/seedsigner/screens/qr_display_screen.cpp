@@ -60,7 +60,7 @@
 //            is offered. Enable ONLY for an animated (fountain) QR whose fragment size the host
 //            varies; a fixed QR (SeedQR, xpub, address, ...) has no adjustable density, so it stays
 //            off and the panel shows brightness only (LEFT/RIGHT then exit, Python parity).
-//   initial_px_per_module (int, default 4, clamped 3..6)  starting animated-QR density, used only
+//   initial_px_per_module (int, default 4, clamped 2..6)  starting animated-QR density, used only
 //            when density_control (host seeds from SETTING__QR_DENSITY via its resolution-keyed
 //            table; the C side carries only px/module and drives the density slider from it).
 //   show_brightness_tips (bool, default true)  whether the brightness panel
@@ -151,7 +151,7 @@ struct qr_display_ctx_t {
 
     input_mode_t     input_mode;
     int              brightness;   // 31..255
-    int              px_per_module; // 3..6 (animated-QR density; drives the density slider)
+    int              px_per_module; // 2..6 (animated-QR density; drives the density slider)
     int              border;       // quiet-zone modules
     qr_encode_mode_t mode;
     bool             show_tips;
@@ -321,20 +321,20 @@ void qr_display_set_brightness(qr_display_ctx_t *ctx, int brightness) {
     seedsigner_lvgl_on_qr_brightness((uint8_t)ctx->brightness);
 }
 
-// Animated-QR density in integer pixels-per-module (3..6). Changing it does NOT re-render the
+// Animated-QR density in integer pixels-per-module (2..6). Changing it does NOT re-render the
 // current frame here — density governs how the HOST fragments the payload — so this only reflects
 // the new value on the panel and fires the host cue (rebuild the encoder + RESTART the UR fountain
 // at the new px/module, then persist SETTING__QR_DENSITY). Mirrors qr_display_set_brightness's
 // real-time-change contract; the host may debounce slider drags.
 void qr_display_set_density(qr_display_ctx_t *ctx, int px_per_module) {
-    if (px_per_module < 3) px_per_module = 3;
+    if (px_per_module < 2) px_per_module = 2;
     if (px_per_module > 6) px_per_module = 6;
     if (px_per_module == ctx->px_per_module) return;
     ctx->px_per_module = px_per_module;
     // Slider is oriented by DENSITY (left = min density = high px, right = max density = low px),
-    // so its value is the inverse of px/module: value = 9 - px (3..6 <-> 6..3).
+    // so its value is the inverse of px/module: value = 8 - px (2..6 <-> 6..2).
     if (ctx->density_slider)
-        lv_slider_set_value(ctx->density_slider, 9 - px_per_module, LV_ANIM_OFF);
+        lv_slider_set_value(ctx->density_slider, 8 - px_per_module, LV_ANIM_OFF);
     seedsigner_lvgl_on_qr_density((uint8_t)ctx->px_per_module);
 }
 
@@ -407,7 +407,7 @@ void qr_display_key_cb(lv_event_t *e) {
         if (ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_HARDWARE);
     } else if (ctx->density_control && key == LV_KEY_RIGHT) {
         qr_display_pulse_chevron(ctx, ctx->chev_right);
-        qr_display_set_density(ctx, ctx->px_per_module - 1);   // more density (min px 3)
+        qr_display_set_density(ctx, ctx->px_per_module - 1);   // more density (min px 2)
         if (ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_HARDWARE);
     } else {
         // No density control (fixed QR): LEFT/RIGHT fall through here and exit, along with
@@ -433,13 +433,13 @@ void qr_display_slider_cb(lv_event_t *e) {
 }
 
 // Touch: the density slider snaps to an integer detent and pushes the change through the same
-// real-time path as the LEFT/RIGHT keys. Slider value is inverted vs px/module (value = 9 - px),
+// real-time path as the LEFT/RIGHT keys. Slider value is inverted vs px/module (value = 8 - px),
 // so dragging RIGHT raises density. Adjusting also keeps the panel up.
 void qr_display_density_slider_cb(lv_event_t *e) {
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     lv_obj_t *slider = lv_event_get_target_obj(e);
     if (!ctx || !slider) return;
-    qr_display_set_density(ctx, 9 - (int)lv_slider_get_value(slider));
+    qr_display_set_density(ctx, 8 - (int)lv_slider_get_value(slider));
     qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_TOUCH);
 }
 
@@ -520,13 +520,13 @@ void qr_display_style_slider(lv_obj_t *slider) {
 }
 
 // A density slider inside `row` (which must have a fixed width — the slider flex-grows to fill it).
-// Value is oriented by DENSITY, the inverse of px/module (value = 9 - px), so the knob sits LEFT
+// Value is oriented by DENSITY, the inverse of px/module (value = 8 - px), so the knob sits LEFT
 // for low density (high px) and RIGHT for high density (low px). Touch drives it via
 // qr_display_density_slider_cb; hardware leaves it passive (LEFT/RIGHT keys move it).
 lv_obj_t *qr_display_make_density_slider(qr_display_ctx_t *ctx, lv_obj_t *row) {
     lv_obj_t *slider = lv_slider_create(row);
-    lv_slider_set_range(slider, 3, 6);                        // value 3..6 = 9 - px (min..max density)
-    lv_slider_set_value(slider, 9 - ctx->px_per_module, LV_ANIM_OFF);
+    lv_slider_set_range(slider, 2, 6);                        // value 2..6 = 8 - px (min..max density)
+    lv_slider_set_value(slider, 8 - ctx->px_per_module, LV_ANIM_OFF);
     qr_display_style_slider(slider);
     if (ctx->input_mode == INPUT_MODE_TOUCH) {
         lv_obj_add_event_cb(slider, qr_display_density_slider_cb, LV_EVENT_VALUE_CHANGED, ctx);
@@ -539,14 +539,21 @@ lv_obj_t *qr_display_make_density_slider(qr_display_ctx_t *ctx, lv_obj_t *row) {
     return slider;
 }
 
-// A full-width row (fixed to the panel's inner width) for a fill-the-width slider control. The
-// horizontal padding stays INSIDE the fixed width (unlike a slider margin, which flex-grow doesn't
-// subtract and so overflows) — it reserves room for the round knob's overhang at the slider ends
-// so the knob never gets clipped by the panel edge.
+// A full-width row (fixed to the panel's inner width) for a fill-the-width slider control. Padding
+// stays INSIDE the fixed width (unlike a slider margin, which flex-grow doesn't subtract, so it
+// would overflow). It reserves room for the round knob's overhang BOTH horizontally (at the slider
+// ends) and vertically: a slider alone in the row is only as tall as its thin track, so without
+// vertical room the knob — which pops above/below the track — gets clipped top/bottom. (The
+// brightness row and the hardware density row avoid this incidentally via their taller sun/chevron
+// glyphs; the touch density slider has no such neighbor, which is where the clip showed up.)
 lv_obj_t *qr_display_make_fill_row(lv_obj_t *parent, int32_t inner_w) {
     lv_obj_t *row = qr_display_make_row(parent);
     lv_obj_set_width(row, inner_w);       // fixed width so the child slider can flex-grow into it
-    lv_obj_set_style_pad_hor(row, COMPONENT_PADDING, LV_PART_MAIN);  // knob-overhang room, within inner_w
+    // Knob-overhang room, kept INSIDE inner_w. The horizontal ends need the knob's full half-width
+    // (the knob is centered on the value, so at min/max half of it sits past the track end);
+    // vertically it only needs the smaller amount the round knob pops past the thin track.
+    lv_obj_set_style_pad_hor(row, COMPONENT_PADDING * 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_ver(row, COMPONENT_PADDING, LV_PART_MAIN);
     return row;
 }
 
@@ -563,7 +570,7 @@ lv_obj_t *qr_display_make_text(lv_obj_t *parent, const std::string &text) {
 // Build the density control into `parent`: a "density" title, a full-width slider (hardware flanked
 // by LEFT/RIGHT chevrons, captured for pulse feedback), and min/max end labels tucked close under
 // it. Called only when ctx->density_control is set (an animated QR). Density INCREASES left→right:
-// left = MIN density (px 6, biggest modules, easiest scan), right = MAX density (px 3, most data).
+// left = MIN density (px 6, biggest modules, easiest scan), right = MAX density (px 2, most data).
 // No numeric readout — a higher px/module is LOWER density, which a number makes confusing.
 void qr_display_build_density_section(qr_display_ctx_t *ctx, lv_obj_t *parent, int32_t inner_w,
                                       bool hw, const std::string &title,
@@ -737,12 +744,12 @@ void qr_display_screen(void *ctx_json) {
     if (brightness < 31) brightness = 31;
     if (brightness > 255) brightness = 255;
 
-    // Starting density in integer pixels-per-module (3..6). The host seeds this from
+    // Starting density in integer pixels-per-module (2..6). The host seeds this from
     // SETTING__QR_DENSITY (resolved through its resolution-keyed table); the C side only
     // carries the px/module value and drives the density slider from it. Default 4 is a
     // structural fallback for callers that don't pass one (the host always does).
     int px_per_module = cfg.value("initial_px_per_module", 4);
-    if (px_per_module < 3) px_per_module = 3;
+    if (px_per_module < 2) px_per_module = 2;
     if (px_per_module > 6) px_per_module = 6;
 
     bool show_tips = cfg.value("show_brightness_tips", true);  // Python: SETTING__QR_BRIGHTNESS_TIPS default enabled
