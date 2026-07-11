@@ -632,11 +632,23 @@
       "data_encoding": "utf8",
       "border": 2,
       "initial_brightness": 62,
+      "initial_px_per_module": 4,
       "show_brightness_tips": true,
       "brighter_text": "Brighter",
       "darker_text": "Darker"
     },
     "variations": [
+      {
+        "name": "animated_psbt_density",
+        "context": {
+          "qr_data": "0000",
+          "qr_mode": "numeric",
+          "density_control": true,
+          "density_text": "density",
+          "density_min_text": "min",
+          "density_max_text": "max"
+        }
+      },
       {
         "name": "compactseedqr",
         "context": {

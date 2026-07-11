@@ -190,6 +190,14 @@ bool qr_display_is_tip_active(void);
 // provides a strong definition to persist. Desktop tools may leave it stubbed.
 void seedsigner_lvgl_on_qr_brightness(uint8_t brightness);
 
+// Optional host hook: qr_display_screen reports the selected animated-QR density in integer
+// pixels-per-module (3..6) whenever the on-screen density slider changes, and once on exit.
+// It is the host's cue to re-resolve max_fragment_len from its resolution-keyed table, rebuild
+// the encoder, and RESTART the UR fountain (same contract as _on_qr_brightness), then persist
+// SETTING__QR_DENSITY. The density->fragment lookup stays host-side (single source of truth);
+// this callback carries only px/module. Ships a weak no-op default; a host overrides to react.
+void seedsigner_lvgl_on_qr_density(uint8_t px_per_module);
+
 // Host callback: a body button (or a dismiss/complete sentinel) was selected. `index`
 // is the 0-based body-button index or a SEEDSIGNER_RET_* value; `label` is its text.
 // Ships a weak no-op default (in components.cpp); the host provides a strong override.
