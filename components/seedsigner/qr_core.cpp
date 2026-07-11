@@ -207,9 +207,14 @@ bool qr_encode_bytes(qr_encode_mode_t mode, const uint8_t *data, size_t len,
         return qrcodegen_encodeBinary(tmp, len, out, qrcodegen_Ecc_LOW, 1, 40, mk, false);
     };
 
-    // Fast path: qrcodegen's own auto-mask, a single encode. Used wherever the mask is
-    // invisible because a machine scans it (qr_display's static + animated frames).
-    if (!match_python_mask) return encode_mask(qrcodegen_Mask_AUTO);
+    // Fast path: a FIXED mask, a single encode. Used wherever the mask is invisible because a
+    // machine scans it (qr_display's static + animated frames). qrcodegen_Mask_AUTO would apply
+    // all 8 masks and run a 4-pass penalty score over the whole matrix EVERY frame — measured
+    // ~91% of encode time (v34: ~7ms -> ~0.6ms desktop, 11x). The chosen mask is irrelevant to a
+    // scanner, so pinning Mask_0 keeps the QR valid while dropping the auto-mask scoring entirely.
+    // (Only the animated/static qr_display path takes this branch; the SeedQR transcribe screens
+    // use match_python_mask=true below, which still parity-matches python-qrcode.)
+    if (!match_python_mask) return encode_mask(qrcodegen_Mask_0);
 
     // Parity path (SeedQR transcription): choose the SAME mask python-qrcode would so the
     // hand-copied pattern matches a Pi Zero. Encode each candidate, score it with

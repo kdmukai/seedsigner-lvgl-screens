@@ -71,7 +71,15 @@ jobs:
         env:
           SS_LANGPACKS_REPO_DIR: ${{ github.workspace }}/seedsigner-language-packs
 
+      # DEV-SPEED (2026-07-11): skip the screenshot render on PRs. Building + rendering
+      # the full localized gallery is the long pole of PR CI and has little value while
+      # the screens churn heavily. It STILL runs on push to main / manual dispatch, so
+      # the deployed gallery stays current after merge. assemble-site tolerates the
+      # missing gallery (guards on the screenshots dir), so the web-runner PR build/upload
+      # is unaffected. RE-ENABLE FOR PRs NEAR PRODUCTION: remove the `if:` guard below so
+      # it runs on every event again.
       - name: Build & generate screenshots
+        if: github.event_name != 'pull_request'
         run: |
           scripts/ci/ci.sh build-screenshots
           scripts/ci/ci.sh generate-screenshots

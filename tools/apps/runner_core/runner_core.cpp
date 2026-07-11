@@ -85,14 +85,83 @@ uint32_t g_qr_frame_accum_ms = 0;
 bool     g_qr_tip_was_active = false;
 constexpr uint32_t QR_FRAME_INTERVAL_MS = 167;  // 5/30 s
 
+// --- Live density demo (runner host stand-in) ---
+// The real host reacts to seedsigner_lvgl_on_qr_density() by re-fragmenting the payload and pushing
+// a frame whose QR version renders at the chosen px/module. The runner has no fountain, so it
+// synthesizes that here: pick the densest QR version that still renders at >= px px/module on this
+// screen and push a digit payload sized to fill it, so the on-screen QR visibly changes density as
+// the slider moves. Numeric ECC-L max-digit capacity per version 1..40 (numeric/auto scenarios
+// encode digits as numeric, so the version lands exactly; other modes still get denser/sparser).
+const int kNumericCapacity[40] = {
+      41,   77,  127,  187,  255,  322,  370,  461,  552,  652,
+     772,  883, 1022, 1101, 1250, 1408, 1548, 1725, 1903, 2061,
+    2232, 2409, 2620, 2812, 3057, 3283, 3517, 3669, 3909, 4158,
+    4417, 4686, 4965, 5253, 5529, 5836, 6153, 6479, 6743, 7089,
+};
+// Byte + alphanumeric ECC-L capacities, so the digit payload lands on the intended version for a
+// screen configured in byte / alphanumeric mode too (numeric/auto encode digits as numeric).
+const int kByteCapacity[40] = {
+      17,   32,   53,   78,  106,  134,  154,  192,  230,  271,
+     321,  367,  425,  458,  520,  586,  644,  718,  792,  858,
+     929, 1003, 1091, 1171, 1273, 1367, 1465, 1528, 1628, 1732,
+    1840, 1952, 2068, 2188, 2303, 2431, 2563, 2699, 2809, 2953,
+};
+const int kAlnumCapacity[40] = {
+      25,   47,   77,  114,  154,  195,  224,  279,  335,  395,
+     468,  535,  619,  667,  758,  854,  938, 1046, 1153, 1249,
+    1352, 1460, 1588, 1704, 1853, 1990, 2132, 2223, 2369, 2520,
+    2677, 2840, 3009, 3183, 3351, 3537, 3729, 3927, 4087, 4296,
+};
+std::string g_qr_density_payload;         // synthesized frame; once set, shown statically
+bool        g_qr_density_active = false;  // true once density has been moved on this screen
+int         g_qr_border = 2;              // qr_display quiet-zone modules (from cfg; default 2)
+std::string g_qr_mode = "auto";           // qr_display encode mode (from cfg) -> capacity table
+
+// Synthesize + push a QR that renders at `px` px/module on the current screen.
+void apply_density_demo(int px) {
+    if (px < 2) px = 2;
+    if (px > 6) px = 6;
+    int sd = g_width < g_height ? g_width : g_height;
+    if (sd <= 0) return;
+    int target_v = 1;
+    for (int v = 1; v <= 40; ++v) {
+        int total_modules = (4 * v + 17) + 2 * g_qr_border;
+        if (sd / total_modules >= px) target_v = v;   // densest version still >= px px/module
+    }
+    // Fill the version in the SCREEN's encode mode so the encoder actually selects target_v.
+    const int* cap = kNumericCapacity;                 // numeric / auto (auto picks numeric for digits)
+    if (g_qr_mode == "byte")               cap = kByteCapacity;
+    else if (g_qr_mode == "alphanumeric")  cap = kAlnumCapacity;
+    int len = cap[target_v - 1];
+    g_qr_density_payload.resize((size_t)len);
+    for (int i = 0; i < len; ++i)
+        g_qr_density_payload[(size_t)i] = char('0' + (i * 7 + 3) % 10);  // looks like data, not a block
+    g_qr_density_active = true;
+    qr_display_set_frame(g_qr_density_payload.data(), g_qr_density_payload.size());
+}
+
 void configure_qr_test_frames(const std::string& fn_name, const std::string& json_ctx) {
     g_qr_test_frames.clear();
     g_qr_frame_idx = 0;
     g_qr_frame_accum_ms = 0;
     g_qr_tip_was_active = false;
+    g_qr_density_active = false;
+    g_qr_density_payload.clear();
+    g_qr_border = 2;
+    g_qr_mode = "auto";
     if (fn_name != "qr_display_screen" || json_ctx.empty()) return;
+    int  initial_px      = 4;      // qr_display_screen's initial_px_per_module default
+    bool density_control = false;  // matches the screen's default (fixed QRs have no density)
     try {
         json ctx = json::parse(json_ctx);
+        if (ctx.contains("border") && ctx["border"].is_number_integer())
+            g_qr_border = ctx["border"].get<int>();
+        if (ctx.contains("qr_mode") && ctx["qr_mode"].is_string())
+            g_qr_mode = ctx["qr_mode"].get<std::string>();
+        if (ctx.contains("initial_px_per_module") && ctx["initial_px_per_module"].is_number_integer())
+            initial_px = ctx["initial_px_per_module"].get<int>();
+        if (ctx.contains("density_control") && ctx["density_control"].is_boolean())
+            density_control = ctx["density_control"].get<bool>();
         if (ctx.contains("test_frames") && ctx["test_frames"].is_array()) {
             for (const auto& f : ctx["test_frames"]) {
                 if (f.is_string()) g_qr_test_frames.push_back(f.get<std::string>());
@@ -101,6 +170,13 @@ void configure_qr_test_frames(const std::string& fn_name, const std::string& jso
     } catch (...) {
         // invalid ctx -> treat as a static QR (nothing to cycle)
     }
+    // Density-enabled STATIC QR: the scenario's fixed qr_data renders at its own natural px/module
+    // (often outside the 3..6 band on a large screen), so it would NOT match the density slider's
+    // initial position. Re-render the initial frame at initial_px_per_module so the shown QR matches
+    // the slider — the match the real host gives by sizing its first fountain fragment to the
+    // setting. A fixed QR (density_control off) keeps its real qr_data; animated scenarios keep
+    // cycling test_frames and sync density only on user interaction.
+    if (density_control && g_qr_test_frames.empty()) apply_density_demo(initial_px);
 }
 
 // LVGL flush: copy the rendered RGB565 region into our framebuffer.
@@ -235,7 +311,7 @@ void tick(uint32_t elapsed_ms) {
     // screen has since been torn down. Mirrors Python QRDisplayScreen: HOLD while the
     // brightness tip is up (on start + after a brightness change), and RESTART from frame 0
     // when it clears (so the valuable pure first frames are re-delivered).
-    if (!g_qr_test_frames.empty()) {
+    if (!g_qr_density_active && !g_qr_test_frames.empty()) {
         bool tip = qr_display_is_tip_active();
         if (tip) {
             g_qr_frame_accum_ms = 0;          // hold on the current (first) frame
@@ -375,3 +451,11 @@ bool load_scenarios_grouped(const char* path, std::vector<ScreenScenarios>& out)
 }
 
 }  // namespace runner_core
+
+// Strong override of the qr_display weak host hook: the runner stands in for the host, so moving
+// the density slider live re-renders the QR at the new px/module (see apply_density_demo). Real
+// hosts (Pi / MicroPython) provide their own strong definition; the desktop/web runner provides
+// this one.
+extern "C" void seedsigner_lvgl_on_qr_density(uint8_t px_per_module) {
+    runner_core::apply_density_demo((int)px_per_module);
+}
