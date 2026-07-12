@@ -51,6 +51,7 @@
 #include "screen_scaffold.h"        // parse_optional_screen_json_ctx, load_screen_and_cleanup_previous
 #include "seedsigner.h"             // camera_entropy_overlay_screen declaration
 #include "camera_entropy_overlay.h" // camera_entropy_overlay_create/destroy + spec / phase / capture-style types
+#include "image_entropy.h"          // image_entropy_process (crop-to-fill + luminance stretch), for the tooling CONFIRM frame
 
 #include "lvgl.h"                   // lv_obj / lv_display / lv_color / lv_memzero + per-object style setters
 
@@ -59,6 +60,50 @@
 #include <string>                   // std::string
 
 using json = nlohmann::json;
+
+
+// Desktop tooling only: there is no camera, so synthesize a deliberately LOW-CONTRAST
+// test frame and run it through the REAL image_entropy_process + set_confirm_image path,
+// exercising crop-to-fill, the luminance stretch, and the CONFIRM render in one shot. The
+// frame is a 4:3 source (unlike any display profile, so the crop-to-fill shows), a
+// horizontal brightness ramp compressed to ~[50,205] (so the 2% stretch has room to
+// expand), tinted in three vertical colour bands by an equal +40 (so a correct UNIFORM
+// stretch preserves their hue — a per-channel stretch would skew them).
+static void tooling_push_synthetic_confirm_frame(camera_entropy_overlay_t *overlay,
+                                                  int32_t screen_w, int32_t screen_h) {
+    const int32_t SRC_W = 320, SRC_H = 240;
+
+    uint8_t  *src = (uint8_t  *)lv_malloc((size_t)SRC_W * SRC_H * 3);
+    uint16_t *dst = (uint16_t *)lv_malloc((size_t)screen_w * screen_h * 2);
+    if (!src || !dst) {
+        if (src) lv_free(src);
+        if (dst) lv_free(dst);
+        return;
+    }
+
+    for (int32_t y = 0; y < SRC_H; ++y) {
+        for (int32_t x = 0; x < SRC_W; ++x) {
+            int base = 50 + (x * 155) / (SRC_W - 1);   // low-contrast horizontal ramp
+            int r = base, g = base, b = base;
+            if      (y <     SRC_H / 3) r = base + 40;  // warm band
+            else if (y < 2 * SRC_H / 3) g = base + 40;  // green band
+            else                        b = base + 40;  // cool band
+            if (r > 255) r = 255;
+            if (g > 255) g = 255;
+            if (b > 255) b = 255;
+
+            uint8_t *p = src + ((size_t)y * SRC_W + x) * 3;
+            p[0] = (uint8_t)r; p[1] = (uint8_t)g; p[2] = (uint8_t)b;
+        }
+    }
+
+    image_entropy_process(src, SRC_W, SRC_H, IMAGE_ENTROPY_PIXFMT_RGB888,
+                          dst, screen_w, screen_h);
+    camera_entropy_overlay_set_confirm_image(overlay, dst, screen_w, screen_h);
+
+    lv_free(src);
+    lv_free(dst);
+}
 
 
 void camera_entropy_overlay_screen(void *ctx_json) {
@@ -176,6 +221,14 @@ void camera_entropy_overlay_screen(void *ctx_json) {
     spec.phase = phase;
 
     camera_entropy_overlay_t *overlay = camera_entropy_overlay_create(scr, &spec);
+
+    // On device the host pushes the processed final frame in the CONFIRM phase; in
+    // tooling there is no camera, so feed a synthetic frame through the same path so the
+    // full-display confirm render (crop-to-fill + luminance stretch) is visible + gateable.
+    if (phase == CAMERA_ENTROPY_PHASE_CONFIRM) {
+        tooling_push_synthetic_confirm_frame(overlay, screen_w, screen_h);
+    }
+
     camera_entropy_overlay_destroy(overlay);
 
     // --- Load ---

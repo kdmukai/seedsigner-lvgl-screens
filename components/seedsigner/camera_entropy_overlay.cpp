@@ -23,6 +23,10 @@ struct camera_entropy_overlay {
     input_mode_t           mode;
     camera_entropy_phase_t phase;
 
+    // Full-display frozen final frame, shown only in CONFIRM (both modes). Empty +
+    // hidden until the host pushes a frame via camera_entropy_overlay_set_confirm_image().
+    lv_obj_t *confirm_image;
+
     // Touch controls (NULL in hardware mode).
     lv_obj_t *back_btn;        // top-left gutter: PREVIEW=cancel, CONFIRM=reshoot
     lv_obj_t *capture_ctrl;    // PREVIEW capture: shutter circle OR standard bottom button
@@ -84,6 +88,19 @@ static void show(lv_obj_t *o, bool visible) {
     if (!o) return;
     if (visible) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
     else         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Free the confirm-image frame (pixel buffer + its heap dsc) when the canvas/image
+// widget is deleted. The frame is owned by the WIDGET, not the overlay handle
+// (tooling destroys the handle immediately after build), so it must be released on
+// the widget's LV_EVENT_DELETE. The dsc pointer lives in the widget's user_data.
+static void confirm_image_deleted_cb(lv_event_t *e) {
+    lv_obj_t *img = (lv_obj_t *)lv_event_get_target(e);
+    lv_image_dsc_t *dsc = (lv_image_dsc_t *)lv_obj_get_user_data(img);
+    if (dsc) {
+        lv_free((void *)dsc->data);
+        lv_free(dsc);
+    }
 }
 
 // Shutter / accept clicks → host "button_selected" (index ignored by the entropy loop).
@@ -172,6 +189,19 @@ camera_entropy_overlay_t *camera_entropy_overlay_create(lv_obj_t *parent,
     add_gutter_fill(parent, SX, 0, SW, SY);                    // top
     add_gutter_fill(parent, SX, SY + SH, SW, PH - (SY + SH));  // bottom
 
+    // Full-display frozen-frame surface for the CONFIRM phase. Created HERE — after
+    // the gutter fills, before the transient text + affordances below — so it renders
+    // ABOVE the black gutters (a confirm frame fills the whole display, gutters
+    // included) but BELOW the accept / back controls. Because the gutter rects are
+    // never removed, hiding this image on reshoot instantly restores the black gutters
+    // + the live square with no explicit clear. Empty + hidden until the host pushes a
+    // frame; positioned/sized when the frame arrives.
+    o->confirm_image = lv_image_create(parent);
+    lv_obj_set_pos(o->confirm_image, 0, 0);
+    lv_obj_add_flag(o->confirm_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(o->confirm_image, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+    lv_obj_add_event_cb(o->confirm_image, confirm_image_deleted_cb, LV_EVENT_DELETE, NULL);
+
     // Capturing transient text — bottom-center, accent color, in BOTH modes.
     if (spec->capturing_text && spec->capturing_text[0]) {
         make_bottom_text(parent, spec->capturing_text, (uint32_t)ACCENT_COLOR,
@@ -253,6 +283,10 @@ void camera_entropy_overlay_set_phase(camera_entropy_overlay_t *o, camera_entrop
     const bool capturing = (phase == CAMERA_ENTROPY_PHASE_CAPTURING);
     const bool confirm   = (phase == CAMERA_ENTROPY_PHASE_CONFIRM);
 
+    // Frozen final frame shows only in CONFIRM (both modes); hiding it on reshoot
+    // reveals the black gutters + live square underneath.
+    show(o->confirm_image, confirm);
+
     // Transient capturing text shows only during CAPTURING (both modes).
     show(o->capturing_shadow, capturing);
     show(o->capturing_lbl,    capturing);
@@ -269,6 +303,50 @@ void camera_entropy_overlay_set_phase(camera_entropy_overlay_t *o, camera_entrop
         show(o->confirm_shadow, confirm);
         show(o->confirm_lbl,    confirm);
     }
+}
+
+void camera_entropy_overlay_set_confirm_image(camera_entropy_overlay_t *o,
+                                              const void *rgb565, int32_t w, int32_t h) {
+    if (!o || !o->confirm_image || !rgb565 || w <= 0 || h <= 0) return;
+
+    // Copy the frame into an overlay-owned buffer + heap dsc so the caller may reuse
+    // or free its own buffer immediately after the call. Ownership is tied to the
+    // widget (freed on LV_EVENT_DELETE, or replaced just below on a re-capture), NOT
+    // to the handle — tooling destroys the handle right after build.
+    size_t bytes = (size_t)w * h * 2;   // RGB565, 2 bytes/pixel
+    uint8_t *pixels = (uint8_t *)lv_malloc(bytes);
+    if (!pixels) return;
+    lv_memcpy(pixels, rgb565, bytes);
+
+    lv_image_dsc_t *dsc = (lv_image_dsc_t *)lv_malloc(sizeof(lv_image_dsc_t));
+    if (!dsc) {
+        lv_free(pixels);
+        return;
+    }
+    lv_memzero(dsc, sizeof(*dsc));
+    dsc->header.magic  = LV_IMAGE_HEADER_MAGIC;
+    dsc->header.cf     = LV_COLOR_FORMAT_RGB565;
+    dsc->header.w      = (uint32_t)w;
+    dsc->header.h      = (uint32_t)h;
+    dsc->header.stride = (uint32_t)(w * 2);
+    dsc->data_size     = (uint32_t)bytes;
+    dsc->data          = pixels;
+
+    // Release any prior frame (a re-capture after reshoot) before adopting this one.
+    lv_image_dsc_t *old = (lv_image_dsc_t *)lv_obj_get_user_data(o->confirm_image);
+    if (old) {
+        lv_free((void *)old->data);
+        lv_free(old);
+    }
+    lv_obj_set_user_data(o->confirm_image, dsc);
+
+    lv_image_set_src(o->confirm_image, dsc);
+
+    // Center on the display: a full-display frame lands at (0,0); a smaller one is
+    // centered over the black gutters.
+    int32_t PW = lv_display_get_horizontal_resolution(NULL);
+    int32_t PH = lv_display_get_vertical_resolution(NULL);
+    lv_obj_set_pos(o->confirm_image, (PW - w) / 2, (PH - h) / 2);
 }
 
 void camera_entropy_overlay_destroy(camera_entropy_overlay_t *o) {
