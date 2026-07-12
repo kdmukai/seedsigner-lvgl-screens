@@ -99,6 +99,15 @@ camera_entropy_overlay_t *camera_entropy_overlay_create(lv_obj_t *parent,
 void camera_entropy_overlay_set_phase(camera_entropy_overlay_t *overlay,
                                       camera_entropy_phase_t phase);
 
+// Push the frozen final frame shown in the CONFIRM phase. `rgb565` is a w×h RGB565
+// buffer (typically the full display, from image_entropy_process); the overlay COPIES
+// it, so the caller may reuse/free its buffer immediately after. The image spans the
+// whole display (over the black gutters + the live square) and is visible only while
+// phase == CONFIRM. Calling again replaces the previous frame. Safe no-op if overlay
+// is NULL. See docs/image-entropy-lvgl-native-contract.md §4.
+void camera_entropy_overlay_set_confirm_image(camera_entropy_overlay_t *overlay,
+                                              const void *rgb565, int32_t w, int32_t h);
+
 // Free the handle struct (does NOT delete the LVGL widgets — they belong to the parent).
 void camera_entropy_overlay_destroy(camera_entropy_overlay_t *overlay);
 

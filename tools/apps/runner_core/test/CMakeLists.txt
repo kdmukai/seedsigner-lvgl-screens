@@ -109,6 +109,7 @@ add_executable(test_runner_core
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
   "${SEEDSIGNER_DIR}/camera_entropy_overlay.cpp"
+  "${SEEDSIGNER_DIR}/image_entropy.cpp"
   "${SEEDSIGNER_DIR}/keyboard_core.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
