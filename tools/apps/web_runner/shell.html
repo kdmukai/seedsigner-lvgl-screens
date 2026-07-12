@@ -448,7 +448,9 @@
     function rebuildScreenOptions() {
       var prev = screenSel.value;
       screenSel.innerHTML = '';
-      Object.keys(catalog).forEach(function (name) {
+      // Alphabetical by screen name (the catalog itself is in registry order). Names are
+      // all lowercase snake_case, so a default lexicographic sort reads as expected.
+      Object.keys(catalog).sort().forEach(function (name) {
         var o = document.createElement('option'); o.value = name; o.textContent = name;
         screenSel.appendChild(o);
       });

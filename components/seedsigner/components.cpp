@@ -1309,6 +1309,72 @@ lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* t
     return lv_button;
 }
 
+void large_button_grid(lv_obj_t* body, lv_obj_t* screen_root,
+                       const char** icons, const char** labels,
+                       size_t count, lv_obj_t** out_buttons) {
+    // Fully manual, absolute-positioned 2-column grid (Python LargeButtonScreen parity): derive
+    // the button box + centering offsets from the parent dimensions, then create + place each
+    // button. No flex / lv_grid — the caller's scaffold supplied only chrome + an empty body.
+    const int32_t available_width = lv_obj_get_content_width(body);
+    const int32_t screen_height   = lv_obj_get_height(screen_root);
+
+    // Button box (Python LargeButtonScreen):
+    //   button_height = (canvas_h - top_nav.height - 2*COMPONENT_PADDING - EDGE_PADDING) / 2
+    //   button_width  = (body_content_width - COMPONENT_PADDING) / 2
+    // `available_width` is already the body's CONTENT width (canvas minus its 2*EDGE_PADDING), so
+    // only the single inter-column COMPONENT_PADDING is subtracted. Both counts use the SAME
+    // half-body height: a 2-button screen's tiles are half-height and vertically centered, NOT
+    // full-height (Python computes button_height as the 2-row height regardless of count).
+    int32_t button_height = (screen_height - TOP_NAV_HEIGHT - 2 * COMPONENT_PADDING - EDGE_PADDING) / 2;
+    int32_t button_width  = (available_width - COMPONENT_PADDING) / 2;
+
+    // Width-cap pass (documented deviation from Python) — cap the WIDTH to the 320x240 (widest
+    // 4:3) button proportions so wider-than-4:3 displays don't stretch the grid; keep the full
+    // height and pillar-box horizontally (below). Reference = the 320x240 buttons, computed from
+    // that profile at PX_MULTIPLIER_100 (EDGE_PADDING=8, COMPONENT_PADDING=8, top_nav=48):
+    //   REFERENCE_BUTTON_HEIGHT = (240 - 48 - 2*8 - 8) / 2       = 84
+    //   REFERENCE_BUTTON_WIDTH  = (320 - 2*8 [body pad] - 8) / 2 = 148
+    // 240 (uncapped width 108) and 320 (exactly 148) stay under the cap (byte-identical); only
+    // 480/800 narrow + pillar-box.
+    constexpr int32_t REFERENCE_BUTTON_WIDTH  = 148;
+    constexpr int32_t REFERENCE_BUTTON_HEIGHT = 84;
+    int32_t max_button_width = button_height * REFERENCE_BUTTON_WIDTH / REFERENCE_BUTTON_HEIGHT;
+    if (button_width > max_button_width) {
+        button_width = max_button_width;
+    }
+
+    // Vertical-centering pass (Python LargeButtonScreen) — center the whole grid in the body band
+    // below the top-nav. rows = 1 for a 2-button screen, 2 for a 4-button screen; the grid height
+    // is the rows plus their inter-row gutters. One formula reproduces both Python's 2-button
+    // single-row centering and the 4-button 2-row centering. Computed relative to the body origin
+    // (which sits at the top_nav bottom).
+    int32_t rows          = (int32_t)((count + 1) / 2);
+    int32_t below_top_nav = screen_height - TOP_NAV_HEIGHT;
+    int32_t grid_height   = rows * button_height + (rows - 1) * COMPONENT_PADDING;
+    int32_t y_offset      = (below_top_nav - COMPONENT_PADDING - grid_height) / 2;
+
+    // Horizontal-centering pass — center the (possibly width-capped) grid within the body so wide
+    // displays pillar-box symmetrically; x_offset is 0 when the grid already fills the width.
+    int32_t grid_width = 2 * button_width + COMPONENT_PADDING;
+    int32_t x_offset   = (available_width - grid_width) / 2;
+    if (x_offset < 0) x_offset = 0;
+
+    // Create + place each tile (2-col, row-major). align_to is NULL: absolutely positioned
+    // (lv_obj_set_pos), not chain-aligned to a sibling.
+    for (size_t i = 0; i < count; ++i) {
+        const char* icon = icons ? icons[i] : nullptr;
+        lv_obj_t* button = large_icon_button(body, icon, labels[i], /*align_to=*/nullptr);
+        lv_obj_set_size(button, button_width, button_height);
+
+        int32_t col = (int32_t)(i % 2);
+        int32_t row = (int32_t)(i / 2);
+        lv_obj_set_pos(button,
+                       x_offset + col * (button_width + COMPONENT_PADDING),
+                       y_offset + row * (button_height + COMPONENT_PADDING));
+        out_buttons[i] = button;
+    }
+}
+
 lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered, button_style_t style) {
     lv_obj_t* last_button = NULL;
     lv_obj_t* first_button = NULL;

@@ -276,6 +276,23 @@ void reclaim_line_leading_uniform(lv_obj_t* label, const lv_font_t* font);
 lv_obj_t* button(lv_obj_t* lv_parent, const char* text, lv_obj_t* align_to);
 lv_obj_t* button_ex(lv_obj_t* lv_parent, const button_opts_t* opts);
 lv_obj_t* large_icon_button(lv_obj_t* lv_parent, const char* icon, const char* text, lv_obj_t* align_to);
+
+// Lay out `count` large icon buttons (Python LargeButtonScreen supports 2 or 4) as a fixed
+// 2-column grid inside `body`, sized from `screen_root`: buttons fill their cells, the grid is
+// horizontally + vertically centered, and the button WIDTH is capped to the 320x240 (widest
+// 4:3) proportions so wider displays pillar-box the grid instead of stretching the tiles (240
+// and 320 stay under the cap, byte-identical; only 480/800 narrow + center). `icons`/`labels`
+// are parallel arrays of length `count`; the created buttons are written to out_buttons[0..count-1]
+// in row-major order (indices 0,1 = top row; 2,3 = bottom row for count == 4). A 2-button screen
+// therefore renders one centered row of two half-body-height tiles. A NULL entry in `icons`
+// (or NULL `icons`) renders that tile text-only. Shared by main_menu_screen (4) and
+// power_options_screen (2). Pair with bind_screen_navigation(..., NAV_BODY_GRID, ...):
+// grid_columns_for_count() yields 2 cols for both counts, so 2 buttons navigate left/right in
+// one row and 4 as a 2x2.
+void large_button_grid(lv_obj_t* body, lv_obj_t* screen_root,
+                       const char** icons, const char** labels,
+                       size_t count, lv_obj_t** out_buttons);
+
 lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered, button_style_t style);
 
 void button_set_active(lv_obj_t* lv_button, bool active);

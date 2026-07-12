@@ -19,9 +19,11 @@
 // overlay the same way, and the two share the synthetic-preview-background builder
 // verbatim (kept byte-exact pending the camera_overlay_common extraction).
 //
-// Lifecycle: Tier 1 (stateless) — no statics, no timers, no cleanup callback. The
-// overlay handle is created and immediately destroyed; destroy() frees only the
-// handle struct, leaving the widgets parented on the screen tree.
+// Lifecycle: Tier 1 (stateless) — no statics, no timers, no heap ctx. The overlay
+// handle is created and immediately destroyed; destroy() frees only the handle struct,
+// leaving the widgets parented on the screen tree. The one teardown callback
+// (reset_idle_clock_on_teardown) carries no state — it just resets the idle clock on
+// LV_EVENT_DELETE so the successor screen gets a full screensaver window.
 //
 // The back affordance is chosen by the overlay module from input_profile_get_mode(),
 // which the tools set per resolution (240 = hardware -> on-preview instruction text;
@@ -159,6 +161,13 @@ void camera_preview_overlay_screen(void *ctx_json) {
     camera_preview_overlay_destroy(overlay);
 
     // --- Load ---
+
+    // Count this screen's teardown as activity: a scan runs with NO user input while the
+    // user lines up the QR, so LVGL's idle clock goes stale. Without this, when the host
+    // dismisses the scan by loading the next screen, the overlay dispatcher would fire the
+    // screensaver over the freshly-rendered successor (e.g. Select Signer) instead of showing
+    // it — the same fix the loading spinner applies (PR #69).
+    reset_idle_clock_on_teardown(scr);
 
     load_screen_and_cleanup_previous(scr);
 }

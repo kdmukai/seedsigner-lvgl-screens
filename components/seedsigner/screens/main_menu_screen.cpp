@@ -11,14 +11,16 @@
 // Bespoke-grid tier (spec §8): listed under the chrome-free / scaffold-bypass
 // tier as the bespoke Python-parity grid. It KEEPS the scaffold's top-nav chrome
 // (create_top_nav_screen_scaffold) but bypasses the scaffold's button_list
-// layout, laying out its own absolute-positioned 2x2 grid (no flex, no lv_grid)
-// to match Python's LargeButtonScreen pixel math.
+// layout, delegating the fixed 2x2 grid to the shared large_button_grid() helper
+// (components.cpp) — the Python LargeButtonScreen pixel math (button box, 4:3
+// width-cap, grid centering), now shared with power_options_screen (the 2-button
+// case). This file supplies only the four fixed icons + the localized labels.
 //
 // Documented deviations from Python:
 //   - Button WIDTH is capped to the 320x240 (4:3) profile's proportions so wider-
 //     than-4:3 displays pillar-box the grid instead of stretching the tiles;
 //     Python renders full-width 2-across. 240x240 and 320x240 stay under the cap
-//     and are byte-identical.
+//     and are byte-identical. (The cap lives in large_button_grid().)
 //   - button_list must carry EXACTLY four labels; any other count throws (the grid
 //     is a fixed 2x2, so a mismatched count is a host wiring error).
 //
@@ -130,77 +132,18 @@ void main_menu_screen(void *ctx_json) {
         SeedSignerIconConstants::SETTINGS,
     };
 
-    // --- Geometry ---
-    //
-    // Fully manual, absolute-positioned 2x2 grid (Python LargeButtonScreen parity):
-    // derive the button box size and the pillar-box centering offsets from the parent
-    // dimensions here, THEN create and place the four buttons in the Body section
-    // below. No flex, no lv_grid — the scaffold supplied only chrome + an empty body.
-    const int32_t available_width = lv_obj_get_content_width(screen.body);
-    const int32_t screen_height   = lv_obj_get_height(screen.screen);
-
-    // Button-sizing pass — match Python LargeButtonScreen:
-    //   button_height = int((canvas_height - top_nav.height - 2*COMPONENT_PADDING - EDGE_PADDING) / 2)
-    //   button_width  = int((canvas_width  - 2*EDGE_PADDING [body pad] - COMPONENT_PADDING) / 2)
-    // available_width is already the body's CONTENT width (canvas minus the body's
-    // 2*EDGE_PADDING), so only the single inter-column COMPONENT_PADDING is subtracted.
-    int32_t button_height = (screen_height - TOP_NAV_HEIGHT - 2 * COMPONENT_PADDING - EDGE_PADDING) / 2;
-    int32_t button_width  = (available_width - COMPONENT_PADDING) / 2;
-
-    // Width-cap pass (documented deviation from Python) — cap the button WIDTH to the
-    // 320x240 profile's button proportions so wider-than-4:3 displays don't stretch the
-    // grid. Keep the full button HEIGHT (the grid still fills the screen vertically) but
-    // limit the WIDTH to the reference aspect, then center the grid (below) so the body
-    // pillar-boxes symmetrically. The top_nav spans the full width regardless, so its
-    // power button stays pinned to the far right.
-    //
-    // Reference = the 320x240 buttons (the widest small/4:3 profile), computed from that
-    // profile's geometry. 320x240 renders at PX_MULTIPLIER_100, so these are the
-    // unscaled base constants (EDGE_PADDING=8, COMPONENT_PADDING=8, top_nav_height=48):
-    //   REFERENCE_BUTTON_HEIGHT = (240 - 48 - 2*8 - 8) / 2       = 84
-    //   REFERENCE_BUTTON_WIDTH  = (320 - 2*8 [body pad] - 8) / 2 = 148
-    // 240x240 (uncapped width would be 108) and 320x240 (exactly 148) stay below the
-    // cap, so both are left byte-identical; only 480/800 narrow + pillar-box.
-    constexpr int32_t REFERENCE_BUTTON_WIDTH  = 148;   // 320x240 button width
-    constexpr int32_t REFERENCE_BUTTON_HEIGHT = 84;    // 320x240 button height
-    int32_t max_button_width = button_height * REFERENCE_BUTTON_WIDTH / REFERENCE_BUTTON_HEIGHT;
-    if (button_width > max_button_width) {
-        button_width = max_button_width;
-    }
-
-    // Vertical-centering pass — center the 2x2 grid, matching Python LargeButtonScreen:
-    //   button_start_y = top_nav_h + (canvas_h - (top_nav_h + CP) - 2*button_h - CP) / 2
-    // Computed relative to the body origin (which sits at the top_nav bottom).
-    int32_t below_top_nav = screen_height - TOP_NAV_HEIGHT;
-    int32_t y_offset = (below_top_nav - COMPONENT_PADDING - 2 * button_height - COMPONENT_PADDING) / 2;
-
-    // Horizontal-centering pass — center the (possibly width-capped) grid within the
-    // body so wide displays pillar-box symmetrically; x_offset is 0 when the grid
-    // already fills the width.
-    int32_t grid_width = 2 * button_width + COMPONENT_PADDING;
-    int32_t x_offset = (available_width - grid_width) / 2;
-    if (x_offset < 0) x_offset = 0;
-
     // --- Body ---
 
-    // Build the four large icon buttons into the body and size each to the derived
-    // button box; the explicit positions are set immediately after.
+    // Lay out the fixed 2x2 large-icon grid via the shared large_button_grid helper (the
+    // Python LargeButtonScreen geometry — button box, 4:3 width-cap, and grid centering —
+    // now lives there, shared with power_options_screen). The scaffold supplied only the
+    // top-nav chrome + an empty body; the helper fills it with the four absolutely-positioned
+    // tiles. `labels` is a std::vector<std::string>, so pass a parallel array of c_str()s.
+    const char *label_ptrs[4] = {
+        labels[0].c_str(), labels[1].c_str(), labels[2].c_str(), labels[3].c_str(),
+    };
     lv_obj_t *buttons[4] = {NULL, NULL, NULL, NULL};
-    for (uint32_t i = 0; i < 4; ++i) {
-        // align_to is NULL: these tiles are absolutely positioned (lv_obj_set_pos
-        // below), not chain-aligned to a sibling.
-        lv_obj_t *button = large_icon_button(screen.body, main_menu_icons[i], labels[i].c_str(), /*align_to=*/NULL);
-        lv_obj_set_size(button, button_width, button_height);
-        buttons[i] = button;
-    }
-
-    // First row: the two top tiles at the grid's top-left / top-right.
-    lv_obj_set_pos(buttons[0], x_offset, y_offset);
-    lv_obj_set_pos(buttons[1], x_offset + button_width + COMPONENT_PADDING, y_offset);
-
-    // Second row: the two bottom tiles, one button-height + gutter below the first.
-    lv_obj_set_pos(buttons[2], x_offset, y_offset + button_height + COMPONENT_PADDING);
-    lv_obj_set_pos(buttons[3], x_offset + button_width + COMPONENT_PADDING, y_offset + button_height + COMPONENT_PADDING);
+    large_button_grid(screen.body, screen.screen, main_menu_icons, label_ptrs, 4, buttons);
 
     // --- Navigation + load ---
 

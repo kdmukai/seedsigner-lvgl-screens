@@ -18,9 +18,11 @@
 // synthetic preview panel and the overlay; the mandatory load_screen_and_cleanup_previous
 // tail still applies.
 //
-// Lifecycle: Tier 1 (stateless) — no statics, no timers, no cleanup callback. The
-// overlay handle is created and immediately destroyed; destroy() frees only the
-// handle struct, leaving the widgets parented on the screen tree.
+// Lifecycle: Tier 1 (stateless) — no statics, no timers, no heap ctx. The overlay
+// handle is created and immediately destroyed; destroy() frees only the handle struct,
+// leaving the widgets parented on the screen tree. The one teardown callback
+// (reset_idle_clock_on_teardown) carries no state — it just resets the idle clock on
+// LV_EVENT_DELETE so the successor screen gets a full screensaver window.
 //
 // Layout notes: the synthetic-preview-background block (bare root + per-resolution
 // center-cut geometry + gray placeholder panel) is duplicated near-verbatim in the
@@ -177,6 +179,13 @@ void camera_entropy_overlay_screen(void *ctx_json) {
     camera_entropy_overlay_destroy(overlay);
 
     // --- Load ---
+
+    // Count this screen's teardown as activity: the entropy live-preview runs with NO user
+    // input while the user aims the camera, so LVGL's idle clock goes stale. Without this,
+    // when the host dismisses it by loading the next screen, the overlay dispatcher would fire
+    // the screensaver over the freshly-rendered successor instead of showing it — the same fix
+    // the loading spinner applies (PR #69).
+    reset_idle_clock_on_teardown(scr);
 
     load_screen_and_cleanup_previous(scr);
 }

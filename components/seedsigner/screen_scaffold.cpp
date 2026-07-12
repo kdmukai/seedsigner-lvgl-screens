@@ -154,6 +154,20 @@ void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
 }
 
 
+// LV_EVENT_DELETE handler for reset_idle_clock_on_teardown(): count the screen's teardown as
+// user activity so the successor gets a full screensaver idle window.
+static void reset_idle_clock_on_delete_cb(lv_event_t *e) {
+    (void)e;
+    lv_display_trigger_activity(NULL);
+}
+
+void reset_idle_clock_on_teardown(lv_obj_t *screen) {
+    if (screen) {
+        lv_obj_add_event_cb(screen, reset_idle_clock_on_delete_cb, LV_EVENT_DELETE, NULL);
+    }
+}
+
+
 static nav_aux_policy_t nav_aux_policy_from_cfg(const json &cfg) {
     nav_aux_policy_t aux_policy = {NAV_AUX_ENTER, NAV_AUX_ENTER, NAV_AUX_ENTER};
     if (!(cfg.contains("input") && cfg["input"].is_object() && cfg["input"].contains("keys") && cfg["input"]["keys"].is_object())) {

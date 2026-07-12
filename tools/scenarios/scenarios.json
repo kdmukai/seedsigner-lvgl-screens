@@ -1329,6 +1329,45 @@
       }
     ]
   },
+  "power_options_screen": {
+    "context": {
+      "top_nav": {
+        "title": "Reset / Power",
+        "show_back_button": true
+      },
+      "button_list": [
+        { "label": "Restart", "icon": "\ue911" },
+        { "label": "Power off", "icon": "\ue910" }
+      ]
+    }
+  },
+  "seed_transcribe_seedqr_format_screen": {
+    "context": {
+      "top_nav": {
+        "title": "SeedQR Format",
+        "show_back_button": true
+      },
+      "standard_label": "Standard",
+      "standard_text": "BIP-39 wordlist indices",
+      "compact_label": "Compact",
+      "compact_text": "Raw entropy bits",
+      "button_list": [
+        "Standard: 25x25",
+        "Compact: 21x21"
+      ]
+    },
+    "variations": [
+      {
+        "name": "24_word",
+        "context": {
+          "button_list": [
+            "Standard: 29x29",
+            "Compact: 25x25"
+          ]
+        }
+      }
+    ]
+  },
   "reset_screen": {
     "context": {
       "top_nav": {

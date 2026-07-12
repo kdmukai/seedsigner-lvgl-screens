@@ -125,6 +125,11 @@ void tools_calc_final_word_done_screen(void *ctx_json);
 // Python SeedTranscribeSeedQRWholeQRScreen). Direct-draws the full SeedQR/CompactSeedQR
 // grid (python-qrcode mask parity) with a pulsing orange WarningEdges border.
 void seed_transcribe_whole_qr_screen(void *ctx_json);
+// SeedQR-format chooser in the hand-transcription flow (parity with Python
+// SeedTranscribeSeedQRFormatScreen). A bottom-pinned [Standard, Compact] button list under
+// two left-aligned no-icon caption/value rows explaining each format. cfg: button_list /
+// top_nav.title / standard_label / standard_text / compact_label / compact_text.
+void seed_transcribe_seedqr_format_screen(void *ctx_json);
 // Address Explorer address list (parity with Python ToolsAddressExplorerAddressListScreen).
 // A bottom-pinned, left-aligned, fixed-width (monospace) button list of derived addresses,
 // each shown as "{index}:{head}...{tail}"; the selected row reveals its full address. A
@@ -137,6 +142,12 @@ void tools_address_explorer_address_list_screen(void *ctx_json);
 // "Wallet descriptor" row for a loaded descriptor. cfg: button_list / top_nav.title / (fingerprint +
 // fingerprint_label + derivation_text + derivation_label) OR (wallet_descriptor_text + wallet_descriptor_label).
 void tools_address_explorer_address_type_screen(void *ctx_json);
+
+// Power / Reset menu (parity with Python PowerOptionsView rendered by LargeButtonScreen).
+// A 2-or-4 large-icon-button grid (shared large_button_grid geometry with main_menu); for
+// Power Options: "Restart" + "Power off" tiles. cfg: button_list (label + icon per item) /
+// top_nav.title. Returns the tile index; back returns SEEDSIGNER_RET_BACK_BUTTON.
+void power_options_screen(void *ctx_json);
 
 // Simple info screens — a title over centered/anchored body text, no button list.
 //   reset_screen                    (Python ResetScreen): "Restarting" + wipe notice; no nav buttons.

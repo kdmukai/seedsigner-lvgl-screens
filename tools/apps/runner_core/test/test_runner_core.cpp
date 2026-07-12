@@ -401,6 +401,34 @@ int main(int argc, char** argv) {
               "a real locale like 'ru' is unknown until its pack is registered");
     }
 
+    // -----------------------------------------------------------------------
+    // Camera scan/entropy screens reset the idle clock on teardown, so a long
+    // input-less scan (the user lining up a QR) doesn't leave a stale idle clock
+    // that makes the overlay dispatcher fire the screensaver over the freshly-loaded
+    // successor screen (e.g. Select Signer) instead of showing it. Regression for
+    // reset_idle_clock_on_teardown() — the camera-screen analog of the loading
+    // spinner's PR #69 fix. Timeout is set to 0 here so the saver never activates and
+    // we can measure the idle clock directly.
+    // -----------------------------------------------------------------------
+    printf("\n-- camera screens reset the idle clock on teardown --\n");
+    {
+        overlay_manager_set_screensaver_timeout(0);
+        runner_core::load_screen("camera_preview_overlay_screen", "{}");
+        for (int i = 0; i < 3; ++i) runner_core::tick(16);
+
+        // Grow the idle clock with NO input (a scan runs input-less while the QR is aligned).
+        idle_tick(1500);
+        check(lv_display_get_inactive_time(NULL) >= 1000,
+              "camera screen: idle clock went stale with no input");
+
+        // Host dismisses the scan by loading the next screen -> the camera screen is deleted
+        // -> its teardown callback resets the idle clock.
+        runner_core::load_screen("button_list_screen", button_list);
+        for (int i = 0; i < 2; ++i) runner_core::tick(16);
+        check(lv_display_get_inactive_time(NULL) < 500,
+              "camera teardown reset the idle clock (successor gets a full screensaver window)");
+    }
+
     printf("\n%s (%d failure(s))\n", failures == 0 ? "ALL OK" : "FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

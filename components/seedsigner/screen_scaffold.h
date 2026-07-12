@@ -82,4 +82,13 @@ int32_t bottom_button_top_y(const screen_scaffold_t &screen);
 // loads it as the active screen, deletes the previous root, and reaps retired fonts.
 void load_screen_and_cleanup_previous(lv_obj_t *new_screen);
 
+// Register `screen` so its teardown counts as user activity: on the screen's LV_EVENT_DELETE
+// (fired when the successor's load_screen_and_cleanup_previous swaps it out) it resets LVGL's
+// idle clock (lv_display_trigger_activity). Use it on screens that can stay up a long time with
+// NO user input — a camera scan/entropy screen while the user lines up a QR — so the stale idle
+// clock doesn't make the overlay dispatcher fire the screensaver over the freshly-loaded
+// successor instead of showing it. The loading spinner applies the same fix inline (its
+// LV_EVENT_DELETE cleanup also frees its timer/ctx there); see PR #69 for the rationale.
+void reset_idle_clock_on_teardown(lv_obj_t *screen);
+
 #endif // SCREEN_SCAFFOLD_H
