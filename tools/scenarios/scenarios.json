@@ -526,6 +526,69 @@
       }
     ]
   },
+  "toast_overlay_screen": {
+    "context": {
+      "label_text": "This is a notification toast",
+      "severity": "default",
+      "background": {
+        "top_nav": {
+          "title": "Home",
+          "show_back_button": false,
+          "show_power_button": true
+        },
+        "button_list": [
+          "Scan",
+          "Seeds",
+          "Tools",
+          "Settings"
+        ]
+      }
+    },
+    "variations": [
+      {
+        "name": "info",
+        "context": {
+          "severity": "info",
+          "label_text": "This is an info toast!"
+        }
+      },
+      {
+        "name": "success",
+        "context": {
+          "severity": "success",
+          "label_text": "This is a success toast!"
+        }
+      },
+      {
+        "name": "warning",
+        "context": {
+          "severity": "warning",
+          "label_text": "This is a warning toast!"
+        }
+      },
+      {
+        "name": "dire_warning",
+        "context": {
+          "severity": "dire_warning",
+          "label_text": "This is a dire warning toast!"
+        }
+      },
+      {
+        "name": "error",
+        "context": {
+          "severity": "error",
+          "label_text": "This is an error toast!"
+        }
+      },
+      {
+        "name": "sd_card_removed",
+        "context": {
+          "severity": "sd_card",
+          "label_text": "You can remove\nthe SD card now"
+        }
+      }
+    ]
+  },
   "keyboard_screen": {
     "context": {
       "top_nav": {

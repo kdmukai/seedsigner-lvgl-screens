@@ -122,6 +122,7 @@ add_executable(test_runner_core
   # Per-screen entry points (screens/*_screen.cpp) come from the shared
   # screen_sources.cmake glob (${SEEDSIGNER_SCREEN_SOURCES}, added above).
   "${SEEDSIGNER_DIR}/overlay_manager.cpp"
+  "${SEEDSIGNER_DIR}/toast_overlay.cpp"
   "${COMMON_DIR}/runner_core.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/test_runner_core.cpp")
 

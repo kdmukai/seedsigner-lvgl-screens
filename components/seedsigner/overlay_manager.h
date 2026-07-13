@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "toast_overlay.h"   // toast_overlay_spec_t
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,6 +57,22 @@ bool overlay_manager_is_screensaver_active(void);
 // Programmatically dismiss the screensaver (no-op if not active). LVGL-thread
 // only (it loads/deletes screens).
 void overlay_manager_dismiss_screensaver(void);
+
+// --- Toast queue ----------------------------------------------------------
+
+// Thread-safe producer entry point: request a toast from ANY thread. The spec's
+// strings are deep-copied under overlay_manager_lock() here, and the request is
+// realized on the LVGL loop by the dispatcher — so a producer thread (e.g. the Pi's
+// SD-card detector) never touches LVGL directly (LVGL is not thread-safe). On the
+// LVGL thread you may instead call toast_overlay_show() directly for an immediate
+// build (the desktop-tools screen wrapper does).
+//
+// One toast at a time: a newer request replaces an older un-drained one, and a shown
+// toast replaces whatever is already on screen (Python runs a single toast). Showing
+// a toast dismisses the screensaver if it is up ("new toasts break out of the
+// screensaver", Python parity) and suppresses screensaver activation while the toast
+// is displayed, so the two overlays never fight over the screen.
+void overlay_manager_show_toast(const toast_overlay_spec_t *spec);
 
 // --- Lock hooks (weak; a host overrides them iff it enqueues cross-thread) -
 void overlay_manager_lock(void);

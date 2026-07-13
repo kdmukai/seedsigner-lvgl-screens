@@ -128,6 +128,7 @@ set(SEEDSIGNER_CORE_SOURCES
   # screen_sources.cmake glob, appended to add_executable() below.
   # Shared overlay manager: screensaver idle-watch dispatcher (toast queue later).
   "${SEEDSIGNER_DIR}/overlay_manager.cpp"
+  "${SEEDSIGNER_DIR}/toast_overlay.cpp"
   # Locale font seam + the shared locale-pack loader (ss_load_locale): the web host
   # pre-fetches each pack blob and stages it, then the loader chains the fetched
   # script/CJK packs over the baked baseline and installs complex-script glyph runs.

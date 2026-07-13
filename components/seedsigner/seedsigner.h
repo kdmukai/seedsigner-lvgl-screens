@@ -77,6 +77,12 @@ void large_icon_status_screen(void *ctx_json);
 void seed_add_passphrase_screen(void *ctx_json);
 void camera_preview_overlay_screen(void *ctx_json);
 void camera_entropy_overlay_screen(void *ctx_json);
+// Desktop-tooling host for the toast_overlay module: paints a placeholder
+// "underlying screen" and raises a native toast banner over it (see
+// screens/toast_overlay_screen.cpp). On device the toast is raised over the LIVE
+// screen from the display's top layer via overlay_manager_show_toast() /
+// toast_overlay_show() — this screen only exists so the corpus can render one.
+void toast_overlay_screen(void *ctx_json);
 void keyboard_screen(void *ctx_json);
 void seed_mnemonic_entry_screen(void *ctx_json);
 void seed_finalize_screen(void *ctx_json);

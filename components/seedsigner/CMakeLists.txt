@@ -60,10 +60,14 @@ list(APPEND srcs
     # screen: cursor-styled text entry, key theming + icon recolor, 240px side
     # panel, joystick directional nav. Consumed by every keyboard-style screen.
     "keyboard_core.cpp"
-    # Shared overlay manager: the screensaver idle-watch dispatcher (and, later,
-    # the toast queue). Runs on the LVGL loop via an lv_timer, so it links into
-    # every host that pumps lv_timer_handler().
+    # Shared overlay manager: the screensaver idle-watch dispatcher + the toast
+    # queue. Runs on the LVGL loop via an lv_timer, so it links into every host
+    # that pumps lv_timer_handler().
     "overlay_manager.cpp"
+    # Toast notification banner: portable native LVGL overlay (bottom banner on the
+    # display top layer) that composites over the live screen — the native
+    # replacement for the Pi Zero's PIL toast (which blacked out the LVGL UI).
+    "toast_overlay.cpp"
     "components.cpp"
     # Camera live-preview overlay: portable spec + LVGL-widget renderer for the
     # UI drawn over the camera square (back affordance + animated-QR status bar).

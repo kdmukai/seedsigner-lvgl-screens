@@ -168,6 +168,7 @@ set(SEEDSIGNER_CORE_SOURCES
   # screen_sources.cmake glob, appended to add_executable() below.
   # Shared overlay manager: screensaver idle-watch dispatcher (toast queue later).
   "${SEEDSIGNER_DIR}/overlay_manager.cpp"
+  "${SEEDSIGNER_DIR}/toast_overlay.cpp"
 )
 
 # Shared SDL/LVGL glue, also used by the WASM web_runner.

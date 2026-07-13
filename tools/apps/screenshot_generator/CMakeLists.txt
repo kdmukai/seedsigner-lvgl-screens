@@ -139,6 +139,10 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
   "${SEEDSIGNER_DIR}/camera_entropy_overlay.cpp"
   "${SEEDSIGNER_DIR}/image_entropy.cpp"
+  # Toast banner overlay (portable, self-contained). overlay_manager.cpp is still
+  # omitted here — the toast_overlay_screen wrapper calls toast_overlay_show()
+  # directly on the LVGL thread, so it needs the banner but not the dispatcher.
+  "${SEEDSIGNER_DIR}/toast_overlay.cpp"
   "${SEEDSIGNER_DIR}/keyboard_core.cpp"
   "${SEEDSIGNER_DIR}/input_profile.cpp"
   "${SEEDSIGNER_DIR}/navigation.cpp"
