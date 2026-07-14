@@ -506,6 +506,39 @@
       }
     ]
   },
+  "camera_preview_pillarboxed_screen": {
+    "context": {
+      "scanning": true,
+      "progress": 45,
+      "frame_status": 1
+    },
+    "screenshot": {
+      "render_as_landscape": true
+    },
+    "variations": [
+      {
+        "name": "no_frame_yet",
+        "context": {
+          "progress": 0,
+          "frame_status": 0
+        }
+      },
+      {
+        "name": "frame_repeated",
+        "context": {
+          "progress": 60,
+          "frame_status": 2
+        }
+      },
+      {
+        "name": "complete",
+        "context": {
+          "progress": 100,
+          "frame_status": 1
+        }
+      }
+    ]
+  },
   "camera_entropy_overlay_screen": {
     "context": {
       "phase": "preview",

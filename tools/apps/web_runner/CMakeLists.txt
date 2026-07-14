@@ -113,6 +113,7 @@ set(SEEDSIGNER_CORE_SOURCES
   "${SEEDSIGNER_DIR}/gui_constants.cpp"
   "${SEEDSIGNER_DIR}/components.cpp"
   "${SEEDSIGNER_DIR}/camera_preview_overlay.cpp"
+  "${SEEDSIGNER_DIR}/camera_preview_pillarboxed.cpp"
   "${SEEDSIGNER_DIR}/camera_entropy_overlay.cpp"
   "${SEEDSIGNER_DIR}/image_entropy.cpp"
   "${SEEDSIGNER_DIR}/keyboard_core.cpp"

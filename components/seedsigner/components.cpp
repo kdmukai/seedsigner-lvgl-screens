@@ -192,9 +192,14 @@ static lv_obj_t* top_nav_icon_button(lv_obj_t* lv_parent, const char* icon, lv_a
 // Public back-button factory (see components.h). Builds the contextual back button via
 // the shared top_nav_icon_button() chrome + the back-button event, then positions it.
 // The y offset (top_nav_icon_button always aligns at y=0) is applied here so the camera
-// preview overlay can drop the same button into the top-left gutter.
-lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs) {
-    lv_obj_t* btn = top_nav_icon_button(lv_parent, SeedSignerIconConstants::CHEVRON_LEFT, align, x_ofs, &TOP_NAV_BACK_EVENT);
+// preview overlay can drop the same button into the top-left gutter. `icon` NULL keeps
+// the default CHEVRON_LEFT; callers on a native-portrait-mounted-landscape panel pass
+// CHEVRON_DOWN (it rotates to read "left"). The back-button event wiring is identical
+// either way, so a tap always posts SEEDSIGNER_RET_BACK_BUTTON.
+lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs,
+                      const char* icon) {
+    const char* glyph = icon ? icon : SeedSignerIconConstants::CHEVRON_LEFT;
+    lv_obj_t* btn = top_nav_icon_button(lv_parent, glyph, align, x_ofs, &TOP_NAV_BACK_EVENT);
     lv_obj_align(btn, align, x_ofs, y_ofs);
     return btn;
 }

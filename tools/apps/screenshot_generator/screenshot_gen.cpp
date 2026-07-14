@@ -74,6 +74,7 @@ static const std::unordered_map<std::string, screen_fn_t> k_screen_registry = {
     {"large_icon_status_screen", large_icon_status_screen},
     {"seed_add_passphrase_screen", seed_add_passphrase_screen},
     {"camera_preview_overlay_screen", camera_preview_overlay_screen},
+    {"camera_preview_pillarboxed_screen", camera_preview_pillarboxed_screen},
     {"camera_entropy_overlay_screen", camera_entropy_overlay_screen},
     {"toast_overlay_screen", toast_overlay_screen},
     {"keyboard_screen", keyboard_screen},
@@ -380,6 +381,62 @@ static int framebuffer_to_rgb24(std::vector<uint8_t> &rgb) {
         }
     }
     return 0;
+}
+
+// Render a portrait-authored scenario (the module's native frame) and rotate the capture
+// to landscape, simulating the physical panel mount. Driven by the scenario's tool-only
+// "screenshot.render_as_landscape" flag. An isolated portrait display + framebuffer keep
+// the profile loop's shared landscape display/globals untouched; the profile already
+// installed at the loop top (fonts, px_multiplier) is deliberately REUSED (not re-set),
+// so the portrait canvas is simply profile.height x profile.width. `out_rgb` receives the
+// rotated landscape RGB24 (land_w x land_h). Returns false on render failure.
+static bool render_portrait_as_landscape(const scenario_def_t &scenario,
+                                         int land_w, int land_h,
+                                         std::vector<uint8_t> &out_rgb) {
+    lv_display_t *saved_default = lv_display_get_default();
+    int saved_w = g_width, saved_h = g_height;
+    std::vector<uint16_t> saved_fb = std::move(g_fb);
+
+    int port_w = land_h, port_h = land_w;   // swap: the panel's native portrait
+    g_width = port_w; g_height = port_h;
+    g_fb.assign((size_t)port_w * (size_t)port_h, 0);
+
+    std::vector<uint8_t> draw_buf((size_t)port_w * (size_t)port_h * 2u);
+    lv_display_t *pdisp = lv_display_create(port_w, port_h);
+    lv_display_set_flush_cb(pdisp, lvgl_flush_cb);
+    lv_display_set_color_format(pdisp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(pdisp, draw_buf.data(), NULL, draw_buf.size(),
+                           LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_default(pdisp);   // the screen wrapper reads resolution from the default
+
+    bool ok = render_scenario_def(scenario);
+    if (ok) {
+        // Refresh ONLY pdisp — NOT lv_timer_handler(), which would also refresh the
+        // profile loop's landscape display (it shares this global framebuffer + flush_cb)
+        // and bleed its 800x480 content into the 480-strided portrait g_fb.
+        lv_refr_now(pdisp);
+
+        std::vector<uint8_t> port_rgb;
+        framebuffer_to_rgb24(port_rgb);     // reads g_width/g_height (portrait)
+
+        // Rotate to landscape per the device mount portrait (x,y) -> landscape
+        // (lx = port_h-1-y, ly = x): out[ly][lx] = portrait[y = port_h-1-lx][x = ly].
+        out_rgb.resize((size_t)land_w * (size_t)land_h * 3u);
+        for (int ly = 0; ly < land_h; ++ly) {
+            for (int lx = 0; lx < land_w; ++lx) {
+                int px = ly;
+                int py = port_h - 1 - lx;
+                const uint8_t *s = &port_rgb[((size_t)py * port_w + px) * 3u];
+                uint8_t *d = &out_rgb[((size_t)ly * land_w + lx) * 3u];
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
+            }
+        }
+    }
+
+    lv_display_delete(pdisp);
+    g_width = saved_w; g_height = saved_h; g_fb = std::move(saved_fb);
+    if (saved_default) lv_display_set_default(saved_default);
+    return ok;
 }
 
 static std::string html_escape(const std::string &in) {
@@ -796,16 +853,26 @@ int main(int argc, char **argv) {
                     continue;
                 }
 
-                if (!render_scenario_def(scenario)) {
-                    fprintf(stderr, "Unknown/invalid scenario: %s\n", scenario.name.c_str());
-                    return 2;
-                }
-
-                lv_timer_handler();
-                lv_refr_now(disp);
+                // Portrait-authored screens (the pillarboxed scan chrome) carry the tool-only
+                // screenshot.render_as_landscape flag: render in the panel's native portrait
+                // and rotate the capture to the profile's landscape dims, simulating the mount.
+                bool render_as_landscape = scenario.shot.value("render_as_landscape", false);
 
                 std::vector<uint8_t> rgb;
-                framebuffer_to_rgb24(rgb);
+                if (render_as_landscape) {
+                    if (!render_portrait_as_landscape(scenario, g_width, g_height, rgb)) {
+                        fprintf(stderr, "Unknown/invalid scenario: %s\n", scenario.name.c_str());
+                        return 2;
+                    }
+                } else {
+                    if (!render_scenario_def(scenario)) {
+                        fprintf(stderr, "Unknown/invalid scenario: %s\n", scenario.name.c_str());
+                        return 2;
+                    }
+                    lv_timer_handler();
+                    lv_refr_now(disp);
+                    framebuffer_to_rgb24(rgb);
+                }
 
                 std::string file_base = scenario.name + "_" + res_label;
 
@@ -817,7 +884,7 @@ int main(int argc, char **argv) {
                 }
                 printf("wrote %s\n", out_png);
 
-                bool want_gif = im_bin && scenario_is_animated(scenario);
+                bool want_gif = im_bin && scenario_is_animated(scenario) && !render_as_landscape;
                 double anim_seconds = scenario_gif_seconds(scenario);
                 if (maybe_write_scroll_gif(res_img_dir, file_base, disp, want_gif ? im_bin : NULL, anim_seconds) != 0) {
                     fprintf(stderr, "Failed writing animated GIF for scenario: %s\n", scenario.name.c_str());

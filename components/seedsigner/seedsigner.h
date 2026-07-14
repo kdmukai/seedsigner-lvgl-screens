@@ -76,6 +76,7 @@ void opening_splash_screen(void *ctx_json);
 void large_icon_status_screen(void *ctx_json);
 void seed_add_passphrase_screen(void *ctx_json);
 void camera_preview_overlay_screen(void *ctx_json);
+void camera_preview_pillarboxed_screen(void *ctx_json);
 void camera_entropy_overlay_screen(void *ctx_json);
 // Desktop-tooling host for the toast_overlay module: paints a placeholder
 // "underlying screen" and raises a native toast banner over it (see

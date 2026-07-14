@@ -34,7 +34,12 @@ void top_nav_layout_title(lv_obj_t* top_nav, lv_obj_t* title_label, bool has_bac
 // so the styling/behavior only ever has to change in one place. `align`/`x_ofs`/`y_ofs`
 // position the button within `lv_parent` (e.g. LV_ALIGN_LEFT_MID, EDGE_PADDING, 0 for
 // the top nav; LV_ALIGN_TOP_LEFT, EDGE_PADDING, EDGE_PADDING for the preview gutter).
-lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs);
+// `icon` (optional) overrides the glyph: NULL keeps the default CHEVRON_LEFT; the
+// pillarboxed camera preview passes CHEVRON_DOWN so the button reads as "left" once
+// its native-portrait panel is physically mounted landscape (a down glyph rotates to
+// point left). The event wiring is unchanged regardless of glyph.
+lv_obj_t* back_button(lv_obj_t* lv_parent, lv_align_t align, int32_t x_ofs, int32_t y_ofs,
+                      const char* icon = nullptr);
 
 // Configure an already start-justified, width-constrained single-line label to
 // continuously marquee-scroll (circular wrap) an overflowing line at a steady

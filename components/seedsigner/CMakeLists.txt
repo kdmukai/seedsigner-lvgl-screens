@@ -72,6 +72,9 @@ list(APPEND srcs
     # Camera live-preview overlay: portable spec + LVGL-widget renderer for the
     # UI drawn over the camera square (back affordance + animated-QR status bar).
     "camera_preview_overlay.cpp"
+    # Pillarboxed camera-preview chrome: portable sibling for native-portrait panels
+    # mounted landscape (P4 4.3" DSI) — chrome in the pillar strips, not over the camera.
+    "camera_preview_pillarboxed.cpp"
     # Image-entropy capture overlay: two-phase (preview/confirm) sibling of the
     # scan overlay — shutter capture + accept, or hardware-mode instruction text.
     "camera_entropy_overlay.cpp"
