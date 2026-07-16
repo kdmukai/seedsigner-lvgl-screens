@@ -5,6 +5,26 @@
 
 #include <cmath>
 
+// Shared input handoff for every screen build — see navigation.h for the full
+// rationale. Attaches each keypad/encoder indev to `group` and latches it with
+// lv_indev_wait_release() so a key still held from the previous screen is
+// ignored until released; only a fresh press on the new screen registers.
+void attach_keypad_indevs_to_group(lv_group_t *group) {
+    lv_indev_t *indev = NULL;
+    while ((indev = lv_indev_get_next(indev)) != NULL) {
+        lv_indev_type_t type = lv_indev_get_type(indev);
+        if (type == LV_INDEV_TYPE_KEYPAD || type == LV_INDEV_TYPE_ENCODER) {
+            lv_indev_set_group(indev, group);
+
+            // Suppress a carried-over hold: a key already down at the transition
+            // was aimed at the OLD screen, so ignore it until it is released.
+            // The next RELEASED->PRESSED edge (a genuine new press on this
+            // screen) fires normally, so legitimate key exits still work.
+            lv_indev_wait_release(indev);
+        }
+    }
+}
+
 typedef struct {
     lv_group_t   *group;
     lv_obj_t     *top_item;     // NULL when screen has no top-nav button
@@ -504,14 +524,9 @@ void nav_bind(const nav_config_t *cfg) {
         lv_group_add_obj(ctx->group, sink);
         lv_obj_add_event_cb(sink, nav_key_handler, LV_EVENT_KEY, ctx);
 
-        // Connect all keypad/encoder indevs to this group.
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, ctx->group);
-            }
-        }
+        // Connect all keypad/encoder indevs to this group, latching each so a key
+        // still held from the previous screen can't bleed onto this one.
+        attach_keypad_indevs_to_group(ctx->group);
     } else {
         // Touch mode has no persistent active/selected highlight — a row only looks
         // active while a finger is on it — so we deliberately focus and activate

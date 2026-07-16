@@ -87,6 +87,21 @@ typedef struct {
 
 void nav_bind(const nav_config_t *cfg);
 
+// Route every keypad/encoder indev to `group` — the single input handoff that
+// every screen performs when it takes over input on load. Besides attaching the
+// group, each indev is latched with lv_indev_wait_release() so a key that is
+// still physically HELD from the previous screen is ignored until it is
+// released: only a fresh press that begins AFTER this screen is up registers.
+//
+// Without the latch, a key held across the screen swap "bleeds" onto the freshly
+// loaded screen and can fire an action/exit there — e.g. activating an Address
+// Explorer row with a still-held KEY1 instantly dismisses the QR that KEY1 just
+// opened, because qr_display exits on any non-brightness/-density key. The latch
+// is edge-based (not a timed settle) and a no-op when no key is held, so a
+// deliberate fast press on the new screen is never dropped. See
+// docs/held-key-bleed-across-screen-transition-todo.md for the full analysis.
+void attach_keypad_indevs_to_group(lv_group_t *group);
+
 #ifdef __cplusplus
 }
 #endif

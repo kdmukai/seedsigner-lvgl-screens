@@ -35,6 +35,7 @@
 #include "seedsigner.h"        // seedsigner_lvgl_on_button_selected, SEEDSIGNER_RET_SCREENSAVER_DISMISS, ss_build_screensaver_obj / screensaver_screen decls
 #include "gui_constants.h"     // seedsigner_logo_for_active_profile
 #include "input_profile.h"     // input_profile_get_mode, INPUT_MODE_HARDWARE
+#include "navigation.h"        // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include "lvgl.h"              // root/image/timer/group/indev widgets + physics (lv_rand, lv_tick_get, lv_scr_load)
 
@@ -284,13 +285,9 @@ lv_obj_t *screensaver_build_impl(bool route_dismiss_to_host) {
             lv_obj_add_event_cb(sink, screensaver_key_handler, LV_EVENT_KEY, ctx);
         }
 
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, ctx->group);
-            }
-        }
+        // Latch held keys on takeover so a wake-key still held from the moment
+        // the saver appeared can't bleed onto the restored screen later.
+        attach_keypad_indevs_to_group(ctx->group);
     }
 
     lv_obj_add_event_cb(screen_root, screensaver_cleanup_handler, LV_EVENT_DELETE, ctx);

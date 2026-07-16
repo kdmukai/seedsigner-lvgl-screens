@@ -9,6 +9,7 @@
 #include "lvgl.h"
 #include "seedsigner.h"       // ss_build_screensaver_obj
 #include "toast_overlay.h"    // toast_overlay_show / _is_active
+#include "navigation.h"       // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include <string.h>           // strncpy / memcpy for the cross-thread toast copy
 
@@ -63,16 +64,6 @@ static lv_group_t *current_keypad_group(void) {
     return NULL;
 }
 
-static void set_keypad_group(lv_group_t *group) {
-    lv_indev_t *indev = NULL;
-    while ((indev = lv_indev_get_next(indev)) != NULL) {
-        lv_indev_type_t t = lv_indev_get_type(indev);
-        if (t == LV_INDEV_TYPE_KEYPAD || t == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, group);
-        }
-    }
-}
-
 // --- Screensaver lifecycle ------------------------------------------------
 static void screensaver_activate(void) {
     if (s_ss_active) return;
@@ -96,8 +87,10 @@ void overlay_manager_dismiss_screensaver(void) {
     lv_obj_t *saver = s_ss_saver_screen;
 
     // Restore the saved indev group BEFORE deleting the saver, since deleting
-    // the saver frees the group it installed.
-    set_keypad_group(s_ss_saved_group);
+    // the saver frees the group it installed. The shared handoff also latches
+    // held keys, so a wake key still held at this instant is ignored on the
+    // restored screen (wakes the saver, doesn't also act on the screen beneath).
+    attach_keypad_indevs_to_group(s_ss_saved_group);
     if (s_ss_saved_screen) {
         lv_scr_load(s_ss_saved_screen);
     }

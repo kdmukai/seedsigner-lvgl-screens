@@ -65,6 +65,7 @@
 #include "seedsigner.h"       // opening_splash_screen decl, SEEDSIGNER_RET_SPLASH_COMPLETE, seedsigner_lvgl_on_button_selected, seedsigner_lvgl_is_static_render, text_top_leading
 #include "gui_constants.h"    // active_profile, seedsigner_logo_for_active_profile, hrf_logo_for_active_profile, COMPONENT_PADDING, TOP_NAV_TITLE_FONT, BODY_FONT, ACCENT_COLOR
 #include "input_profile.h"    // input_profile_get_mode, INPUT_MODE_HARDWARE
+#include "navigation.h"       // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include "lvgl.h"             // lv_obj / lv_image / lv_label / lv_anim / lv_timer / lv_group / lv_indev + style setters, lv_malloc / lv_memzero / lv_free
 
@@ -413,13 +414,9 @@ void opening_splash_screen(void *ctx_json) {
         lv_group_add_obj(ctx->group, sink);
         lv_obj_add_event_cb(sink, opening_splash_key_handler, LV_EVENT_KEY, ctx);
 
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, ctx->group);
-            }
-        }
+        // Take over input, latching held keys so a key still held from boot/the
+        // prior screen can't bleed through and skip the splash instantly.
+        attach_keypad_indevs_to_group(ctx->group);
     }
 
     lv_obj_add_event_cb(screen_root, opening_splash_cleanup_handler, LV_EVENT_DELETE, ctx);

@@ -373,13 +373,10 @@ void io_test_screen(void *ctx_json) {
     lv_obj_remove_flag(sink, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
     lv_group_add_obj(ctx->group, sink);
     lv_obj_add_event_cb(sink, io_test_key_handler, LV_EVENT_KEY, ctx);
-    lv_indev_t *indev = NULL;
-    while ((indev = lv_indev_get_next(indev)) != NULL) {
-        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-            lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, ctx->group);
-        }
-    }
+
+    // Take over input, latching held keys so a key still held from the row that
+    // launched the I/O test isn't reported as the first fresh press to test.
+    attach_keypad_indevs_to_group(ctx->group);
 
     // Register as the live host-push target + free on delete (identity-guarded);
     // set only now, after full construction, so io_test_set_capture_state can never

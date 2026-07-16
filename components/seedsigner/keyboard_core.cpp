@@ -6,6 +6,7 @@
 
 #include "keyboard_core.h"
 #include "gui_constants.h"
+#include "navigation.h"       // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include "lvgl.h"
 
@@ -380,11 +381,8 @@ void kb_back_down_to_matrix(lv_event_t *e, lv_obj_t *matrix) {
 }
 
 void kb_connect_indevs(lv_group_t *group) {
-    lv_indev_t *indev = NULL;
-    while ((indev = lv_indev_get_next(indev)) != NULL) {
-        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-            lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, group);
-        }
-    }
+    // Shared input handoff: attaches the keypad/encoder indevs to this keyboard's
+    // group and latches held keys so a key still held from the screen that opened
+    // the keyboard can't bleed through as a keystroke. See navigation.h.
+    attach_keypad_indevs_to_group(group);
 }

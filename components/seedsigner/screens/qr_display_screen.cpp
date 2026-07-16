@@ -90,6 +90,7 @@
 #include "input_profile.h"    // input_mode_t, INPUT_MODE_TOUCH/INPUT_MODE_HARDWARE, input_profile_get_mode
 #include "qr_core.h"          // qr_encode_mode_t, QR_ENC_*, qr_decode_payload, qr_encode_bytes, build_gutter_close_button
 #include "screen_helpers.h"   // nav_mode_override_from_cfg (input.mode override)
+#include "navigation.h"       // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include "lvgl.h"             // lv_obj / lv_label / lv_slider / lv_group / lv_indev / lv_timer / lv_draw_rect + per-object style setters
 
@@ -873,13 +874,9 @@ void qr_display_screen(void *ctx_json) {
         lv_group_add_obj(ctx->group, sink);
         lv_obj_add_event_cb(sink, qr_display_key_cb, LV_EVENT_KEY, ctx);
 
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, ctx->group);
-            }
-        }
+        // Take over input, latching held keys so a KEY1/2/3 still held from the
+        // list row that opened this QR can't bleed through and exit it instantly.
+        attach_keypad_indevs_to_group(ctx->group);
     } else {
         // Touch: tap the QR to raise the toast; an explicit top-right X (the shared
         // qr_core gutter close button) to exit — parity screens exit via any key on

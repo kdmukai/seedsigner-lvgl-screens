@@ -80,6 +80,7 @@
 #include "input_profile.h"    // input_mode_t, INPUT_MODE_TOUCH/HARDWARE, input_profile_get_mode
 #include "qr_core.h"          // qr_encode_mode_t, qr_decode_payload, qr_encode_bytes, build_gutter_close_button
 #include "screen_helpers.h"   // nav_mode_override_from_cfg
+#include "navigation.h"       // attach_keypad_indevs_to_group (held-key-safe input handoff)
 
 #include "lvgl.h"             // widgets, direct-draw layer API, lv_anim, lv_group/lv_indev
 
@@ -655,13 +656,9 @@ void seed_transcribe_zoomed_qr_screen(void *ctx_json) {
         lv_group_add_obj(ctx->group, sink);
         lv_obj_add_event_cb(sink, seed_transcribe_zoomed_qr_key_cb, LV_EVENT_KEY, ctx);
 
-        lv_indev_t *indev = NULL;
-        while ((indev = lv_indev_get_next(indev)) != NULL) {
-            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD ||
-                lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-                lv_indev_set_group(indev, ctx->group);
-            }
-        }
+        // Take over input, latching held keys so a KEY1/2/3 still held from the
+        // whole-QR "Begin" step can't bleed through and exit this zoomed screen.
+        attach_keypad_indevs_to_group(ctx->group);
     } else {
         // Swipe distance that counts as a zone step: ~1/8 of the short screen edge,
         // floored so a small drag on a tiny display still needs deliberate movement.
