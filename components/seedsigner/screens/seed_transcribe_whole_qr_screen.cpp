@@ -298,13 +298,14 @@ int seed_transcribe_whole_qr_cell_offset(int module_index, int total, int side) 
 // Draw-event coords are screen-absolute, so offset every rect by the object's
 // absolute top-left.
 //
-// Module STYLE parity with Python QR.STYLE__ROUNDED (python-qrcode's
-// CircleModuleDrawer, then downscaled — which smooths tangent circles into
-// connected blobs): each dark module is drawn as an inscribed CIRCLE, and every
-// orthogonally-adjacent pair of dark modules is bridged by a full-cell rect
-// between their centers. The union yields exactly the reference look — isolated
-// modules are dots, runs are rounded capsules, and solid regions (finder
-// patterns, dense data) fill in with rounded OUTER corners.
+// Module style: each dark module is a plain full-cell SQUARE, so adjacent dark cells
+// abut into the finder/alignment/solid regions with no seams and the grid reads as a
+// standard, fully-scannable QR — exactly what a transcriber copies cell-by-cell. (This
+// screen previously mimicked python-qrcode's rounded CircleModuleDrawer with a
+// per-module circle plus adjacency bridges. Squares drop that for a far cheaper draw:
+// a plain fill instead of an anti-aliased circle, and one rect per module instead of
+// up to three. Together with the partial-refresh cull below, that brings the initial
+// paint down to the SPI panel's flush floor — no off-screen buffer, no extra memory.)
 void seed_transcribe_whole_qr_draw_cb(lv_event_t *e) {
     seed_transcribe_whole_qr_ctx_t *ctx =
         (seed_transcribe_whole_qr_ctx_t *)lv_event_get_user_data(e);
@@ -331,43 +332,33 @@ void seed_transcribe_whole_qr_draw_cb(lv_event_t *e) {
                qrcodegen_getModule(ctx->qr_matrix, module_x, module_y);
     };
 
-    lv_draw_rect_dsc_t dot;   // inscribed circle per module
-    lv_draw_rect_dsc_init(&dot);
-    dot.bg_color = lv_color_black();
-    dot.bg_opa   = LV_OPA_COVER;
-    dot.radius   = LV_RADIUS_CIRCLE;
+    lv_draw_rect_dsc_t module_dsc;   // full-cell black square per dark module
+    lv_draw_rect_dsc_init(&module_dsc);
+    module_dsc.bg_color = lv_color_black();
+    module_dsc.bg_opa   = LV_OPA_COVER;
+    module_dsc.radius   = 0;   // adjacent dark cells abut into solid regions, no seams
 
-    lv_draw_rect_dsc_t bridge; // square connector between adjacent module centers
-    lv_draw_rect_dsc_init(&bridge);
-    bridge.bg_color = lv_color_black();
-    bridge.bg_opa   = LV_OPA_COVER;
-    bridge.radius   = 0;
+    // Partial-refresh cull. On an SPI panel LVGL renders this screen in horizontal
+    // stripes, firing this callback once per stripe the QR spans; without a cull each
+    // firing redraws the WHOLE module grid, so a large QR paints in a slow top-to-bottom
+    // sweep (one full grid per stripe). Skip cells that don't overlap the current
+    // stripe's clip. A full cell that straddles a stripe seam still overlaps — and is
+    // drawn (LVGL-clipped) in — BOTH stripes, so squares tile across seams with no gap
+    // and no margin fudge; total work is one grid pass. No-op on a full-frame DSI panel
+    // (single stripe: clip == the whole object).
+    const lv_area_t clip = layer->_clip_area;
 
     for (int module_y = 0; module_y < size; module_y++) {
-        int cell_top      = edge_y(border + module_y);
-        int cell_bottom   = edge_y(border + module_y + 1) - 1;
-        int cell_center_y = (cell_top + cell_bottom) / 2;
+        int cell_top    = edge_y(border + module_y);
+        int cell_bottom = edge_y(border + module_y + 1) - 1;
+        if (cell_bottom < clip.y1 || cell_top > clip.y2) continue;   // stripe row cull
         for (int module_x = 0; module_x < size; module_x++) {
             if (!dark(module_x, module_y)) continue;
-            int cell_left     = edge_x(border + module_x);
-            int cell_right    = edge_x(border + module_x + 1) - 1;
-            int cell_center_x = (cell_left + cell_right) / 2;
-
+            int cell_left  = edge_x(border + module_x);
+            int cell_right = edge_x(border + module_x + 1) - 1;
+            if (cell_right < clip.x1 || cell_left > clip.x2) continue;  // column cull
             lv_area_t cell_area = { cell_left, cell_top, cell_right, cell_bottom };
-            lv_draw_rect(layer, &dot, &cell_area);   // the module's circle
-
-            if (dark(module_x + 1, module_y)) {      // bridge to the right neighbor
-                int neighbor_right    = edge_x(border + module_x + 2) - 1;
-                int neighbor_center_x = (edge_x(border + module_x + 1) + neighbor_right) / 2;
-                lv_area_t right_bridge = { cell_center_x, cell_top, neighbor_center_x, cell_bottom };
-                lv_draw_rect(layer, &bridge, &right_bridge);
-            }
-            if (dark(module_x, module_y + 1)) {      // bridge to the bottom neighbor
-                int neighbor_bottom   = edge_y(border + module_y + 2) - 1;
-                int neighbor_center_y = (edge_y(border + module_y + 1) + neighbor_bottom) / 2;
-                lv_area_t down_bridge = { cell_left, cell_center_y, cell_right, neighbor_center_y };
-                lv_draw_rect(layer, &bridge, &down_bridge);
-            }
+            lv_draw_rect(layer, &module_dsc, &cell_area);
         }
     }
 }
