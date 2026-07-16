@@ -558,55 +558,73 @@ screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool scrollabl
 // Pulsing colored border overlay for warning-class screens.
 //
 // Python paints five concentric borders per frame, ramping each border's
-// brightness from 0 to full and back. LVGL gives us a single border-style
-// with a width and an opacity, which captures the perceptual "breathing"
-// effect with one widget and one animation.
+// brightness from 0 to full and back. We reproduce the perceptual "breathing"
+// with a colored perimeter that pulses its opacity.
 //
 // The overlay sits on top of `screen` (not `body`), so it covers the TopNav
 // too and does not scroll with content — matching Python's behavior.
 //
-// LVGL automatically frees the animation when its target object is deleted,
-// so no explicit teardown is required.
+// IMPLEMENTATION: four non-overlapping edge STRIPS (not one full-screen bordered
+// object). This is a performance requirement, not a style choice. A single
+// full-screen object with an animated border invalidates its WHOLE bounding box
+// (the entire screen) on every pulse tick, which forces LVGL to re-render every
+// interior widget in the dirty area each frame — including a direct-drawn QR whose
+// DRAW_MAIN_END callback re-runs its full per-module loop. On a partial-refresh SPI
+// panel (ST7796) that re-render happens once PER STRIPE (~4-8x/frame) and re-flushes
+// the whole frame over SPI, collapsing the pulse to a few fps (measured ~5 fps on
+// the whole-QR transcribe screen). Confining the pulse to thin edge strips means the
+// per-tick dirty region is edges-only: the screen interior is never invalidated, its
+// draw callbacks don't re-fire, and only the strips re-flush — so the pulse animates
+// at the anim rate on both DSI and SPI panels. (On a DSI panel, where a full-screen
+// flush is ~free, the old single-object version looked fine, hiding the cost.)
+//
+// The four strips form the perimeter ring: top/bottom span the full width (incl.
+// corners); left/right span only the gap BETWEEN them — so corners are single-layer
+// and pulse at a uniform opacity, matching the old uniform border. LVGL automatically
+// frees each strip's animation when the strip is deleted, so no explicit teardown.
 void add_warning_edges_overlay(lv_obj_t *screen, int status_color) {
-    lv_obj_t *edge = lv_obj_create(screen);
-    lv_obj_set_size(edge, lv_pct(100), lv_pct(100));
-    lv_obj_align(edge, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_remove_flag(edge, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+    const int32_t edge   = EDGE_PADDING;
+    const int32_t side_h = lv_display_get_vertical_resolution(NULL) - 2 * edge;
 
-    lv_obj_set_style_bg_opa(edge, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_radius(edge, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(edge, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(edge, 0, LV_PART_MAIN);
+    struct edge_strip_t { lv_align_t align; int32_t w; int32_t h; };
+    const edge_strip_t strips[] = {
+        { LV_ALIGN_TOP_MID,    lv_pct(100), edge   },
+        { LV_ALIGN_BOTTOM_MID, lv_pct(100), edge   },
+        { LV_ALIGN_LEFT_MID,   edge,        side_h },
+        { LV_ALIGN_RIGHT_MID,  edge,        side_h },
+    };
 
-    lv_obj_set_style_border_color(edge, lv_color_hex(status_color), LV_PART_MAIN);
-    lv_obj_set_style_border_width(edge, EDGE_PADDING, LV_PART_MAIN);
-    lv_obj_set_style_border_side(edge, LV_BORDER_SIDE_FULL, LV_PART_MAIN);
+    for (const edge_strip_t &st : strips) {
+        lv_obj_t *strip = lv_obj_create(screen);
+        lv_obj_remove_style_all(strip);   // bare filled rect: no theme border/pad/scrollbar
+        lv_obj_set_size(strip, st.w, st.h);
+        lv_obj_align(strip, st.align, 0, 0);
+        lv_obj_remove_flag(strip, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+        lv_obj_set_style_radius(strip, 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(strip, lv_color_hex(status_color), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(strip, LV_OPA_COVER, LV_PART_MAIN);
 
-    // Pulse: opacity 255 -> 0 -> 255. The edges REST at full color and breathe
-    // OUT to fully off, then hold at full color before the next breath. This
-    // mirrors Python's WarningEdgesThread, which rests at inhale_factor=0 (full
-    // color), holds there for 8 frames, and ramps the brightness OUT toward black
-    // — so the resting/held state is bright, and the trough is (near) off. (The
-    // earlier 64->255 inverted this: it rested dim and never reached full off.)
-    //
-    // LVGL v9 names: `set_duration` is the forward leg (full -> off),
-    // `set_reverse_duration` the back-to-start leg (off -> full), and
-    // `set_repeat_delay` the pause between iterations — held at `start` (full
-    // color), since each iteration ends back at `start`. Python's ~10fps hold of
-    // 8 trough frames (~800 ms) maps to a 400 ms repeat delay here.
-    lv_anim_t pulse;
-    lv_anim_init(&pulse);
-    lv_anim_set_var(&pulse, edge);
-    lv_anim_set_values(&pulse, 255, 0);
-    lv_anim_set_duration(&pulse, 500);
-    lv_anim_set_reverse_duration(&pulse, 500);
-    lv_anim_set_repeat_delay(&pulse, 400);
-    lv_anim_set_repeat_count(&pulse, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&pulse, lv_anim_path_ease_in_out);
-    lv_anim_set_exec_cb(&pulse, [](void *obj, int32_t v) {
-        lv_obj_set_style_border_opa((lv_obj_t *)obj, (lv_opa_t)v, LV_PART_MAIN);
-    });
-    lv_anim_start(&pulse);
+        // Pulse: opacity 255 -> 0 -> 255. The edges REST at full color and breathe
+        // OUT to fully off, then hold at full color before the next breath (mirrors
+        // Python's WarningEdgesThread: rests bright, holds ~8 trough frames, ramps
+        // OUT toward black). LVGL v9: `set_duration` is the forward leg (full -> off),
+        // `set_reverse_duration` the back-to-start leg (off -> full), `set_repeat_delay`
+        // the pause between iterations (held at full color). All four strips start in
+        // the same call/tick with identical params, so they pulse in lockstep.
+        lv_anim_t pulse;
+        lv_anim_init(&pulse);
+        lv_anim_set_var(&pulse, strip);
+        lv_anim_set_values(&pulse, 255, 0);
+        lv_anim_set_duration(&pulse, 500);
+        lv_anim_set_reverse_duration(&pulse, 500);
+        lv_anim_set_repeat_delay(&pulse, 400);
+        lv_anim_set_repeat_count(&pulse, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_set_path_cb(&pulse, lv_anim_path_ease_in_out);
+        lv_anim_set_exec_cb(&pulse, [](void *obj, int32_t v) {
+            lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)v, LV_PART_MAIN);
+        });
+        lv_anim_start(&pulse);
+    }
 }
 
 
