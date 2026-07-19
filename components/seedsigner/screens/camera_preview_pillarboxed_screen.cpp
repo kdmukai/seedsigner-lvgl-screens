@@ -96,5 +96,12 @@ void camera_preview_pillarboxed_screen(void *ctx_json) {
     camera_preview_pillarboxed_destroy(chrome);
 
     // --- Load ---
+
+    // Screensaver policy (default_allow=false): this IS the scan chrome — the user aims the
+    // camera with no input, so the saver must never cover it. The flag suppresses the saver
+    // while it shows; load_screen_and_cleanup_previous wires the teardown idle-clock reset off
+    // the flag to protect the successor from the stale idle clock.
+    apply_screensaver_policy(scr, cfg, /*default_allow=*/false);
+
     load_screen_and_cleanup_previous(scr);
 }

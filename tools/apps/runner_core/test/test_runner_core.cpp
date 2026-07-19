@@ -405,10 +405,11 @@ int main(int argc, char** argv) {
     // Camera scan/entropy screens reset the idle clock on teardown, so a long
     // input-less scan (the user lining up a QR) doesn't leave a stale idle clock
     // that makes the overlay dispatcher fire the screensaver over the freshly-loaded
-    // successor screen (e.g. Select Signer) instead of showing it. Regression for
-    // reset_idle_clock_on_teardown() — the camera-screen analog of the loading
-    // spinner's PR #69 fix. Timeout is set to 0 here so the saver never activates and
-    // we can measure the idle clock directly.
+    // successor screen (e.g. Select Signer) instead of showing it. These screens opt
+    // out of the screensaver (apply_screensaver_policy, default_allow=false), so they
+    // carry SS_OBJ_FLAG_NO_SCREENSAVER and load_screen_and_cleanup_previous wires the
+    // teardown reset off that flag automatically. Timeout is set to 0 here so the saver
+    // never activates and we can measure the idle clock directly.
     // -----------------------------------------------------------------------
     printf("\n-- camera screens reset the idle clock on teardown --\n");
     {

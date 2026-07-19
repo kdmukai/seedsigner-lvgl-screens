@@ -24,16 +24,29 @@
 using json = nlohmann::json;
 
 // Parse + validate a screen's JSON context string (throws std::runtime_error on
-// malformed input) and normalize the allow_screensaver default.
+// malformed input). The per-screen screensaver policy (allow_screensaver) is NOT
+// normalized here — its default is per-screen and lives in apply_screensaver_policy.
 void parse_screen_json_ctx(const char *ctx_json, json &cfg_out);
 
 // Optional-context variant of the parse above, for the boot/overlay tier whose
 // context is legitimately optional (main_menu, opening_splash, loading_spinner,
-// the two camera overlay screens). NULL or empty ctx_json yields an empty config
-// object carrying the same allow_screensaver normalization parse_screen_json_ctx
-// applies to every config; any other input is delegated to parse_screen_json_ctx
-// unchanged (identical validation, identical error strings).
+// the camera overlay screens). NULL or empty ctx_json yields an empty config
+// object; any other input is delegated to parse_screen_json_ctx unchanged
+// (identical validation, identical error strings).
 void parse_optional_screen_json_ctx(const char *ctx_json, json &cfg_out);
+
+// Apply the per-screen screensaver policy: stamp SS_OBJ_FLAG_NO_SCREENSAVER onto
+// `screen` when the effective allow_screensaver resolves to false (the overlay
+// dispatcher reads that flag off lv_scr_act() and stands the saver down while this
+// screen shows). allow_screensaver is view-owned but has a PER-SCREEN default:
+// ordinary screens default to allowed (default_allow=true); screens the saver must
+// never cover — QR display, camera scan/entropy, the zoomed SeedQR transcription,
+// the loading spinner — pass default_allow=false so they opt out unless a view
+// explicitly re-enables it. The matching teardown idle-clock reset is wired
+// automatically off this flag in load_screen_and_cleanup_previous(), so setting the
+// policy here is the ONLY thing an opt-out screen has to do. The scaffold calls this
+// for every top-nav screen; chrome-free (bare-root) screens call it themselves.
+void apply_screensaver_policy(lv_obj_t *screen, const json &cfg, bool default_allow = true);
 
 // Build the root screen: a TopNav plus the standard body container. When
 // cfg["button_list"] is present the body becomes a flex column of
@@ -80,15 +93,11 @@ int32_t bottom_button_top_y(const screen_scaffold_t &screen);
 
 // Switch to a finished screen: applies the RTL + complex-script glyph-run passes,
 // loads it as the active screen, deletes the previous root, and reaps retired fonts.
+// Also auto-wires the screensaver-opt-out teardown reset: any screen carrying
+// SS_OBJ_FLAG_NO_SCREENSAVER (stamped by apply_screensaver_policy) gets its
+// LV_EVENT_DELETE counted as user activity, so a screen that sat idle (a QR held to a
+// camera, a paper transcription, a long signing spinner) can't leave a stale idle
+// clock that fires the saver over its successor.
 void load_screen_and_cleanup_previous(lv_obj_t *new_screen);
-
-// Register `screen` so its teardown counts as user activity: on the screen's LV_EVENT_DELETE
-// (fired when the successor's load_screen_and_cleanup_previous swaps it out) it resets LVGL's
-// idle clock (lv_display_trigger_activity). Use it on screens that can stay up a long time with
-// NO user input — a camera scan/entropy screen while the user lines up a QR — so the stale idle
-// clock doesn't make the overlay dispatcher fire the screensaver over the freshly-loaded
-// successor instead of showing it. The loading spinner applies the same fix inline (its
-// LV_EVENT_DELETE cleanup also frees its timer/ctx there); see PR #69 for the rationale.
-void reset_idle_clock_on_teardown(lv_obj_t *screen);
 
 #endif // SCREEN_SCAFFOLD_H

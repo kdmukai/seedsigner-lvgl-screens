@@ -20,9 +20,10 @@
 //
 // Lifecycle: Tier 1 (stateless) — no statics, no timers, no heap ctx. The overlay
 // handle is created and immediately destroyed; destroy() frees only the handle struct,
-// leaving the widgets parented on the screen tree. The one teardown callback
-// (reset_idle_clock_on_teardown) carries no state — it just resets the idle clock on
-// LV_EVENT_DELETE so the successor screen gets a full screensaver window.
+// leaving the widgets parented on the screen tree. The screen opts out of the screensaver
+// (apply_screensaver_policy, default_allow=false), which both keeps the saver off the live
+// preview and — via the flag-driven teardown reset in load_screen_and_cleanup_previous —
+// gives the successor screen a full screensaver window.
 //
 // Layout notes: the synthetic-preview-background block (bare root + per-resolution
 // center-cut geometry + gray placeholder panel) is duplicated near-verbatim in the
@@ -233,12 +234,12 @@ void camera_entropy_overlay_screen(void *ctx_json) {
 
     // --- Load ---
 
-    // Count this screen's teardown as activity: the entropy live-preview runs with NO user
-    // input while the user aims the camera, so LVGL's idle clock goes stale. Without this,
-    // when the host dismisses it by loading the next screen, the overlay dispatcher would fire
-    // the screensaver over the freshly-rendered successor instead of showing it — the same fix
-    // the loading spinner applies (PR #69).
-    reset_idle_clock_on_teardown(scr);
+    // Screensaver policy (default_allow=false): the entropy live-preview runs with NO user
+    // input while the user aims the camera, so the saver must never cover it. The flag
+    // suppresses the saver while this screen shows; load_screen_and_cleanup_previous wires the
+    // teardown idle-clock reset off the flag, so the stale idle clock can't fire the saver
+    // over the successor the instant the host dismisses the preview.
+    apply_screensaver_policy(scr, cfg, /*default_allow=*/false);
 
     load_screen_and_cleanup_previous(scr);
 }

@@ -103,21 +103,43 @@ void parse_screen_json_ctx(const char *ctx_json, json &cfg_out) {
         throw std::runtime_error("screen config must be a JSON object");
     }
 
-    // Per-screen screensaver policy: normalize to the single system default
-    // (allowed). This is the ONLY place allow_screensaver's default is set — the
-    // view owns the value, and every downstream consumer sees an explicit bool.
-    cfg_out["allow_screensaver"] = cfg_out.value("allow_screensaver", true);
+    // NB: the per-screen screensaver policy (allow_screensaver) is intentionally NOT
+    // normalized here. Its default is per-screen, not one system value — ordinary screens
+    // default to allowed, but screens the saver must never cover (QR display, camera scan/
+    // entropy, zoomed transcription, loading spinner) default to disallowed. That per-screen
+    // default lives in apply_screensaver_policy(), which reads the view's value — present in
+    // cfg only when the view set it — against the screen's own default.
 }
 
 
 // Optional-context variant of the parse above (boot/overlay tier: main_menu,
-// opening_splash, loading_spinner, the two camera overlay screens). A NULL or
-// empty context parses the canonical empty object "{}" through the strict
-// helper, so the allow_screensaver normalization stays defined in exactly one
-// place; every other input passes through verbatim — identical validation and
-// identical error strings.
+// opening_splash, loading_spinner, the camera overlay screens). A NULL or empty
+// context parses the canonical empty object "{}" through the strict helper; every
+// other input passes through verbatim — identical validation and error strings.
 void parse_optional_screen_json_ctx(const char *ctx_json, json &cfg_out) {
     parse_screen_json_ctx((ctx_json && ctx_json[0]) ? ctx_json : "{}", cfg_out);
+}
+
+
+// Per-screen screensaver policy — see screen_scaffold.h for the contract. Stamps the
+// saver opt-out flag onto `screen` when the effective allow_screensaver is false; the
+// matching teardown idle-clock reset is wired off this same flag in
+// load_screen_and_cleanup_previous(). The value is present in cfg only when the view set
+// it (parse no longer bakes a default), so cfg.value() applies the screen's own default.
+void apply_screensaver_policy(lv_obj_t *screen, const json &cfg, bool default_allow) {
+    if (screen && !cfg.value("allow_screensaver", default_allow)) {
+        lv_obj_add_flag(screen, SS_OBJ_FLAG_NO_SCREENSAVER);
+    }
+}
+
+
+// LV_EVENT_DELETE handler wired by load_screen_and_cleanup_previous() onto every
+// screensaver-opt-out screen: count the screen's teardown as user activity so the
+// successor gets a full screensaver idle window (same primitive the overlay manager
+// uses when it wakes from the saver).
+static void reset_idle_clock_on_delete_cb(lv_event_t *e) {
+    (void)e;
+    lv_display_trigger_activity(NULL);
 }
 
 
@@ -136,6 +158,20 @@ void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
     lv_obj_update_layout(new_screen);
     apply_glyph_runs_to_labels(new_screen);
 
+    // Auto-wire the screensaver-opt-out teardown reset. A screen carrying
+    // SS_OBJ_FLAG_NO_SCREENSAVER (stamped by apply_screensaver_policy from
+    // allow_screensaver=false) can sit for minutes with NO user input — a QR held up to a
+    // camera, a paper transcription, a long signing spinner — so by teardown LVGL's idle
+    // clock is stale. Without this, the overlay dispatcher would fire the screensaver over
+    // the freshly-loaded SUCCESSOR the instant this screen swaps out. Counting the teardown
+    // as activity gives the successor a full idle window. Derived from the flag here, at the
+    // one path every screen loads through, so every opt-out screen gets it automatically —
+    // no per-screen call to remember. (The flag itself only suppresses the saver WHILE this
+    // screen shows; this reset covers the gap right after it.)
+    if (lv_obj_has_flag(new_screen, SS_OBJ_FLAG_NO_SCREENSAVER)) {
+        lv_obj_add_event_cb(new_screen, reset_idle_clock_on_delete_cb, LV_EVENT_DELETE, NULL);
+    }
+
     lv_obj_t *old_screen = lv_scr_act();
     lv_scr_load(new_screen);
     if (old_screen && old_screen != new_screen) {
@@ -150,20 +186,6 @@ void load_screen_and_cleanup_previous(lv_obj_t *new_screen) {
         // seedsigner_clear_registered_fonts() / ss_unload_locale() for why freeing
         // them any earlier would dangle the old screen's labels.
         ss_reap_retired();
-    }
-}
-
-
-// LV_EVENT_DELETE handler for reset_idle_clock_on_teardown(): count the screen's teardown as
-// user activity so the successor gets a full screensaver idle window.
-static void reset_idle_clock_on_delete_cb(lv_event_t *e) {
-    (void)e;
-    lv_display_trigger_activity(NULL);
-}
-
-void reset_idle_clock_on_teardown(lv_obj_t *screen) {
-    if (screen) {
-        lv_obj_add_event_cb(screen, reset_idle_clock_on_delete_cb, LV_EVENT_DELETE, NULL);
     }
 }
 
@@ -311,14 +333,12 @@ screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool scrollabl
     lv_obj_set_style_pad_all(out.screen, 0, LV_PART_MAIN);
     lv_obj_set_style_outline_width(out.screen, 0, LV_PART_MAIN);
 
-    // Per-screen screensaver policy (view-owned, carried on the screen object):
-    // a view that set allow_screensaver=false gets the saver opt-out stamped onto
-    // this root, where the overlay dispatcher reads it off lv_scr_act(). Absent/
-    // true leaves the flag off = saver allowed. parse_screen_json_ctx normalizes
-    // the key, so this is the one shared stamp for every top-nav screen.
-    if (!cfg.value("allow_screensaver", true)) {
-        lv_obj_add_flag(out.screen, SS_OBJ_FLAG_NO_SCREENSAVER);
-    }
+    // Per-screen screensaver policy (view-owned, carried on the screen object): a view
+    // that set allow_screensaver=false gets the saver opt-out stamped onto this root,
+    // where the overlay dispatcher reads it off lv_scr_act(). Ordinary top-nav screens
+    // default to allowed (default_allow=true); the teardown idle-clock reset is wired
+    // automatically off the flag in load_screen_and_cleanup_previous().
+    apply_screensaver_policy(out.screen, cfg);
     // NB: base direction is NOT set on the screen root. A root-level RTL base_dir
     // would also mirror element LAYOUT (flex order + lv_obj_set_pos / align honor
     // base_dir), flipping the Scan tile, the nav buttons, and the passphrase

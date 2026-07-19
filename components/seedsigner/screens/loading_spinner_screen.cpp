@@ -100,22 +100,15 @@ void loading_spinner_spin_timer_cb(lv_timer_t *timer) {
     if (lv_obj_is_valid(ctx->dim_arc)) lv_arc_set_rotation(ctx->dim_arc, rotation_deg);
 }
 
-// LV_EVENT_DELETE teardown on the screen root: reset the idle clock, stop the
-// (not widget-owned) spin timer, then free the ctx.
+// LV_EVENT_DELETE teardown on the screen root: stop the (not widget-owned) spin timer,
+// then free the ctx. The screensaver-opt-out idle-clock reset that keeps the saver off the
+// successor screen is handled automatically by load_screen_and_cleanup_previous — this
+// screen sets allow_screensaver=false (apply_screensaver_policy below), so it carries
+// SS_OBJ_FLAG_NO_SCREENSAVER and the teardown reset is wired off that flag. That matters
+// here because the spinner is dismissed by the host loading the NEXT screen, and a long
+// host task (large-PSBT parse/sign, xpub calc) can outlast the screensaver timeout with
+// zero input, leaving the idle clock stale.
 void loading_spinner_cleanup_cb(lv_event_t *e) {
-    // The spinner is dismissed by the host loading the NEXT screen (this LV_EVENT_DELETE
-    // fires from that screen's load_screen_and_cleanup_previous). Unlike an ordinary screen
-    // swap, no user input drove it: a long host task (large-PSBT parse/sign, xpub calc) can
-    // outlast the screensaver timeout with zero input, so LVGL's idle clock
-    // (lv_display_get_inactive_time) is stale and the overlay manager would fire the
-    // screensaver over the freshly-rendered result. Count the dismissal as activity so the
-    // successor screen gets a full idle window. Same primitive the overlay manager uses when
-    // it wakes from the screensaver. It runs in the same context as the rest of this teardown
-    // (lv_timer_delete / delete ctx, driven by the successor's load_screen_and_cleanup_previous),
-    // so it needs no synchronization that path doesn't already hold on either backend.
-    // Platform-agnostic — one fix for ESP32 and Pi Zero.
-    lv_display_trigger_activity(NULL);
-
     loading_spinner_spin_ctx_t *ctx = (loading_spinner_spin_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
     if (ctx->timer) lv_timer_delete(ctx->timer);
@@ -221,6 +214,12 @@ void loading_spinner_screen(void *ctx_json) {
     loading_spinner_spin_ctx_t *ctx = new loading_spinner_spin_ctx_t{ bright_arc, dim_arc, nullptr, lv_tick_get(), 0 };
     ctx->timer = lv_timer_create(loading_spinner_spin_timer_cb, LOADING_SPINNER_SPIN_TICK_MS, ctx);
     lv_obj_add_event_cb(screen_root, loading_spinner_cleanup_cb, LV_EVENT_DELETE, ctx);
+
+    // Screensaver policy: the spinner shows while a long host task runs with zero input, so
+    // the saver must never cover it — default_allow=false. The flag suppresses the saver
+    // while it shows; load_screen_and_cleanup_previous wires the teardown reset off the flag
+    // to protect the successor from the stale idle clock.
+    apply_screensaver_policy(screen_root, cfg, /*default_allow=*/false);
 
     // --- Load ---
 
