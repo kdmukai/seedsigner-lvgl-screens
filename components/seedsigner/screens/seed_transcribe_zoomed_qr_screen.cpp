@@ -678,6 +678,12 @@ void seed_transcribe_zoomed_qr_screen(void *ctx_json) {
 
     // --- Cleanup + load ---
 
+    // Screensaver policy (default_allow=false): the user hand-transcribes the QR one zone at a
+    // time — long stretches with no input — so the saver must never cover it. The flag
+    // suppresses the saver while this screen shows; load_screen_and_cleanup_previous wires the
+    // teardown idle-clock reset off the flag to protect the successor from the stale idle clock.
+    apply_screensaver_policy(screen_root, cfg, /*default_allow=*/false);
+
     lv_obj_add_event_cb(screen_root, seed_transcribe_zoomed_qr_cleanup_cb, LV_EVENT_DELETE, ctx);
     load_screen_and_cleanup_previous(screen_root);
 #endif  // LV_USE_QRCODE

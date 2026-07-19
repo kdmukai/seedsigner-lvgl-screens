@@ -21,9 +21,10 @@
 //
 // Lifecycle: Tier 1 (stateless) — no statics, no timers, no heap ctx. The overlay
 // handle is created and immediately destroyed; destroy() frees only the handle struct,
-// leaving the widgets parented on the screen tree. The one teardown callback
-// (reset_idle_clock_on_teardown) carries no state — it just resets the idle clock on
-// LV_EVENT_DELETE so the successor screen gets a full screensaver window.
+// leaving the widgets parented on the screen tree. The screen opts out of the screensaver
+// (apply_screensaver_policy, default_allow=false), which both keeps the saver off the live
+// preview and — via the flag-driven teardown reset in load_screen_and_cleanup_previous —
+// gives the successor screen a full screensaver window.
 //
 // The back affordance is chosen by the overlay module from input_profile_get_mode(),
 // which the tools set per resolution (240 = hardware -> on-preview instruction text;
@@ -162,12 +163,12 @@ void camera_preview_overlay_screen(void *ctx_json) {
 
     // --- Load ---
 
-    // Count this screen's teardown as activity: a scan runs with NO user input while the
-    // user lines up the QR, so LVGL's idle clock goes stale. Without this, when the host
-    // dismisses the scan by loading the next screen, the overlay dispatcher would fire the
-    // screensaver over the freshly-rendered successor (e.g. Select Signer) instead of showing
-    // it — the same fix the loading spinner applies (PR #69).
-    reset_idle_clock_on_teardown(scr);
+    // Screensaver policy (default_allow=false): a scan runs with NO user input while the user
+    // lines up the QR, so the saver must never cover it. The flag suppresses the saver while
+    // this screen shows; load_screen_and_cleanup_previous wires the teardown idle-clock reset
+    // off the flag, so the successor screen (e.g. Select Signer) isn't covered by the stale
+    // idle clock the instant the host dismisses the scan.
+    apply_screensaver_policy(scr, cfg, /*default_allow=*/false);
 
     load_screen_and_cleanup_previous(scr);
 }
