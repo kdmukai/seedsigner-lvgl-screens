@@ -78,7 +78,7 @@ list(APPEND srcs
     # Image-entropy capture overlay: two-phase (preview/confirm) sibling of the
     # scan overlay — shutter capture + accept, or hardware-mode instruction text.
     "camera_entropy_overlay.cpp"
-    # Portable image-entropy display processing (crop-to-fill + luminance contrast
+    # Portable image-entropy display processing (aspect-fit + luminance contrast
     # stretch) that produces the CONFIRM-phase final image; LVGL-free helper.
     "image_entropy.cpp"
     "input_profile.cpp"

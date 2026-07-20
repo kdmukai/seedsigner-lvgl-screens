@@ -52,7 +52,7 @@
 #include "screen_scaffold.h"        // parse_optional_screen_json_ctx, load_screen_and_cleanup_previous
 #include "seedsigner.h"             // camera_entropy_overlay_screen declaration
 #include "camera_entropy_overlay.h" // camera_entropy_overlay_create/destroy + spec / phase / capture-style types
-#include "image_entropy.h"          // image_entropy_process (crop-to-fill + luminance stretch), for the tooling CONFIRM frame
+#include "image_entropy.h"          // image_entropy_process (aspect-fit + luminance stretch), for the tooling CONFIRM frame
 
 #include "lvgl.h"                   // lv_obj / lv_display / lv_color / lv_memzero + per-object style setters
 
@@ -65,14 +65,20 @@ using json = nlohmann::json;
 
 // Desktop tooling only: there is no camera, so synthesize a deliberately LOW-CONTRAST
 // test frame and run it through the REAL image_entropy_process + set_confirm_image path,
-// exercising crop-to-fill, the luminance stretch, and the CONFIRM render in one shot. The
-// frame is a 4:3 source (unlike any display profile, so the crop-to-fill shows), a
-// horizontal brightness ramp compressed to ~[50,205] (so the 2% stretch has room to
-// expand), tinted in three vertical colour bands by an equal +40 (so a correct UNIFORM
-// stretch preserves their hue — a per-channel stretch would skew them).
+// exercising the aspect-fit, the luminance stretch, and the CONFIRM render in one shot.
+// The frame is:
+//   - 720x480 (3:2), matching the resolution+aspect of the pinned still the camera
+//     backends capture. That is larger than every display profile on at least one axis,
+//     so the BOX DOWNSCALE runs here rather than only on hardware, and 3:2 matches no
+//     profile, so the letter-/pillarboxing shows too. On 240x240 it also crosses the
+//     bar cap, exercising the compromise crop path.
+//   - a horizontal brightness ramp compressed to ~[50,205], so the 2% stretch has room
+//     to expand.
+//   - tinted in three vertical colour bands by an equal +40, so a correct UNIFORM
+//     stretch preserves their hue — a per-channel stretch would skew them.
 static void tooling_push_synthetic_confirm_frame(camera_entropy_overlay_t *overlay,
                                                   int32_t screen_w, int32_t screen_h) {
-    const int32_t SRC_W = 320, SRC_H = 240;
+    const int32_t SRC_W = 720, SRC_H = 480;
 
     uint8_t  *src = (uint8_t  *)lv_malloc((size_t)SRC_W * SRC_H * 3);
     uint16_t *dst = (uint16_t *)lv_malloc((size_t)screen_w * screen_h * 2);
@@ -225,7 +231,7 @@ void camera_entropy_overlay_screen(void *ctx_json) {
 
     // On device the host pushes the processed final frame in the CONFIRM phase; in
     // tooling there is no camera, so feed a synthetic frame through the same path so the
-    // full-display confirm render (crop-to-fill + luminance stretch) is visible + gateable.
+    // full-display confirm render (aspect-fit + luminance stretch) is visible + gateable.
     if (phase == CAMERA_ENTROPY_PHASE_CONFIRM) {
         tooling_push_synthetic_confirm_frame(overlay, screen_w, screen_h);
     }

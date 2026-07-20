@@ -2,16 +2,31 @@
 
 #include <stddef.h>   // NULL, size_t
 #include <stdint.h>
+#include <string.h>   // memset (letter-/pillarbox fill)
 
 // ---------------------------------------------------------------------------
 // Image-entropy display processing (see image_entropy.h for the contract).
 //
-// After the crop/resize into `dst`, two passes over the destination buffer: one
+// After the fit/resize into `dst`, two passes over the fitted image rect: one
 // to build a luminance histogram, one to apply the stretch LUT. A few ms for a
 // full-display frame, sub-1 KB of tables. No floats, no allocation, no LVGL.
 // ---------------------------------------------------------------------------
 
 namespace {
+
+// Most of the destination axis (as a percentage) that may go to letter-/pillarbox
+// bars before we start centre-cropping the source instead. See step 1.
+//
+// 20 is the knee where the two panels we ship land on opposite sides:
+//   * 800x480 (P4 4.3"), 3:2 still -> 10% bars: under the cap, shown WHOLE. A 4:3
+//     still lands at exactly 20%, also whole. Widescreen panels suit widescreen
+//     stills, so the cap simply never binds there -- which is the intent.
+//   * 240x240 (Pi Zero), 3:2 still -> pure fit would bar 33% of the panel. The cap
+//     binds: 20% bars, and ~17% of the frame width centre-cropped. Neither
+//     extreme, which is the compromise a square panel needs.
+// Raising this favours completeness on square panels; lowering it favours filling
+// them. It is one number precisely so the trade-off stays reviewable.
+constexpr int32_t kMaxBarPercent = 20;
 
 // --- RGB565 (R[15:11] G[10:5] B[4:0]) pack / unpack -------------------------
 // Expand 5/6-bit channels to a full 8-bit range by replicating the high bits
@@ -56,52 +71,137 @@ void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
         return;
     }
 
-    // --- Step 1: aspect-crop-to-fill --------------------------------------
+    // --- Step 1: aspect-fit with a capped letterbox -----------------------
 
-    // Pick the largest centered source rectangle whose aspect ratio matches the
-    // destination, so the resize fills the whole display and only crops the
-    // overflow axis (mirrors the app's resize_image_to_fill). Aspect ratios are
-    // compared by cross-multiplication to stay in integer math:
+    // Two goals pull against each other:
+    //   * Show the WHOLE frame. The user is reviewing what they just captured;
+    //     hiding part of it defeats the screen.
+    //   * Don't drown a small panel in black. On the 240x240 Pi Zero a 3:2 still
+    //     letterboxes a THIRD of the screen away, which reads as a bug.
+    // So: fit the frame, but cap the bars at kMaxBarPercent of the destination
+    // axis. When the cap binds, scale past the pure fit and crop the overflow --
+    // yielding SOME letterbox and SOME crop rather than all of either. Panels
+    // whose aspect already suits the frame never reach the cap and show it whole.
+    //
+    // The surviving bars are deliberate signal, not just leftovers: together with
+    // the contrast stretch (step 2) they make the frozen review frame read as
+    // clearly apart from the live preview it replaced.
+    //
+    // Aspect ratios compare by cross-multiplication to stay in integer math:
     //   dst_w/dst_h  vs  src_w/src_h   ->   dst_w*src_h  vs  src_w*dst_h
+    //
+    // Produces two rects: the source CROP (what we sample) and the destination
+    // CONTENT rect (where it lands). Pure fit is just crop == whole source.
     int64_t crop_x = 0, crop_y = 0, crop_w = src_w, crop_h = src_h;
+    int32_t content_w = dst_w, content_h = dst_h;
 
-    int64_t dst_by_src = (int64_t)dst_w * src_h;
-    int64_t src_by_dst = (int64_t)src_w * dst_h;
+    const int64_t dst_by_src = (int64_t)dst_w * src_h;
+    const int64_t src_by_dst = (int64_t)src_w * dst_h;
 
     if (dst_by_src > src_by_dst) {
-        // Destination is wider than the source: keep full width, crop height.
-        crop_h = (int64_t)src_w * dst_h / dst_w;
-        crop_y = (src_h - crop_h) / 2;
+        // Destination relatively wider than the source -> pillarbox (side bars).
+        content_w = (int32_t)((int64_t)src_w * dst_h / src_h);
+
+        const int32_t max_bars = dst_w * kMaxBarPercent / 100;
+        if (dst_w - content_w > max_bars) {
+            // Cap binds: widen the image to leave only max_bars of side bar. The
+            // scale is now content_w/src_w, so only dst_h/scale source rows still
+            // fit the panel height -- centre-crop the source vertically to those.
+            content_w = dst_w - max_bars;
+            crop_h    = (int64_t)dst_h * src_w / content_w;
+            if (crop_h > src_h) crop_h = src_h;
+            crop_y    = (src_h - crop_h) / 2;
+        }
     } else if (dst_by_src < src_by_dst) {
-        // Destination is taller than the source: keep full height, crop width.
-        crop_w = (int64_t)src_h * dst_w / dst_h;
-        crop_x = (src_w - crop_w) / 2;
+        // Destination relatively taller than the source -> letterbox (top/bottom).
+        content_h = (int32_t)((int64_t)src_h * dst_w / src_w);
+
+        const int32_t max_bars = dst_h * kMaxBarPercent / 100;
+        if (dst_h - content_h > max_bars) {
+            // Cap binds: the mirror of the branch above, axes swapped.
+            content_h = dst_h - max_bars;
+            crop_w    = (int64_t)dst_w * src_h / content_h;
+            if (crop_w > src_w) crop_w = src_w;
+            crop_x    = (src_w - crop_w) / 2;
+        }
     }
-    // else: identical aspect ratio -> use the whole source frame.
+    // else: identical aspect ratio -> content == destination, no bars, no crop.
 
-    // Nearest-neighbour resize of the crop rectangle into dst (RGB565).
-    for (int32_t y = 0; y < dst_h; ++y) {
-        int64_t sy = crop_y + (int64_t)y * crop_h / dst_h;
-        if (sy >= src_h) sy = src_h - 1;
+    // Extreme aspect mismatches can round a dimension to zero; keep it drawable.
+    if (content_w < 1) content_w = 1;
+    if (content_h < 1) content_h = 1;
 
-        for (int32_t x = 0; x < dst_w; ++x) {
-            int64_t sx = crop_x + (int64_t)x * crop_w / dst_w;
-            if (sx >= src_w) sx = src_w - 1;
+    const int32_t off_x = (dst_w - content_w) / 2;
+    const int32_t off_y = (dst_h - content_h) / 2;
 
-            uint8_t r, g, b;
-            read_src_pixel(src, fmt, (size_t)(sy * src_w + sx), &r, &g, &b);
-            dst[(size_t)y * dst_w + x] = rgb565_pack(r, g, b);
+    // Black out the whole destination first, so the letter-/pillarbox strips are
+    // opaque black over whatever the live preview last left underneath. RGB565
+    // 0x0000 is black, so a plain zero fill does it.
+    if (off_x > 0 || off_y > 0) {
+        memset(dst, 0, (size_t)dst_w * dst_h * sizeof(uint16_t));
+    }
+
+    // Box-filter resample of the crop rect into the content rect: each
+    // destination pixel averages the source pixels its footprint covers.
+    //
+    // The averaging is what makes a high-resolution still worth capturing. Point
+    // sampling a 720x480 still down to a 240-wide panel would keep 1 pixel in 9
+    // and throw the rest away -- aliasing edges and dropping detail badly enough
+    // that the extra capture resolution could look WORSE than a preview frame.
+    //
+    // One path serves both directions: when magnifying, a footprint rounds down
+    // to a single source pixel and the average degenerates to exactly the
+    // nearest-neighbour sample, so upscales are unchanged. Cost is one pass over
+    // the source, a few ms even for a full-resolution still on a Pi Zero.
+    for (int32_t y = 0; y < content_h; ++y) {
+        // Source row band feeding this destination row.
+        int64_t sy0 = crop_y + (int64_t)y       * crop_h / content_h;
+        int64_t sy1 = crop_y + (int64_t)(y + 1) * crop_h / content_h;
+        if (sy1 <= sy0)             sy1 = sy0 + 1;          // magnifying: one row
+        if (sy1 > crop_y + crop_h)  sy1 = crop_y + crop_h;  // clamp to the crop
+
+        uint16_t *dst_row = dst + (size_t)(off_y + y) * dst_w + off_x;
+
+        for (int32_t x = 0; x < content_w; ++x) {
+            // Source column band feeding this destination pixel.
+            int64_t sx0 = crop_x + (int64_t)x       * crop_w / content_w;
+            int64_t sx1 = crop_x + (int64_t)(x + 1) * crop_w / content_w;
+            if (sx1 <= sx0)             sx1 = sx0 + 1;
+            if (sx1 > crop_x + crop_w)  sx1 = crop_x + crop_w;
+
+            // Sum the footprint. A band is at most a few hundred pixels even for
+            // a wild downscale, so 8-bit channels cannot overflow 32 bits.
+            uint32_t sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
+            for (int64_t sy = sy0; sy < sy1; ++sy) {
+                for (int64_t sx = sx0; sx < sx1; ++sx) {
+                    uint8_t r, g, b;
+                    read_src_pixel(src, fmt, (size_t)(sy * src_w + sx), &r, &g, &b);
+                    sum_r += r; sum_g += g; sum_b += b;
+                    ++count;
+                }
+            }
+
+            // count >= 1 always: both bands were forced non-empty above.
+            dst_row[x] = rgb565_pack((uint8_t)(sum_r / count),
+                                     (uint8_t)(sum_g / count),
+                                     (uint8_t)(sum_b / count));
         }
     }
 
     // --- Step 2a: luminance histogram of the resized frame ----------------
 
-    const int32_t total = dst_w * dst_h;
+    // Only the content rect is sampled: the black bars are presentation padding,
+    // not scene content, and counting them would hand the entire 2% shadow clip
+    // to pure black and effectively disable the black point.
+    const int32_t total = content_w * content_h;
     uint32_t histogram[256] = {0};
-    for (int32_t i = 0; i < total; ++i) {
-        uint8_t r, g, b;
-        rgb565_unpack(dst[i], &r, &g, &b);
-        histogram[luma(r, g, b)]++;
+    for (int32_t y = 0; y < content_h; ++y) {
+        const uint16_t *dst_row = dst + (size_t)(off_y + y) * dst_w + off_x;
+        for (int32_t x = 0; x < content_w; ++x) {
+            uint8_t r, g, b;
+            rgb565_unpack(dst_row[x], &r, &g, &b);
+            histogram[luma(r, g, b)]++;
+        }
     }
 
     // --- Step 2b: black / white points at a 2% clip on each end -----------
@@ -137,10 +237,16 @@ void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
     }
 
     // --- Step 2d: apply the LUT in place ----------------------------------
+    // Again over the content rect only. lut[0] is always 0, so the bars would
+    // survive a full-buffer pass anyway -- but skipping them keeps the bars
+    // provably untouched and saves the work.
 
-    for (int32_t i = 0; i < total; ++i) {
-        uint8_t r, g, b;
-        rgb565_unpack(dst[i], &r, &g, &b);
-        dst[i] = rgb565_pack(lut[r], lut[g], lut[b]);
+    for (int32_t y = 0; y < content_h; ++y) {
+        uint16_t *dst_row = dst + (size_t)(off_y + y) * dst_w + off_x;
+        for (int32_t x = 0; x < content_w; ++x) {
+            uint8_t r, g, b;
+            rgb565_unpack(dst_row[x], &r, &g, &b);
+            dst_row[x] = rgb565_pack(lut[r], lut[g], lut[b]);
+        }
     }
 }
