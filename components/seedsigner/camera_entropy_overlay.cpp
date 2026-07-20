@@ -3,6 +3,8 @@
 #include "components.h"      // back_button(), button()
 #include "gui_constants.h"   // colors, scaled layout macros, active_profile()
 #include "input_profile.h"   // input_profile_get_mode()
+#include "navigation.h"      // attach_keypad_indevs_to_group, nav_aux_key_index
+#include "seedsigner.h"      // SEEDSIGNER_RET_BACK_BUTTON
 
 #include "lvgl.h"
 
@@ -37,6 +39,11 @@ struct camera_entropy_overlay {
     lv_obj_t *preview_shadow,  *preview_lbl;
     lv_obj_t *confirm_shadow,  *confirm_lbl;
     lv_obj_t *capturing_shadow, *capturing_lbl;
+
+    // Hardware keypad sink (NULL in touch mode). Carries the CURRENT phase in its
+    // user_data so the key handler reads it off the widget rather than this handle —
+    // callers may free the handle right after create() while the widgets live on.
+    lv_obj_t *keypad_sink;
 };
 
 // --- shared helpers ---------------------------------------------------------
@@ -107,6 +114,97 @@ static void confirm_image_deleted_cb(lv_event_t *e) {
 static void action_clicked_cb(lv_event_t *e) {
     const char *label = (const char *)lv_event_get_user_data(e);
     seedsigner_lvgl_on_button_selected(0, label);
+}
+
+// --- Hardware keypad input --------------------------------------------------
+// In hardware mode this overlay draws only instruction TEXT — every control above is
+// touch-only — so without a group of its own the keypad indev has NONE (the outgoing
+// screen's group was deleted along with it) and LVGL discards every key before it
+// reaches a widget. Entropy is then not merely unexitable but entirely inert: no
+// capture, no accept, no cancel. The sink + group + attach_keypad_indevs_to_group()
+// shape matches every other keypad-driven screen, and the attach latches a key held
+// across the screen swap so a carried-over press can't fire a capture on arrival.
+// Duplicated with camera_preview_overlay, differing only in the key map.
+// [slated for extraction: camera_overlay_common, consolidation ledger §12]
+
+// The group is owned by `parent` (freed on its LV_EVENT_DELETE), NOT by the overlay
+// handle — see the keypad_sink field comment.
+static void keypad_group_deleted_cb(lv_event_t *e) {
+    lv_group_t *group = (lv_group_t *)lv_event_get_user_data(e);
+    if (group) lv_group_del(group);
+}
+
+// The phase the key handler dispatches on, stored on the sink widget itself so it
+// stays valid for the widget's whole life. Kept in sync by ..._set_phase().
+static void keypad_sink_set_phase(lv_obj_t *sink, camera_entropy_phase_t phase) {
+    if (sink) lv_obj_set_user_data(sink, (void *)(uintptr_t)phase);
+}
+
+// Build the focusable 1x1 transparent sink that receives LV_EVENT_KEY, put it in a
+// fresh group, and hand the keypad indevs over. Returns the sink (the caller hangs the
+// phase on its user_data).
+static lv_obj_t *attach_keypad_sink(lv_obj_t *parent, lv_event_cb_t key_cb) {
+    lv_obj_t *sink = lv_obj_create(parent);
+    lv_obj_set_size(sink, 1, 1);
+    lv_obj_set_pos(sink, 0, 0);
+    // Fully invisible: the sink is the FOCUSED object, and the theme paints an outline
+    // on focus — over live camera pixels here, so zero outline/shadow as well as bg.
+    lv_obj_set_style_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(sink, 0, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(sink, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(sink, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(sink, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+
+    lv_group_t *group = lv_group_create();
+    lv_group_add_obj(group, sink);
+    lv_obj_add_event_cb(sink, key_cb, LV_EVENT_KEY, NULL);
+    lv_obj_add_event_cb(parent, keypad_group_deleted_cb, LV_EVENT_DELETE, group);
+
+    attach_keypad_indevs_to_group(group);
+    return sink;
+}
+
+// Phase-dependent key map, mirroring the Python PIL screens exactly:
+//   PREVIEW   (ToolsImageEntropyLivePreviewScreen) LEFT = back, ANYCLICK = capture.
+//   CONFIRM   (ToolsImageEntropyFinalImageScreen)  LEFT = reshoot, RIGHT or
+//             ANYCLICK = accept.
+// ANYCLICK is Python's KEYS__ANYCLICK = [KEY_PRESS, KEY1, KEY2, KEY3]; KEY1-3 go
+// through the shared nav_aux_key_index() recognizer so aux-key handling stays
+// byte-equivalent across the corpus. Reshoot rides the same back event as cancel —
+// the host tells them apart by the phase it is in, per the header's event contract.
+static void entropy_keypad_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+
+    lv_obj_t *sink = (lv_obj_t *)lv_event_get_target(e);
+    const camera_entropy_phase_t phase =
+        (camera_entropy_phase_t)(uintptr_t)lv_obj_get_user_data(sink);
+
+    const uint32_t key = lv_event_get_key(e);
+    const bool anyclick = (key == LV_KEY_ENTER) || (nav_aux_key_index(key) != 0);
+
+    switch (phase) {
+        case CAMERA_ENTROPY_PHASE_PREVIEW:
+            if (key == LV_KEY_LEFT) {
+                seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_BACK_BUTTON, "back");
+            } else if (anyclick) {
+                seedsigner_lvgl_on_button_selected(0, "capture");
+            }
+            break;
+
+        case CAMERA_ENTROPY_PHASE_CONFIRM:
+            if (key == LV_KEY_LEFT) {
+                seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_BACK_BUTTON, "back");
+            } else if (key == LV_KEY_RIGHT || anyclick) {
+                seedsigner_lvgl_on_button_selected(0, "accept");
+            }
+            break;
+
+        case CAMERA_ENTROPY_PHASE_CAPTURING:
+            // Transient: the frame is mid-freeze/latch. Swallow keys so a second
+            // click can't post an accept against the phase that hasn't loaded yet.
+            break;
+    }
 }
 
 // Camera "shutter" — a white circle (concentric ring+disc, or a single solid disc) with
@@ -269,6 +367,10 @@ camera_entropy_overlay_t *camera_entropy_overlay_create(lv_obj_t *parent,
             make_bottom_text(parent, spec->confirm_instructions, (uint32_t)BODY_FONT_COLOR,
                              SX, SY, SW, SH, &o->confirm_shadow, &o->confirm_lbl);
         }
+
+        // Joystick keys ARE the controls in this mode (there are no on-screen ones),
+        // so they are wired whether or not the host supplied instruction text.
+        o->keypad_sink = attach_keypad_sink(parent, entropy_keypad_cb);
     }
 
     camera_entropy_overlay_set_phase(o, o->phase);
@@ -278,6 +380,11 @@ camera_entropy_overlay_t *camera_entropy_overlay_create(lv_obj_t *parent,
 void camera_entropy_overlay_set_phase(camera_entropy_overlay_t *o, camera_entropy_phase_t phase) {
     if (!o) return;
     o->phase = phase;
+
+    // Keep the key handler's dispatch phase in step with the visuals (no-op in touch
+    // mode, where there is no sink). Called from create()'s tail too, so the sink is
+    // seeded with the initial phase.
+    keypad_sink_set_phase(o->keypad_sink, phase);
 
     const bool preview   = (phase == CAMERA_ENTROPY_PHASE_PREVIEW);
     const bool capturing = (phase == CAMERA_ENTROPY_PHASE_CAPTURING);

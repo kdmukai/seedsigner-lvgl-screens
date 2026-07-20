@@ -3,6 +3,8 @@
 #include "components.h"      // back_button()
 #include "gui_constants.h"   // colors, scaled layout macros, active_profile()
 #include "input_profile.h"   // input_profile_get_mode()
+#include "navigation.h"      // attach_keypad_indevs_to_group (held-key-safe input handoff)
+#include "seedsigner.h"      // SEEDSIGNER_RET_BACK_BUTTON
 
 #include "lvgl.h"
 
@@ -14,6 +16,11 @@
 // mirrors Python ScanScreen (scan_screens.py) at the square's scale, using the
 // profile-scaled layout macros so it holds across 240/320/480.
 // ---------------------------------------------------------------------------
+
+// Host emit seam (same weak symbol components.cpp uses): in hardware mode the
+// joystick back key posts the SAME event the touch back button does, so the host
+// reads one signal per mode. See the keypad block below.
+extern "C" __attribute__((weak)) void seedsigner_lvgl_on_button_selected(uint32_t index, const char *label);
 
 struct camera_preview_overlay {
     input_mode_t mode;
@@ -94,6 +101,63 @@ static void apply_dot_status(camera_preview_overlay_t *o, camera_overlay_frame_s
     }
 }
 
+// --- Hardware keypad input --------------------------------------------------
+// In hardware mode the overlay draws only instruction TEXT — no focusable widget —
+// so without a group of its own the keypad indev has NONE (the outgoing screen's
+// group was deleted along with it) and LVGL's keypad handler discards every key
+// before it reaches a widget. The flow then cannot be backed out of at all. The
+// invisible-sink + group + attach_keypad_indevs_to_group() shape below is the same
+// one every other keypad-driven screen uses (seed_transcribe_zoomed_qr_screen,
+// opening_splash_screen); the attach also latches a key held across the screen swap
+// so a carried-over press can't cancel the scan the instant it opens.
+// This block is duplicated with camera_entropy_overlay (differing only in the key
+// map). [slated for extraction: camera_overlay_common, consolidation ledger §12]
+
+// The group is owned by `parent` (freed on its LV_EVENT_DELETE), NOT by the overlay
+// handle: callers may destroy the handle immediately after create() while the widget
+// tree lives on (the desktop tooling does exactly that).
+static void keypad_group_deleted_cb(lv_event_t *e) {
+    lv_group_t *group = (lv_group_t *)lv_event_get_user_data(e);
+    if (group) lv_group_del(group);
+}
+
+// Build the focusable 1x1 transparent sink that receives LV_EVENT_KEY, put it in a
+// fresh group, and hand the keypad indevs over. Returns the sink so a caller can hang
+// per-phase state on its user_data (the entropy overlay does; this one is stateless).
+static lv_obj_t *attach_keypad_sink(lv_obj_t *parent, lv_event_cb_t key_cb) {
+    lv_obj_t *sink = lv_obj_create(parent);
+    lv_obj_set_size(sink, 1, 1);
+    lv_obj_set_pos(sink, 0, 0);
+    // Fully invisible: the sink is the FOCUSED object, and the theme paints an outline
+    // on focus — over live camera pixels here, so zero outline/shadow as well as bg.
+    lv_obj_set_style_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sink, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(sink, 0, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(sink, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(sink, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(sink, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+
+    lv_group_t *group = lv_group_create();
+    lv_group_add_obj(group, sink);
+    lv_obj_add_event_cb(sink, key_cb, LV_EVENT_KEY, NULL);
+    lv_obj_add_event_cb(parent, keypad_group_deleted_cb, LV_EVENT_DELETE, group);
+
+    attach_keypad_indevs_to_group(group);
+    return sink;
+}
+
+// Python ScanScreen exits the live preview on KEY_LEFT or KEY_RIGHT
+// (scan_screens.py); both post the same back event the touch back button posts, so
+// the host dispatches one code regardless of input mode. Every other key is ignored,
+// matching Python (the scan has no other affordance).
+static void preview_keypad_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) return;
+    const uint32_t key = lv_event_get_key(e);
+    if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+        seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_BACK_BUTTON, "back");
+    }
+}
+
 camera_preview_overlay_t *camera_preview_overlay_create(lv_obj_t *parent,
                                                         const camera_preview_overlay_spec_t *spec) {
     if (!parent || !spec) {
@@ -159,6 +223,13 @@ camera_preview_overlay_t *camera_preview_overlay_create(lv_obj_t *parent,
 
             if (pass == 0) o->instr_shadow = lbl; else o->instr_label = lbl;
         }
+    }
+
+    // Hardware/joystick keys. Wired independently of the instruction line above —
+    // that text is only a hint, and LEFT/RIGHT must back out of the scan whether or
+    // not the host supplied one.
+    if (o->mode == INPUT_MODE_HARDWARE) {
+        attach_keypad_sink(parent, preview_keypad_cb);
     }
 
     // --- Status bar (built hidden unless scanning) ------------------------
