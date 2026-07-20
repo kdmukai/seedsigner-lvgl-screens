@@ -32,7 +32,12 @@ extern "C" {
 // OUTSIDE the square, so it never overlaps live pixels and never needs per-frame
 // recompositing. The back affordance is INPUT-MODE dependent (input_profile_get_mode):
 //   - INPUT_MODE_HARDWARE (joystick): on-preview bottom-center instruction text
-//     (matches Python ScanScreen). Joystick LEFT → back is wired by the host.
+//     (matches Python ScanScreen). The overlay OWNS the keys: it puts an invisible
+//     focusable sink in its own group and posts SEEDSIGNER_RET_BACK_BUTTON on LEFT or
+//     RIGHT, the same event the touch back button posts (Python ScanScreen exits on
+//     either). It must own them — the keypad indev is left group-less by the screen
+//     swap, so any key the overlay does not claim is discarded by LVGL and the flow
+//     cannot be backed out of.
 //   - INPUT_MODE_TOUCH: the shared back_button() alone in the top-left gutter; the
 //     instruction text is omitted.
 

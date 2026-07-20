@@ -25,7 +25,13 @@ extern "C" {
 //     TEXT over the preview, matching the Python PIL screens
 //     (ToolsImageEntropyLivePreviewScreen: "< back | click a button";
 //      ToolsImageEntropyFinalImageScreen: "< reshoot | accept >"). Joystick keys drive
-//     capture/cancel/accept/reshoot; there are NO on-screen buttons.
+//     capture/cancel/accept/reshoot; there are NO on-screen buttons. The overlay OWNS
+//     those keys (invisible focusable sink in its own group), because the screen swap
+//     leaves the keypad indev group-less and LVGL discards anything the overlay does
+//     not claim. Map, mirroring the Python screens:
+//       PREVIEW  LEFT = cancel(back);  ANYCLICK (click/KEY1-3) = capture
+//       CONFIRM  LEFT = reshoot(back); RIGHT or ANYCLICK       = accept
+//       CAPTURING — keys swallowed (transient).
 //   - INPUT_MODE_TOUCH (the ESP32 boards): the shared back button in the top-left gutter
 //     (PREVIEW = cancel, CONFIRM = reshoot), a shutter CAPTURE control in PREVIEW, and a
 //     stylized ACCEPT button in CONFIRM.
