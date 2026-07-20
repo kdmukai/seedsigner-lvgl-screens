@@ -40,6 +40,26 @@ struct camera_preview_overlay {
     int32_t   track_width;     // px width of the full track (for fill scaling)
     int32_t   fill_thickness;  // px thickness of track/fill (for radius)
     int32_t   displayed_percent;  // current on-screen % (animated); drives glide + snap
+
+    // Segmented mode (BBQR/Specter indexed cycles): persistent per-frame cells — one GREEN
+    // lv_obj per frame, shown when that frame is decoded, hidden otherwise. Built once by
+    // begin_segments (rebuilt only if the cycle size changes). A cell that collapses to zero
+    // width (total_segments > track px) is stored as NULL. NULL/0 in continuous mode.
+    lv_obj_t **segment_cells;
+    int        segment_count;
+
+    // The screen's OWN decoded list (so the host need only report each new piece, not the
+    // whole set): segment_decoded[i] = has piece i been seen; segment_lit = count of decoded
+    // pieces (drives the derived percent, and still accurate for collapsed NULL cells).
+    uint8_t   *segment_decoded;
+    int        segment_lit;
+
+    // Index of the "current" piece — the one the camera most recently read (new OR repeat),
+    // emphasized so it stands out; -1 = none. Moves on each ADDED/REPEATED event, leaving the
+    // prior current cell back at the plain decoded green. A NEW piece "bursts" (green, enlarged
+    // perpendicular to the bar); a RE-READ piece is drawn white at normal size.
+    int        segment_current;
+    bool       segment_current_bulge;   // true = current cell is the green burst (new piece)
 };
 
 // Duration of the completion fill-to-100% glide (the ONLY animated transition;
@@ -47,6 +67,11 @@ struct camera_preview_overlay {
 // completion hold (~550ms) is sized to outlast this so the glide plays before
 // the camera tears down.
 static const uint32_t OVERLAY_PROGRESS_ANIM_MS = 300;
+
+// A newly decoded piece's cell "bursts": drawn this much larger than the track thickness,
+// perpendicular to the bar (protruding both sides), then settles back to normal as the cursor
+// advances to the next piece. Within the 50–100%-larger range.
+static const int SEGMENT_BULGE_PCT = 100;   // +100% = 2x thickness
 
 // Width (px) of the literal "100%" at the button font — the right-hand gutter the
 // progress track must leave for the percent label (Python pre-measures the same).
@@ -155,6 +180,60 @@ static void preview_keypad_cb(lv_event_t *e) {
     const uint32_t key = lv_event_get_key(e);
     if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
         seedsigner_lvgl_on_button_selected(SEEDSIGNER_RET_BACK_BUTTON, "back");
+    }
+}
+
+// (Re)build the persistent per-frame cells for segmented mode. Tears down any existing set,
+// then creates `total` GREEN cells (initially hidden) partitioning the track by cumulative
+// floor: cell i spans [i*W/N, (i+1)*W/N), so widths differ by <=1px (some 3px, some 4px),
+// sum to exactly the track, and never go subpixel. Square corners so adjacent lit cells
+// merge into one solid run. A cell that collapses to zero width (total > track px) is stored
+// as NULL and never rendered — the documented degenerate past the track's px ceiling. Cells
+// are children of the status bar and freed with the parent tree; the pointer array is ours.
+static void overlay_build_segment_cells(camera_preview_overlay_t *o, int total) {
+    if (o->segment_cells) {
+        for (int i = 0; i < o->segment_count; ++i)
+            if (o->segment_cells[i]) lv_obj_delete(o->segment_cells[i]);
+        lv_free(o->segment_cells);
+        o->segment_cells = NULL;
+    }
+    if (o->segment_decoded) { lv_free(o->segment_decoded); o->segment_decoded = NULL; }
+    o->segment_count         = 0;
+    o->segment_lit           = 0;
+    o->segment_current       = -1;
+    o->segment_current_bulge = false;
+    if (total <= 0 || o->track_width <= 0) return;
+
+    o->segment_cells   = (lv_obj_t **)lv_malloc(sizeof(lv_obj_t *) * (size_t)total);
+    o->segment_decoded = (uint8_t *)lv_malloc((size_t)total);
+    if (!o->segment_cells || !o->segment_decoded) {   // alloc fail: stay in a safe (no-cells) state
+        if (o->segment_cells)   { lv_free(o->segment_cells);   o->segment_cells = NULL; }
+        if (o->segment_decoded) { lv_free(o->segment_decoded); o->segment_decoded = NULL; }
+        return;
+    }
+    lv_memzero(o->segment_decoded, (size_t)total);
+    o->segment_count = total;
+
+    const int32_t W  = o->track_width;
+    const int32_t EP = EDGE_PADDING;
+    const int32_t th = o->fill_thickness;
+    // Compute the shared track_y arithmetically (identical to create()). Reading it back via
+    // lv_obj_get_y(o->fill) is unreliable at build time: the status bar isn't laid out yet, so
+    // the fill's coords read ~0 — which would drop the cells to the top of the container.
+    const int32_t y  = (BUTTON_HEIGHT - th) / 2;
+
+    for (int i = 0; i < total; ++i) {
+        int32_t x0 = (int32_t)((int64_t)i       * W / total);
+        int32_t x1 = (int32_t)((int64_t)(i + 1) * W / total);
+        int32_t w  = x1 - x0;
+        if (w <= 0) { o->segment_cells[i] = NULL; continue; }   // collapsed: no pixel for this frame
+
+        lv_obj_t *cell = lv_obj_create(o->status_bar);
+        lv_obj_set_size(cell, w, th);
+        lv_obj_set_pos(cell, EP + x0, y);
+        style_rounded(cell, (uint32_t)GREEN_INDICATOR_COLOR, LV_OPA_COVER, 0);
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_HIDDEN);              // shown when the frame decodes
+        o->segment_cells[i] = cell;
     }
 }
 
@@ -279,7 +358,19 @@ camera_preview_overlay_t *camera_preview_overlay_create(lv_obj_t *parent,
     // Apply the initial state.
     camera_preview_overlay_set_scanning(o, spec->scanning_active);
     if (spec->scanning_active) {
-        camera_preview_overlay_set_progress(o, spec->progress_percent, spec->frame_status);
+        if (spec->total_segments > 0) {
+            // Segmented (indexed cycle): realize the static spec snapshot through the same
+            // live path the host drives at runtime — announce the cycle, replay each decoded
+            // piece as an ADDED event, then set the most-recent-frame dot per the spec.
+            camera_preview_overlay_begin_segments(o, spec->total_segments);
+            for (int i = 0; i < spec->total_segments; ++i) {
+                if (spec->decoded && spec->decoded[i])
+                    camera_preview_overlay_segment_event(o, CAMERA_OVERLAY_FRAME_ADDED, i);
+            }
+            camera_preview_overlay_segment_event(o, spec->frame_status, spec->just_decoded_index);
+        } else {
+            camera_preview_overlay_set_progress(o, spec->progress_percent, spec->frame_status);
+        }
     }
     return o;
 }
@@ -357,10 +448,102 @@ void camera_preview_overlay_set_progress(camera_preview_overlay_t *o,
     apply_dot_status(o, frame_status);
 }
 
+// Move the "current piece" emphasis to cell `index`, reverting the previous current cell to a
+// plain decoded cell (green, normal thickness, centered on the track). `bulge` picks the new
+// cell's style: true = NEW piece, a green "burst" enlarged perpendicular to the bar; false =
+// RE-READ piece, drawn white at normal size. Geometry/recolor only — safe on any decoded cell,
+// a no-op on collapsed (NULL) cells.
+static void overlay_set_current_cell(camera_preview_overlay_t *o, int index, bool bulge) {
+    if (index == o->segment_current && bulge == o->segment_current_bulge) return;
+
+    const int32_t th      = o->fill_thickness;
+    const int32_t track_y = (BUTTON_HEIGHT - th) / 2;
+    const int32_t bth     = th + th * SEGMENT_BULGE_PCT / 100;
+
+    // Revert the previous current cell to a plain decoded cell.
+    if (o->segment_current >= 0 && o->segment_current < o->segment_count &&
+        o->segment_cells && o->segment_cells[o->segment_current]) {
+        lv_obj_t *prev = o->segment_cells[o->segment_current];
+        lv_obj_set_style_bg_color(prev, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+        lv_obj_set_height(prev, th);
+        lv_obj_set_y(prev, track_y);
+    }
+
+    o->segment_current       = index;
+    o->segment_current_bulge = bulge;
+
+    if (index >= 0 && index < o->segment_count &&
+        o->segment_cells && o->segment_cells[index]) {
+        lv_obj_t *cur = o->segment_cells[index];
+        if (bulge) {   // new piece — green burst, enlarged perpendicular, recentered
+            lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+            lv_obj_set_height(cur, bth);
+            lv_obj_set_y(cur, track_y - (bth - th) / 2);
+        } else {       // re-read piece — white, normal size
+            lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)BODY_FONT_COLOR), LV_PART_MAIN);
+            lv_obj_set_height(cur, th);
+            lv_obj_set_y(cur, track_y);
+        }
+    }
+}
+
+// Repaint the derived percent label from the current lit count.
+static void overlay_paint_segment_percent(camera_preview_overlay_t *o) {
+    int percent = o->segment_count > 0
+                      ? (int)((int64_t)o->segment_lit * 100 / o->segment_count) : 0;
+    o->displayed_percent = percent;
+    std::string text = std::to_string(percent) + "%";
+    lv_label_set_text(o->percent_label, text.c_str());
+}
+
+void camera_preview_overlay_begin_segments(camera_preview_overlay_t *o, int total_segments) {
+    if (!o || total_segments <= 0) return;   // continuous/UR/fountain uses set_progress()
+
+    // A scan is starting.
+    camera_preview_overlay_set_scanning(o, true);
+
+    // Build the cells + reset the decoded list once; a same-N re-announce keeps progress.
+    if (o->segment_count != total_segments) {
+        overlay_build_segment_cells(o, total_segments);
+    }
+    overlay_paint_segment_percent(o);
+}
+
+void camera_preview_overlay_segment_event(camera_preview_overlay_t *o,
+                                          camera_overlay_frame_status_t status,
+                                          int piece_index) {
+    if (!o) return;
+
+    // A newly decoded piece: record it once, light its cell, advance the percent. The screen
+    // owns the decoded list, so a repeated ADDED for an already-seen piece is a no-op. A
+    // collapsed cell (NULL, past the track's px ceiling) still counts toward the percent.
+    if (status == CAMERA_OVERLAY_FRAME_ADDED &&
+        piece_index >= 0 && piece_index < o->segment_count &&
+        o->segment_decoded && !o->segment_decoded[piece_index]) {
+        o->segment_decoded[piece_index] = 1;
+        o->segment_lit++;
+        lv_obj_t *cell = o->segment_cells ? o->segment_cells[piece_index] : NULL;
+        if (cell) lv_obj_remove_flag(cell, LV_OBJ_FLAG_HIDDEN);
+        overlay_paint_segment_percent(o);
+    }
+
+    // Mark whichever piece the camera is on — new OR re-read — as the current cell: a NEW
+    // piece bursts (green, enlarged), a re-read is white. MISS carries no piece.
+    if ((status == CAMERA_OVERLAY_FRAME_ADDED || status == CAMERA_OVERLAY_FRAME_REPEATED) &&
+        piece_index >= 0) {
+        overlay_set_current_cell(o, piece_index, status == CAMERA_OVERLAY_FRAME_ADDED);
+    }
+
+    apply_dot_status(o, status);
+}
+
 void camera_preview_overlay_destroy(camera_preview_overlay_t *o) {
     if (!o) return;
     // Cancel any in-flight progress glide so its exec callback can't fire on the
     // freed overlay after teardown (use-after-free).
     lv_anim_del(o, overlay_progress_paint);
+    // Free our segment bookkeeping (the cells themselves belong to the parent tree).
+    if (o->segment_cells)   lv_free(o->segment_cells);
+    if (o->segment_decoded) lv_free(o->segment_decoded);
     lv_free(o);
 }

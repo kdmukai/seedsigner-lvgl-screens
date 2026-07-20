@@ -284,9 +284,15 @@ void init(int w, int h) {
 }
 
 void resize(int w, int h) {
-    set_display(w, h);
-    g_width = w;
-    g_height = h;
+    resize_oriented(w, h, w, h);
+}
+
+void resize_oriented(int canvas_w, int canvas_h, int profile_w, int profile_h) {
+    // Profile is keyed by the physical panel dims (landscape for a rotated screen); the
+    // LVGL canvas is created at the possibly-different canvas dims (native portrait).
+    set_display(profile_w, profile_h);
+    g_width = canvas_w;
+    g_height = canvas_h;
 
     // Deleting the display also deletes its screens and detaches its indevs.
     if (g_disp) {

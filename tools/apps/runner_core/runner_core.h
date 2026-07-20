@@ -42,6 +42,15 @@ void init(int width, int height);
 // devices. The caller is responsible for re-invoking the current screen after.
 void resize(int width, int height);
 
+// Like resize(), but DECOUPLES the LVGL canvas size from the display-profile key.
+// The framebuffer/display are created at canvas_w x canvas_h, while the profile
+// (px_multiplier, fonts, layout) is selected for (profile_w, profile_h). This is for
+// portrait-authored screens (camera_preview_pillarboxed) presented rotated to landscape:
+// the LVGL canvas is the panel's NATIVE PORTRAIT (short x long) so the chrome lays out in
+// its authored frame, while the profile stays that of the physical LANDSCAPE panel (long x
+// short). resize(w,h) == resize_oriented(w, h, w, h). Caller re-invokes the screen after.
+void resize_oriented(int canvas_w, int canvas_h, int profile_w, int profile_h);
+
 int width();
 int height();
 

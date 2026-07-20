@@ -50,6 +50,20 @@ static SDL_Renderer* g_renderer = nullptr;
 static SDL_Texture*  g_texture  = nullptr;
 static uint32_t      g_last_tick_ms = 0;
 
+// Presentation orientation. The window/canvas is ALWAYS the landscape panel (g_land_*).
+// For portrait-authored screens (camera_preview_pillarboxed) g_present_rotate flips on:
+// LVGL renders the panel's native PORTRAIT (canvas swapped to g_land_h x g_land_w, profile
+// unchanged) and we present it rotated 90° CW into the landscape canvas — mirroring the
+// screenshot generator's physical-mount simulation. Pointer coords are inverse-rotated to
+// match. All other screens render landscape 1:1 (g_present_rotate = false).
+static int  g_land_w = DISPLAY_WIDTH;
+static int  g_land_h = DISPLAY_HEIGHT;
+static bool g_present_rotate = false;
+
+// Degrees clockwise to rotate the portrait render onto the landscape canvas. Matches the
+// screenshot generator's portrait->landscape mapping (back button -> top-left, text upright).
+static const double PRESENT_ROTATE_CW_DEG = 90.0;
+
 // Remember the last loaded screen so a resolution change can re-render it.
 static std::string g_cur_screen;
 static std::string g_cur_json;
@@ -124,19 +138,33 @@ extern "C" void seedsigner_lvgl_on_aux_key(const char* key_name) {
 // SDL surface (re)creation
 // ---------------------------------------------------------------------------
 
-static void create_sdl_surface(int w, int h) {
+// Window/canvas is win_w x win_h (the landscape panel); the streaming texture is tex_w x
+// tex_h (the LVGL framebuffer — portrait when presenting rotated). They differ only in the
+// rotated case; the present step (frame()) bridges them.
+static void create_sdl_surface(int win_w, int win_h, int tex_w, int tex_h) {
     if (!g_window) {
         g_window = SDL_CreateWindow("seedsigner-web", SDL_WINDOWPOS_UNDEFINED,
-                                    SDL_WINDOWPOS_UNDEFINED, w, h, SDL_WINDOW_SHOWN);
+                                    SDL_WINDOWPOS_UNDEFINED, win_w, win_h, SDL_WINDOW_SHOWN);
         g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
     } else {
-        SDL_SetWindowSize(g_window, w, h);
+        SDL_SetWindowSize(g_window, win_w, win_h);
     }
-    SDL_RenderSetLogicalSize(g_renderer, w, h);
+    SDL_RenderSetLogicalSize(g_renderer, win_w, win_h);
 
     if (g_texture) SDL_DestroyTexture(g_texture);
     g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STREAMING, w, h);
+                                  SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
+}
+
+// Feed a pointer event to LVGL, inverse-rotating the landscape canvas coords into the
+// portrait LVGL frame when presenting rotated (the inverse of the 90° CW present:
+// portrait (px,py) = (my, land_w-1-mx)). 1:1 otherwise.
+static void set_pointer_mapped(int mx, int my, bool pressed) {
+    if (g_present_rotate) {
+        runner_core::set_pointer(my, (g_land_w - 1) - mx, pressed);
+    } else {
+        runner_core::set_pointer(mx, my, pressed);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,10 +200,41 @@ EMSCRIPTEN_KEEPALIVE int ss_load_screen(const char* fn_name, const char* json) {
 // screen right after this returns — before the next animation frame — so the first
 // frame at the new resolution already has the correct glyphs.
 EMSCRIPTEN_KEEPALIVE void ss_set_resolution(int w, int h) {
+    g_land_w = w;
+    g_land_h = h;
+    g_present_rotate = false;   // a resolution change resets to landscape; the page re-applies
+                                // rotation per screen (ss_set_present_rotation) before reload.
     runner_core::resize(w, h);
-    create_sdl_surface(w, h);
+    create_sdl_surface(w, h, w, h);
     // Tell the page the canvas backing size changed so it can re-fit CSS.
     EM_ASM({ if (window.ssOnResize) window.ssOnResize($0, $1); }, w, h);
+}
+
+// Toggle rotated presentation for portrait-authored screens (camera_preview_pillarboxed).
+// rotate != 0: recreate the LVGL canvas in the panel's native portrait (swapped dims, same
+// profile) so the chrome lays out correctly, and present it 90° CW into the landscape canvas.
+// rotate == 0: back to a 1:1 landscape canvas. Re-renders the current screen at the new
+// orientation. The page calls this per screen (from the scenario's render_as_landscape flag)
+// right before ss_load_screen.
+EMSCRIPTEN_KEEPALIVE void ss_set_present_rotation(int rotate) {
+    bool want = rotate != 0;
+    if (want == g_present_rotate) return;
+    g_present_rotate = want;
+
+    if (want) {
+        // Native portrait canvas (short x long); profile stays the physical landscape panel.
+        runner_core::resize_oriented(g_land_h, g_land_w, g_land_w, g_land_h);
+        create_sdl_surface(g_land_w, g_land_h, runner_core::width(), runner_core::height());
+    } else {
+        runner_core::resize(g_land_w, g_land_h);
+        create_sdl_surface(g_land_w, g_land_h, g_land_w, g_land_h);
+    }
+
+    // resize_oriented()/resize() deleted the screen; re-render the current one (never blank).
+    if (!g_cur_screen.empty()) {
+        try { runner_core::load_screen(g_cur_screen, g_cur_json); } catch (...) {}
+        runner_core::tick(0);
+    }
 }
 
 // 0 = touch (pointer), 1 = hardware (keypad / joystick).
@@ -290,16 +349,16 @@ static void frame() {
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
             case SDL_MOUSEMOTION:
-                runner_core::set_pointer(ev.motion.x, ev.motion.y,
-                                         (ev.motion.state & SDL_BUTTON_LMASK) != 0);
+                set_pointer_mapped(ev.motion.x, ev.motion.y,
+                                   (ev.motion.state & SDL_BUTTON_LMASK) != 0);
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (ev.button.button == SDL_BUTTON_LEFT)
-                    runner_core::set_pointer(ev.button.x, ev.button.y, true);
+                    set_pointer_mapped(ev.button.x, ev.button.y, true);
                 break;
             case SDL_MOUSEBUTTONUP:
                 if (ev.button.button == SDL_BUTTON_LEFT)
-                    runner_core::set_pointer(ev.button.x, ev.button.y, false);
+                    set_pointer_mapped(ev.button.x, ev.button.y, false);
                 break;
             case SDL_KEYDOWN: {
                 uint32_t k = runner_sdl::map_sdl_keycode(ev.key.keysym.sym);
@@ -317,7 +376,18 @@ static void frame() {
 
     runner_sdl::blit_framebuffer_to_texture(g_texture);
     SDL_RenderClear(g_renderer);
-    SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
+    if (g_present_rotate) {
+        // Rotate the portrait texture 90° CW so it fills the landscape canvas. Placing the
+        // portrait rect (tw x th) centered on the landscape canvas and rotating about its
+        // center lands its footprint exactly on the landscape bounds.
+        int tw = runner_core::width();
+        int th = runner_core::height();
+        SDL_Rect dst = { (g_land_w - tw) / 2, (g_land_h - th) / 2, tw, th };
+        SDL_RenderCopyEx(g_renderer, g_texture, nullptr, &dst,
+                         PRESENT_ROTATE_CW_DEG, nullptr, SDL_FLIP_NONE);
+    } else {
+        SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
+    }
     SDL_RenderPresent(g_renderer);
 }
 
@@ -331,7 +401,9 @@ int main() {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
 
     runner_core::init(DISPLAY_WIDTH, DISPLAY_HEIGHT);
-    create_sdl_surface(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    g_land_w = DISPLAY_WIDTH;
+    g_land_h = DISPLAY_HEIGHT;
+    create_sdl_surface(DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
     // The locale picker fetches endonym images through the same provider seam as
     // the font loader; back it with the JS-staged, locale-keyed blob store.

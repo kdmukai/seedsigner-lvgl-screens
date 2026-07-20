@@ -52,8 +52,17 @@ typedef struct {
     // Initial state. scanning_active=false hides the status bar (back button persists);
     // true shows the bar at progress_percent / frame_status.
     bool                          scanning_active;
-    int                           progress_percent;  // 0..100
+    int                           progress_percent;  // 0..100 (continuous mode only)
     camera_overlay_frame_status_t frame_status;
+
+    // Segmented progress for indexed animated-QR cycles (BBQR / Specter) — the vertical-bar
+    // analogue of camera_preview_overlay's fields. total_segments > 0 renders the track as
+    // total_segments contiguous cells along the bar (frame 0 at the landscape-bottom anchor,
+    // growing toward the top) and lights each decoded frame's own cell, out-of-order aware.
+    // total_segments <= 0 (default) keeps the continuous fill (UR/fountain/unknown-total).
+    int                           total_segments;      // 0 => continuous mode
+    const uint8_t                *decoded;             // len == total_segments; nonzero = frame decoded. NULL => none lit
+    int                           just_decoded_index;  // 0-based most-recent new frame, or -1 (reserved)
 } camera_preview_pillarboxed_spec_t;
 
 // Opaque handle holding the built widgets + cached geometry for live updates.
@@ -77,6 +86,27 @@ void camera_preview_pillarboxed_set_scanning(camera_preview_pillarboxed_t *o, bo
 void camera_preview_pillarboxed_set_progress(camera_preview_pillarboxed_t *o,
                                              int percent,
                                              camera_overlay_frame_status_t frame_status);
+
+// --- Segmented (indexed-cycle) live interface: begin once, then one event per frame ------
+// The vertical-bar analogue of the overlay's begin_segments/segment_event. Instead of pushing
+// the whole decoded set each call, the host announces the cycle size once and reports each
+// decode event; the screen owns the decoded list and derives the pre-rotated percent.
+
+// Announce a segmented scan: the first decoded frame revealed a cycle of `total_segments`
+// pieces. Builds the empty N-cell vertical bar, resets the decoded list, and reveals the
+// meter (segmented implies an animated QR). Idempotent for the same N; a different N rebuilds.
+// total_segments <= 0 is a no-op (use set_progress() for continuous/UR/fountain).
+void camera_preview_pillarboxed_begin_segments(camera_preview_pillarboxed_t *o, int total_segments);
+
+// Report one decode event. ADDED lights piece `piece_index` (0-based) once, advances the
+// derived percent, and makes it the current cell drawn as a green "burst" (enlarged
+// perpendicular to the bar). REPEATED passes the re-read index too: no percent change, but its
+// already-lit cell becomes the current cell drawn WHITE at normal size, so the piece stuck in
+// view is visible. MISS updates only the dot (pass piece_index = -1). No-op before
+// begin_segments().
+void camera_preview_pillarboxed_segment_event(camera_preview_pillarboxed_t *o,
+                                              camera_overlay_frame_status_t status,
+                                              int piece_index);
 
 // Free the handle struct (does NOT delete the LVGL widgets — they belong to the parent
 // tree) and cancel any in-flight progress glide.

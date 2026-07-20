@@ -311,9 +311,15 @@
     Object.keys(root || {}).forEach(function (screen) {
       var def = root[screen] || {};
       var base = def.context || {};
-      var entries = [{ name: '(default)', context: base }];
+      // Carry the tool-only screenshot.render_as_landscape flag (portrait-authored screens
+      // presented rotated to landscape, e.g. the pillarboxed scan chrome). It sits at the
+      // screen level; a variation may override it with its own screenshot block.
+      var baseRotate = !!(def.screenshot && def.screenshot.render_as_landscape);
+      var entries = [{ name: '(default)', context: base, rotate: baseRotate }];
       (def.variations || []).forEach(function (v) {
-        entries.push({ name: slugify(v.name || 'variation'), context: mergePatch(base, v.context || {}) });
+        var rot = (v.screenshot && typeof v.screenshot.render_as_landscape === 'boolean')
+                    ? v.screenshot.render_as_landscape : baseRotate;
+        entries.push({ name: slugify(v.name || 'variation'), context: mergePatch(base, v.context || {}), rotate: rot });
       });
       cat[screen] = entries;
     });
@@ -338,6 +344,7 @@
     app.displayW = w; app.displayH = h;
     app.loadScreen    = Module.cwrap('ss_load_screen', 'number', ['string', 'string']);
     app.setResolution = Module.cwrap('ss_set_resolution', null, ['number', 'number']);
+    app.setPresentRotation = Module.cwrap('ss_set_present_rotation', null, ['number']);
     app.setInputMode  = Module.cwrap('ss_set_input_mode', null, ['number']);
     app.sendKey       = Module.cwrap('ss_send_key', null, ['number']);
     app.scroll        = Module.cwrap('ss_scroll', null, ['number']);
@@ -472,6 +479,15 @@
     function setError(msg, ok) { errBox.textContent = msg || ' '; errBox.className = ok ? 'ok' : ''; }
     function render(jsonText) {
       if (!app.ready) return;
+      // Portrait-authored screens (the pillarboxed scan chrome) render in the panel's native
+      // portrait and present rotated to landscape. Apply per current scenario BEFORE loading,
+      // so the display is in the right orientation when the screen builds. Reset (0) for every
+      // other screen so leaving a rotated one restores the landscape canvas.
+      if (app.setPresentRotation) {
+        var ridx = parseInt(scenSel.value, 10) || 0;
+        var rentry = (catalog[screenSel.value] || [])[ridx];
+        app.setPresentRotation(rentry && rentry.rotate ? 1 : 0);
+      }
       // The locale picker draws each pack language's name from a pre-rendered
       // endonym IMAGE (no runtime font); those blobs must be staged before the
       // screen builds, so it takes the async path below.
