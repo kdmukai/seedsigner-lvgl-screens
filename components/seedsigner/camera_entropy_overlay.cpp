@@ -97,17 +97,33 @@ static void show(lv_obj_t *o, bool visible) {
     else         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
+// The confirm frame's descriptor plus the deallocator that matches how its pixels were
+// allocated. The pixel buffer may come from the LVGL heap (the copying setter) or from
+// caller-owned memory such as PSRAM (the _owned setter), and those cannot be freed the
+// same way — so the two always travel together. `dsc` is first, so a pointer to this
+// struct is also a valid lv_image_dsc_t* for lv_image_set_src().
+struct confirm_frame {
+    lv_image_dsc_t dsc;
+    void (*free_fn)(void *);   // NULL => lv_free
+};
+
+static void confirm_frame_release(confirm_frame *f) {
+    if (!f) return;
+    void *pixels = (void *)f->dsc.data;
+    if (pixels) {
+        if (f->free_fn) f->free_fn(pixels);
+        else            lv_free(pixels);
+    }
+    lv_free(f);
+}
+
 // Free the confirm-image frame (pixel buffer + its heap dsc) when the canvas/image
 // widget is deleted. The frame is owned by the WIDGET, not the overlay handle
 // (tooling destroys the handle immediately after build), so it must be released on
-// the widget's LV_EVENT_DELETE. The dsc pointer lives in the widget's user_data.
+// the widget's LV_EVENT_DELETE. The frame pointer lives in the widget's user_data.
 static void confirm_image_deleted_cb(lv_event_t *e) {
     lv_obj_t *img = (lv_obj_t *)lv_event_get_target(e);
-    lv_image_dsc_t *dsc = (lv_image_dsc_t *)lv_obj_get_user_data(img);
-    if (dsc) {
-        lv_free((void *)dsc->data);
-        lv_free(dsc);
-    }
+    confirm_frame_release((confirm_frame *)lv_obj_get_user_data(img));
 }
 
 // Shutter / accept clicks → host "button_selected" (index ignored by the entropy loop).
@@ -416,38 +432,55 @@ void camera_entropy_overlay_set_confirm_image(camera_entropy_overlay_t *o,
                                               const void *rgb565, int32_t w, int32_t h) {
     if (!o || !o->confirm_image || !rgb565 || w <= 0 || h <= 0) return;
 
-    // Copy the frame into an overlay-owned buffer + heap dsc so the caller may reuse
-    // or free its own buffer immediately after the call. Ownership is tied to the
-    // widget (freed on LV_EVENT_DELETE, or replaced just below on a re-capture), NOT
-    // to the handle — tooling destroys the handle right after build.
+    // Copy into an LVGL-heap buffer so the caller may reuse or free its own immediately,
+    // then hand that copy to the owned path (lv_free is the matching deallocator). NB a
+    // full-display frame will not fit a typical LVGL pool — see the header warning; such
+    // callers should use ..._set_confirm_image_owned() directly.
     size_t bytes = (size_t)w * h * 2;   // RGB565, 2 bytes/pixel
     uint8_t *pixels = (uint8_t *)lv_malloc(bytes);
     if (!pixels) return;
     lv_memcpy(pixels, rgb565, bytes);
+    camera_entropy_overlay_set_confirm_image_owned(o, pixels, w, h, NULL);
+}
 
-    lv_image_dsc_t *dsc = (lv_image_dsc_t *)lv_malloc(sizeof(lv_image_dsc_t));
-    if (!dsc) {
-        lv_free(pixels);
+void camera_entropy_overlay_set_confirm_image_owned(camera_entropy_overlay_t *o,
+                                                    void *rgb565, int32_t w, int32_t h,
+                                                    void (*free_fn)(void *)) {
+    // Own the buffer from here on, including on every rejection path — the contract is
+    // that the caller has handed it over, so bailing out must release rather than leak.
+    if (!rgb565) return;
+    if (!o || !o->confirm_image || w <= 0 || h <= 0) {
+        if (free_fn) free_fn(rgb565);
+        else         lv_free(rgb565);
         return;
     }
-    lv_memzero(dsc, sizeof(*dsc));
-    dsc->header.magic  = LV_IMAGE_HEADER_MAGIC;
-    dsc->header.cf     = LV_COLOR_FORMAT_RGB565;
-    dsc->header.w      = (uint32_t)w;
-    dsc->header.h      = (uint32_t)h;
-    dsc->header.stride = (uint32_t)(w * 2);
-    dsc->data_size     = (uint32_t)bytes;
-    dsc->data          = pixels;
+
+    size_t bytes = (size_t)w * h * 2;   // RGB565, 2 bytes/pixel
+
+    // Descriptor + deallocator, tied to the WIDGET (freed on LV_EVENT_DELETE, or
+    // replaced just below on a re-capture) — tooling destroys the handle right after
+    // build, so widget-scoped ownership is what keeps the frame alive.
+    confirm_frame *f = (confirm_frame *)lv_malloc(sizeof(confirm_frame));
+    if (!f) {
+        if (free_fn) free_fn(rgb565);
+        else         lv_free(rgb565);
+        return;
+    }
+    lv_memzero(f, sizeof(*f));
+    f->free_fn          = free_fn;
+    f->dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    f->dsc.header.cf    = LV_COLOR_FORMAT_RGB565;
+    f->dsc.header.w     = (uint32_t)w;
+    f->dsc.header.h     = (uint32_t)h;
+    f->dsc.header.stride = (uint32_t)(w * 2);
+    f->dsc.data_size    = (uint32_t)bytes;
+    f->dsc.data         = (const uint8_t *)rgb565;
 
     // Release any prior frame (a re-capture after reshoot) before adopting this one.
-    lv_image_dsc_t *old = (lv_image_dsc_t *)lv_obj_get_user_data(o->confirm_image);
-    if (old) {
-        lv_free((void *)old->data);
-        lv_free(old);
-    }
-    lv_obj_set_user_data(o->confirm_image, dsc);
+    confirm_frame_release((confirm_frame *)lv_obj_get_user_data(o->confirm_image));
+    lv_obj_set_user_data(o->confirm_image, f);
 
-    lv_image_set_src(o->confirm_image, dsc);
+    lv_image_set_src(o->confirm_image, &f->dsc);
 
     // Center on the display: a full-display frame lands at (0,0); a smaller one is
     // centered over the black gutters.

@@ -111,8 +111,25 @@ void camera_entropy_overlay_set_phase(camera_entropy_overlay_t *overlay,
 // whole display (over the black gutters + the live square) and is visible only while
 // phase == CONFIRM. Calling again replaces the previous frame. Safe no-op if overlay
 // is NULL. See docs/image-entropy-lvgl-native-contract.md §4.
+//
+// ⚠ The copy is made with lv_malloc, i.e. out of the LVGL heap. A full-display frame is
+// large (480×800×2 = 750 KB) and LVGL pools are typically far smaller — the ESP32-P4
+// firmware runs a 128 KB pool — so on such a target this ALWAYS fails and silently
+// leaves the previous image. Embedded callers that already hold the frame in large
+// memory (PSRAM) should use the _owned variant below instead of this one.
 void camera_entropy_overlay_set_confirm_image(camera_entropy_overlay_t *overlay,
                                               const void *rgb565, int32_t w, int32_t h);
+
+// Ownership-transfer form of the above: the overlay ADOPTS `rgb565` and renders directly
+// out of it — no LVGL-heap copy, so a full-display frame works regardless of pool size.
+// The caller must NOT free or reuse the buffer afterwards; the overlay releases it (on
+// replacement, on widget delete) by calling `free_fn(buffer)`. Pass the deallocator that
+// matches the allocation — e.g. a wrapper around heap_caps_free() for a PSRAM buffer, so
+// this file stays free of any platform allocator dependency. `free_fn == NULL` means
+// lv_free. On failure the buffer is released via free_fn rather than leaked.
+void camera_entropy_overlay_set_confirm_image_owned(camera_entropy_overlay_t *overlay,
+                                                    void *rgb565, int32_t w, int32_t h,
+                                                    void (*free_fn)(void *));
 
 // Free the handle struct (does NOT delete the LVGL widgets — they belong to the parent).
 void camera_entropy_overlay_destroy(camera_entropy_overlay_t *overlay);

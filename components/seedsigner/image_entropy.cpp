@@ -14,20 +14,6 @@
 
 namespace {
 
-// Most of the destination axis (as a percentage) that may go to letter-/pillarbox
-// bars before we start centre-cropping the source instead. See step 1.
-//
-// 20 is the knee where the two panels we ship land on opposite sides:
-//   * 800x480 (P4 4.3"), 3:2 still -> 10% bars: under the cap, shown WHOLE. A 4:3
-//     still lands at exactly 20%, also whole. Widescreen panels suit widescreen
-//     stills, so the cap simply never binds there -- which is the intent.
-//   * 240x240 (Pi Zero), 3:2 still -> pure fit would bar 33% of the panel. The cap
-//     binds: 20% bars, and ~17% of the frame width centre-cropped. Neither
-//     extreme, which is the compromise a square panel needs.
-// Raising this favours completeness on square panels; lowering it favours filling
-// them. It is one number precisely so the trade-off stays reviewable.
-constexpr int32_t kMaxBarPercent = 20;
-
 // --- RGB565 (R[15:11] G[10:5] B[4:0]) pack / unpack -------------------------
 // Expand 5/6-bit channels to a full 8-bit range by replicating the high bits
 // into the freed low bits (the standard 5->8 / 6->8 widening: 0x1F -> 0xFF).
@@ -61,37 +47,111 @@ inline uint8_t luma(uint8_t r, uint8_t g, uint8_t b) {
     return (uint8_t)((r * 77 + g * 150 + b * 29) >> 8);
 }
 
+// --- Mild luminance unsharp mask (IMAGE_ENTROPY_FILTER_BOX_SHARPEN) ----------
+
+// Sharpen strength: the amount of the 4-neighbour Laplacian added back, as a /16
+// fraction. 3/16 is a deliberately MILD edge boost -- raise toward ~6/16 for more
+// bite, lower for less. One number so the trade-off stays reviewable.
+constexpr int kSharpenNum = 3;   // numerator
+constexpr int kSharpenShift = 4; // denominator = 1 << 4 = 16
+
+// Longest content row the sharpen supports without allocating (fits both P4
+// panels' 800 px and leaves headroom). A wider frame simply skips the sharpen.
+constexpr int kSharpenMaxWidth = 1024;
+
+// In-place mild unsharp mask over the destination CONTENT rect, achromatic:
+// the sharpen delta is derived from LUMINANCE (a cross Laplacian) and added
+// equally to R, G, B, so edges crispen without colour fringing. Allocation-free
+// -- two small luma line buffers preserve the ORIGINAL rows the in-place write
+// would otherwise clobber (the "up" and "left" neighbours are already modified;
+// "down"/"right"/centre are still original). The 1 px border is left untouched so
+// no out-of-rect neighbour is ever read. Runs after the contrast stretch, so it
+// crispens the final displayed levels. Integer math throughout; a few ms.
+void unsharp_mask(uint16_t *dst, int32_t dst_w, int32_t off_x, int32_t off_y,
+                  int32_t content_w, int32_t content_h) {
+    if (content_w < 3 || content_h < 3 || content_w > kSharpenMaxWidth) {
+        return;  // nothing interior to sharpen, or wider than our line buffers
+    }
+
+    uint8_t luma_a[kSharpenMaxWidth];
+    uint8_t luma_b[kSharpenMaxWidth];
+    uint8_t *prev = luma_a;  // original luma of the row above (already modified)
+    uint8_t *curr = luma_b;  // original luma of the current row
+
+    // Seed prev with row 0's luma (row 0 is a border row, never modified).
+    {
+        const uint16_t *row0 = dst + (size_t)off_y * dst_w + off_x;
+        for (int32_t x = 0; x < content_w; ++x) {
+            uint8_t r, g, b;
+            rgb565_unpack(row0[x], &r, &g, &b);
+            prev[x] = luma(r, g, b);
+        }
+    }
+
+    for (int32_t y = 1; y <= content_h - 2; ++y) {
+        uint16_t *row  = dst + (size_t)(off_y + y)     * dst_w + off_x;
+        const uint16_t *below = dst + (size_t)(off_y + y + 1) * dst_w + off_x;
+
+        // Capture this row's ORIGINAL luma before we modify any of its pixels.
+        for (int32_t x = 0; x < content_w; ++x) {
+            uint8_t r, g, b;
+            rgb565_unpack(row[x], &r, &g, &b);
+            curr[x] = luma(r, g, b);
+        }
+
+        for (int32_t x = 1; x <= content_w - 2; ++x) {
+            // Cross Laplacian of the ORIGINAL luma. "below" is still original
+            // (unprocessed); the others come from the saved line buffers.
+            uint8_t rd, gd, bd;
+            rgb565_unpack(below[x], &rd, &gd, &bd);
+            int lap = 4 * (int)curr[x] - (int)curr[x - 1] - (int)curr[x + 1] -
+                      (int)prev[x] - (int)luma(rd, gd, bd);
+            int delta = (lap * kSharpenNum) >> kSharpenShift;
+            if (delta == 0) continue;
+
+            uint8_t r, g, b;
+            rgb565_unpack(row[x], &r, &g, &b);  // centre is still original here
+            int ri = (int)r + delta, gi = (int)g + delta, bi = (int)b + delta;
+            ri = ri < 0 ? 0 : (ri > 255 ? 255 : ri);
+            gi = gi < 0 ? 0 : (gi > 255 ? 255 : gi);
+            bi = bi < 0 ? 0 : (bi > 255 ? 255 : bi);
+            row[x] = rgb565_pack((uint8_t)ri, (uint8_t)gi, (uint8_t)bi);
+        }
+
+        uint8_t *tmp = prev; prev = curr; curr = tmp;  // curr becomes next "up"
+    }
+}
+
 }  // namespace
 
 
-void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
-                           image_entropy_pixfmt_t fmt,
-                           uint16_t *dst, int32_t dst_w, int32_t dst_h) {
+void image_entropy_process_filtered(const void *src, int32_t src_w, int32_t src_h,
+                                    image_entropy_pixfmt_t fmt,
+                                    uint16_t *dst, int32_t dst_w, int32_t dst_h,
+                                    image_entropy_filter_t filter) {
     if (!src || !dst || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
         return;
     }
 
-    // --- Step 1: aspect-fit with a capped letterbox -----------------------
+    // --- Step 1: pure aspect-fit (letter-/pillarbox, never a crop) ---------
 
-    // Two goals pull against each other:
-    //   * Show the WHOLE frame. The user is reviewing what they just captured;
-    //     hiding part of it defeats the screen.
-    //   * Don't drown a small panel in black. On the 240x240 Pi Zero a 3:2 still
-    //     letterboxes a THIRD of the screen away, which reads as a bug.
-    // So: fit the frame, but cap the bars at kMaxBarPercent of the destination
-    // axis. When the cap binds, scale past the pure fit and crop the overflow --
-    // yielding SOME letterbox and SOME crop rather than all of either. Panels
-    // whose aspect already suits the frame never reach the cap and show it whole.
+    // The user is reviewing what they just captured, so the frame is shown WHOLE:
+    // scale it to fit inside the destination at its native aspect ratio, centre it,
+    // and black-fill the leftover strip. Nothing is ever cropped -- a screen whose
+    // only job is to confirm the capture must not hide part of it. A relatively
+    // wider destination gets side bars (pillarbox); a relatively taller one gets
+    // top/bottom bars (letterbox). Every ESP32 panel is landscape and is fed a
+    // SQUARE still, so the frame always lands as a centred square with pillar bars.
     //
-    // The surviving bars are deliberate signal, not just leftovers: together with
-    // the contrast stretch (step 2) they make the frozen review frame read as
-    // clearly apart from the live preview it replaced.
+    // The bars are deliberate signal, not just leftovers: together with the
+    // downsample and the contrast stretch (step 2) they make the frozen review
+    // frame read as clearly apart from the live preview it replaced.
     //
     // Aspect ratios compare by cross-multiplication to stay in integer math:
     //   dst_w/dst_h  vs  src_w/src_h   ->   dst_w*src_h  vs  src_w*dst_h
     //
-    // Produces two rects: the source CROP (what we sample) and the destination
-    // CONTENT rect (where it lands). Pure fit is just crop == whole source.
+    // Produces two rects: the source CROP (always the whole source under pure fit)
+    // and the destination CONTENT rect (where it lands, centred).
     int64_t crop_x = 0, crop_y = 0, crop_w = src_w, crop_h = src_h;
     int32_t content_w = dst_w, content_h = dst_h;
 
@@ -101,29 +161,9 @@ void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
     if (dst_by_src > src_by_dst) {
         // Destination relatively wider than the source -> pillarbox (side bars).
         content_w = (int32_t)((int64_t)src_w * dst_h / src_h);
-
-        const int32_t max_bars = dst_w * kMaxBarPercent / 100;
-        if (dst_w - content_w > max_bars) {
-            // Cap binds: widen the image to leave only max_bars of side bar. The
-            // scale is now content_w/src_w, so only dst_h/scale source rows still
-            // fit the panel height -- centre-crop the source vertically to those.
-            content_w = dst_w - max_bars;
-            crop_h    = (int64_t)dst_h * src_w / content_w;
-            if (crop_h > src_h) crop_h = src_h;
-            crop_y    = (src_h - crop_h) / 2;
-        }
     } else if (dst_by_src < src_by_dst) {
         // Destination relatively taller than the source -> letterbox (top/bottom).
         content_h = (int32_t)((int64_t)src_h * dst_w / src_w);
-
-        const int32_t max_bars = dst_h * kMaxBarPercent / 100;
-        if (dst_h - content_h > max_bars) {
-            // Cap binds: the mirror of the branch above, axes swapped.
-            content_h = dst_h - max_bars;
-            crop_w    = (int64_t)dst_w * src_h / content_h;
-            if (crop_w > src_w) crop_w = src_w;
-            crop_x    = (src_w - crop_w) / 2;
-        }
     }
     // else: identical aspect ratio -> content == destination, no bars, no crop.
 
@@ -142,7 +182,8 @@ void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
     }
 
     // Box-filter resample of the crop rect into the content rect: each
-    // destination pixel averages the source pixels its footprint covers.
+    // destination pixel averages the source pixels its footprint covers. An
+    // optional sharpen (below, for BOX_SHARPEN) crispens the result afterward.
     //
     // The averaging is what makes a high-resolution still worth capturing. Point
     // sampling a 720x480 still down to a 240-wide panel would keep 1 pixel in 9
@@ -249,4 +290,20 @@ void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
             dst_row[x] = rgb565_pack(lut[r], lut[g], lut[b]);
         }
     }
+
+    // --- Step 3 (optional): mild unsharp mask -----------------------------
+    // For BOX_SHARPEN, crispen the final displayed image with a cheap luminance
+    // sharpen. Enhances existing edges (a "pop"), not a fidelity gain -- and, like
+    // any sharpen, lifts noise as well. Bars are untouched (interior rect only).
+    if (filter == IMAGE_ENTROPY_FILTER_BOX_SHARPEN) {
+        unsharp_mask(dst, dst_w, off_x, off_y, content_w, content_h);
+    }
+}
+
+// Stable box-filter entry point (unchanged behavior for every existing caller).
+void image_entropy_process(const void *src, int32_t src_w, int32_t src_h,
+                           image_entropy_pixfmt_t fmt,
+                           uint16_t *dst, int32_t dst_w, int32_t dst_h) {
+    image_entropy_process_filtered(src, src_w, src_h, fmt, dst, dst_w, dst_h,
+                                   IMAGE_ENTROPY_FILTER_BOX);
 }
