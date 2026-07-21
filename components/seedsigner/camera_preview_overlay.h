@@ -74,18 +74,23 @@ typedef struct {
     camera_overlay_frame_status_t frame_status;
 
     // Segmented progress for indexed animated-QR cycles (BBQR / Specter): when
-    // total_segments > 0 the track renders as total_segments contiguous, integer-width
-    // cells instead of the continuous fill, and each decoded frame lights its own cell
-    // (out-of-order aware — a middle-first scan lights the middle cell). total_segments
+    // total_segments > 0 the track renders as total_segments discrete per-frame cells on a
+    // thickened bar instead of the continuous fill, and each decoded frame fills its own cell
+    // (out-of-order aware — a middle-first scan fills the middle cell). total_segments
     // <= 0 (the default) keeps the continuous fill, which is what UR/fountain codes and
     // unknown-total scans use (no fixed cycle of discrete parts to map to cells).
     //
+    // When the cells are wide enough they are drawn as OUTLINED boxes: every cell is visible
+    // from the start as an empty slot with a light-gray outline, and its interior fills green as
+    // its frame decodes — the outline staying a distinct gray so the cell grid still reads once
+    // filled. When too many segments make the cells too narrow for an outline, the outlines are
+    // dropped and the cells degrade to bare green fills that appear as their frames decode.
+    //
     // The track is partitioned by cumulative floor (cell i spans [i*W/N, (i+1)*W/N)), so
-    // cell widths differ by at most 1px (e.g. some 3px, some 4px) and always sum to the
-    // full track — never subpixel, never overflow. If total_segments exceeds the track
-    // width in px, the surplus cells collapse to zero width and are skipped: up to
-    // track_width frames (~160 at 240px, ~330 at 480px) get a 1px cell, and any beyond
-    // that simply don't render — an accepted degenerate far past any real BBQR.
+    // cell widths differ by at most 1px and always sum to the full track — never subpixel,
+    // never overflow. In the borderless degenerate, if total_segments exceeds the track width
+    // in px the surplus cells collapse to zero width and are skipped: up to track_width frames
+    // get a 1px cell, and any beyond that simply don't render — far past any real BBQR.
     int                           total_segments;      // 0 => continuous mode
     const uint8_t                *decoded;             // len == total_segments; nonzero = frame decoded. NULL => none lit
     int                           just_decoded_index;  // 0-based most-recent new frame, or -1 (reserved: recent-cell emphasis)
@@ -129,12 +134,13 @@ void camera_preview_overlay_begin_segments(camera_preview_overlay_t *overlay, in
 // Report one decode event (a few/sec). `status` sets the most-recent-frame dot, and for a
 // decoded piece `piece_index` (0-based) marks the "current" cell — the piece the camera is on,
 // emphasized differently for new vs re-read:
-//   ADDED    -> `piece_index` is a NEWLY decoded piece: lights its cell once, advances the
-//               derived percent (idempotent if already decoded), and makes it the current cell
-//               drawn as a green "burst" (enlarged perpendicular to the bar).
+//   ADDED    -> `piece_index` is a NEWLY decoded piece: fills its cell green once, advances the
+//               derived percent (idempotent if already decoded), and makes it the current cell —
+//               marked by a bright WHITE outline (or, in the borderless degenerate, a green
+//               perpendicular "burst").
 //   REPEATED -> `piece_index` is an already-seen piece being re-read: no percent change, but
-//               its (already-lit) cell becomes the current cell drawn WHITE at normal size —
-//               so the user sees which piece is stuck in view. Pass the re-read index, not -1.
+//               its (already-filled) cell becomes the current cell drawn WHITE — so the user
+//               sees which piece is stuck in view. Pass the re-read index, not -1.
 //   MISS/NONE-> nothing decoded; updates the dot only (pass piece_index = -1; current stays).
 // As the cursor advances, the prior current cell settles back to plain decoded green. No-op
 // before begin_segments().

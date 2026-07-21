@@ -56,10 +56,20 @@ struct camera_preview_overlay {
 
     // Index of the "current" piece — the one the camera most recently read (new OR repeat),
     // emphasized so it stands out; -1 = none. Moves on each ADDED/REPEATED event, leaving the
-    // prior current cell back at the plain decoded green. A NEW piece "bursts" (green, enlarged
-    // perpendicular to the bar); a RE-READ piece is drawn white at normal size.
+    // prior current cell back at the plain decoded green.
     int        segment_current;
-    bool       segment_current_bulge;   // true = current cell is the green burst (new piece)
+    bool       segment_current_bulge;   // true = current cell is the new-piece emphasis
+
+    // Rendering variant + geometry for the segmented cells, decided by build_segment_cells:
+    //   segment_bordered = the cells are wide enough to draw as OUTLINED boxes — each cell is
+    //     visible from the start as an empty outlined slot, and its interior fills green as its
+    //     frame decodes, the outline staying a distinct gray so the cell grid reads even once
+    //     filled. When too many segments make the cells too narrow for a border, this is false
+    //     and the cells degrade to bare, hidden-until-decoded green fills (no outlines).
+    //   segment_thickness = the (thicker-than-continuous) track/cell thickness in px, so the
+    //     individual cells are legible; cached for the borderless current-cell burst geometry.
+    bool       segment_bordered;
+    int32_t    segment_thickness;
 };
 
 // Duration of the completion fill-to-100% glide (the ONLY animated transition;
@@ -70,8 +80,47 @@ static const uint32_t OVERLAY_PROGRESS_ANIM_MS = 300;
 
 // A newly decoded piece's cell "bursts": drawn this much larger than the track thickness,
 // perpendicular to the bar (protruding both sides), then settles back to normal as the cursor
-// advances to the next piece. Within the 50–100%-larger range.
+// advances to the next piece. Only used in the BORDERLESS degenerate — the outlined cells mark
+// the current piece by recoloring the outline instead, which keeps their geometry fixed (cheaper
+// per-frame redraw on the live-preview path). Within the 50–100%-larger range.
 static const int SEGMENT_BULGE_PCT = 100;   // +100% = 2x thickness
+
+// --- Segmented-cell geometry (thicker bar + outlined cells) -----------------------------------
+// These mirror the same helpers in camera_preview_pillarboxed.cpp; kept in lockstep pending the
+// camera_overlay_common extraction (consolidation ledger §12).
+//
+// The segmented track is drawn THICKER than the continuous progress pill so the individual
+// per-frame cells read clearly. Base 12px at the 240 profile (vs the 4px continuous pill),
+// scaled by the active profile's px_multiplier like every other layout constant.
+static int32_t segment_track_thickness() {
+    int32_t th = (12 * active_profile().px_multiplier) / 100;
+    return th < LIST_ITEM_PADDING ? LIST_ITEM_PADDING : th;
+}
+// Hairline outline for the cell boxes (1px at 240/320, 2px at 480).
+static int32_t segment_cell_border_width() {
+    int32_t bw = active_profile().px_multiplier / 100;
+    return bw < 1 ? 1 : bw;
+}
+// A cell earns an outline only when it is wide enough to show one AND still read as a filled box:
+// two borders plus a visible interior. Narrower than this (too many segments) and the outlines
+// are dropped entirely — the documented degenerate.
+static int32_t segment_min_bordered_cell_width() {
+    return 2 * segment_cell_border_width() + (4 * active_profile().px_multiplier) / 100;
+}
+// Outline color for the cell boxes — a light gray, deliberately distinct from BOTH the green fill
+// and the white "current re-read" status, so the cell structure stays visible as cells fill green.
+static const uint32_t SEGMENT_CELL_OUTLINE_COLOR = 0x8c8c8c;
+
+// Which sides a bordered cell outlines. If every cell drew all four sides, each interior separator
+// would stack two 1px borders (this cell's right + the next cell's left) into a 2px line. Instead
+// each cell draws top+bottom+left only — the LEFT border is the single shared separator between it
+// and its left neighbor — and the RIGHTMOST cell (highest x = last index) also draws its right edge
+// to close the row. Result: every separator is a single 1px line, the row framed top/bottom/ends.
+static lv_border_side_t overlay_cell_border_side(const camera_preview_overlay_t *o, int index) {
+    lv_border_side_t s = (lv_border_side_t)(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM | LV_BORDER_SIDE_LEFT);
+    if (index == o->segment_count - 1) s = (lv_border_side_t)(s | LV_BORDER_SIDE_RIGHT);
+    return s;
+}
 
 // Width (px) of the literal "100%" at the button font — the right-hand gutter the
 // progress track must leave for the percent label (Python pre-measures the same).
@@ -183,13 +232,21 @@ static void preview_keypad_cb(lv_event_t *e) {
     }
 }
 
-// (Re)build the persistent per-frame cells for segmented mode. Tears down any existing set,
-// then creates `total` GREEN cells (initially hidden) partitioning the track by cumulative
-// floor: cell i spans [i*W/N, (i+1)*W/N), so widths differ by <=1px (some 3px, some 4px),
-// sum to exactly the track, and never go subpixel. Square corners so adjacent lit cells
-// merge into one solid run. A cell that collapses to zero width (total > track px) is stored
-// as NULL and never rendered — the documented degenerate past the track's px ceiling. Cells
-// are children of the status bar and freed with the parent tree; the pointer array is ours.
+// (Re)build the persistent per-frame cells for segmented mode. Tears down any existing set, then
+// partitions the track by cumulative floor: cell i spans [i*W/N, (i+1)*W/N), so widths differ by
+// <=1px, sum to exactly the track, and never go subpixel. The track is thickened + squared here
+// so the cells read as a legible row.
+//
+// Two rendering variants, chosen by cell width:
+//   BORDERED (cells wide enough): each cell is an OUTLINED box, visible from the start as an empty
+//     slot (transparent interior — the gray track shows through) with a light-gray outline; its
+//     interior fills green when its frame decodes, the outline staying distinct so the grid still
+//     reads. Fixed geometry — the current piece is marked by recoloring, not resizing.
+//   BORDERLESS (too many segments): the outlines are dropped and the cells degrade to bare GREEN
+//     fills, hidden until decoded (the gray track shows through the gaps), with the perpendicular
+//     burst as the only current-piece cue. A cell that collapses to zero width (total > track px)
+//     is stored as NULL and never rendered — the far degenerate past the track's px ceiling.
+// Cells are children of the status bar and freed with the parent tree; the pointer array is ours.
 static void overlay_build_segment_cells(camera_preview_overlay_t *o, int total) {
     if (o->segment_cells) {
         for (int i = 0; i < o->segment_count; ++i)
@@ -202,6 +259,7 @@ static void overlay_build_segment_cells(camera_preview_overlay_t *o, int total) 
     o->segment_lit           = 0;
     o->segment_current       = -1;
     o->segment_current_bulge = false;
+    o->segment_bordered      = false;
     if (total <= 0 || o->track_width <= 0) return;
 
     o->segment_cells   = (lv_obj_t **)lv_malloc(sizeof(lv_obj_t *) * (size_t)total);
@@ -216,11 +274,24 @@ static void overlay_build_segment_cells(camera_preview_overlay_t *o, int total) 
 
     const int32_t W  = o->track_width;
     const int32_t EP = EDGE_PADDING;
-    const int32_t th = o->fill_thickness;
-    // Compute the shared track_y arithmetically (identical to create()). Reading it back via
-    // lv_obj_get_y(o->fill) is unreliable at build time: the status bar isn't laid out yet, so
-    // the fill's coords read ~0 — which would drop the cells to the top of the container.
+
+    // Thicken the shared track to the segmented thickness (the continuous pill is too thin for the
+    // cells to read) and square its corners so the cells tile it flush. The track becomes the gray
+    // "empty" backing that shows through undecoded cells; the continuous fill stays out of the way.
+    const int32_t th = segment_track_thickness();
+    o->segment_thickness = th;
+    // Compute the track_y arithmetically (the status bar isn't laid out yet at build time, so
+    // reading a child's coords back would give ~0 and drop the cells to the top of the bar).
     const int32_t y  = (BUTTON_HEIGHT - th) / 2;
+    lv_obj_set_size(o->track, W, th);
+    lv_obj_set_pos(o->track, EP, y);
+    lv_obj_set_style_radius(o->track, 0, LV_PART_MAIN);
+    lv_obj_set_width(o->fill, 0);   // continuous fill is unused in segmented mode
+
+    // Outline the cells only when the narrowest cell (floor(W/total)) is wide enough; past that,
+    // drop the borders and fall back to bare fills.
+    const int32_t bw    = segment_cell_border_width();
+    o->segment_bordered = (W / total) >= segment_min_bordered_cell_width();
 
     for (int i = 0; i < total; ++i) {
         int32_t x0 = (int32_t)((int64_t)i       * W / total);
@@ -231,8 +302,20 @@ static void overlay_build_segment_cells(camera_preview_overlay_t *o, int total) 
         lv_obj_t *cell = lv_obj_create(o->status_bar);
         lv_obj_set_size(cell, w, th);
         lv_obj_set_pos(cell, EP + x0, y);
-        style_rounded(cell, (uint32_t)GREEN_INDICATOR_COLOR, LV_OPA_COVER, 0);
-        lv_obj_add_flag(cell, LV_OBJ_FLAG_HIDDEN);              // shown when the frame decodes
+        if (o->segment_bordered) {
+            // Empty outlined slot: transparent interior (gray track shows through) + a light-gray
+            // outline. Always visible so the grid reads from the start; segment_event fills the
+            // interior green as the frame decodes. Square so adjacent cells tile flush.
+            style_rounded(cell, (uint32_t)GREEN_INDICATOR_COLOR, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(cell, bw, LV_PART_MAIN);
+            lv_obj_set_style_border_color(cell, lv_color_hex(SEGMENT_CELL_OUTLINE_COLOR), LV_PART_MAIN);
+            lv_obj_set_style_border_opa(cell, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_side(cell, overlay_cell_border_side(o, i), LV_PART_MAIN);  // single shared separators
+        } else {
+            // Borderless degenerate: bare green fill, hidden until its frame decodes.
+            style_rounded(cell, (uint32_t)GREEN_INDICATOR_COLOR, LV_OPA_COVER, 0);
+            lv_obj_add_flag(cell, LV_OBJ_FLAG_HIDDEN);
+        }
         o->segment_cells[i] = cell;
     }
 }
@@ -449,14 +532,51 @@ void camera_preview_overlay_set_progress(camera_preview_overlay_t *o,
 }
 
 // Move the "current piece" emphasis to cell `index`, reverting the previous current cell to a
-// plain decoded cell (green, normal thickness, centered on the track). `bulge` picks the new
-// cell's style: true = NEW piece, a green "burst" enlarged perpendicular to the bar; false =
-// RE-READ piece, drawn white at normal size. Geometry/recolor only — safe on any decoded cell,
-// a no-op on collapsed (NULL) cells.
+// plain decoded cell. `bulge` picks the new cell's style: true = NEW piece, false = RE-READ piece.
+// Geometry/recolor only — safe on any decoded cell, a no-op on collapsed (NULL) cells.
 static void overlay_set_current_cell(camera_preview_overlay_t *o, int index, bool bulge) {
     if (index == o->segment_current && bulge == o->segment_current_bulge) return;
 
-    const int32_t th      = o->fill_thickness;
+    if (o->segment_bordered) {
+        // Outlined cells: mark the current piece by recoloring (fixed geometry). A decoded,
+        // non-current cell is green fill + gray outline; a NEW current cell keeps its green fill
+        // but gets a bright WHITE outline; a RE-READ current cell fills WHITE (gray outline) so a
+        // piece stuck in view stands out. The current cell is always already decoded, so reverting
+        // it is just: green fill, gray outline.
+        if (o->segment_current >= 0 && o->segment_current < o->segment_count &&
+            o->segment_cells && o->segment_cells[o->segment_current]) {
+            lv_obj_t *prev = o->segment_cells[o->segment_current];
+            lv_obj_set_style_bg_color(prev, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(prev, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_color(prev, lv_color_hex(SEGMENT_CELL_OUTLINE_COLOR), LV_PART_MAIN);
+            lv_obj_set_style_border_side(prev, overlay_cell_border_side(o, o->segment_current), LV_PART_MAIN);
+        }
+
+        o->segment_current       = index;
+        o->segment_current_bulge = bulge;
+
+        if (index >= 0 && index < o->segment_count &&
+            o->segment_cells && o->segment_cells[index]) {
+            lv_obj_t *cur = o->segment_cells[index];
+            if (bulge) {   // new piece — green fill, bright white outline on ALL four sides (a
+                           // complete highlight box; the only cell that reinstates its right edge)
+                lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(cur, LV_OPA_COVER, LV_PART_MAIN);
+                lv_obj_set_style_border_color(cur, lv_color_hex((uint32_t)BODY_FONT_COLOR), LV_PART_MAIN);
+                lv_obj_set_style_border_side(cur, LV_BORDER_SIDE_FULL, LV_PART_MAIN);
+            } else {       // re-read piece — white fill, gray outline (base shared-separator sides)
+                lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)BODY_FONT_COLOR), LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(cur, LV_OPA_COVER, LV_PART_MAIN);
+                lv_obj_set_style_border_color(cur, lv_color_hex(SEGMENT_CELL_OUTLINE_COLOR), LV_PART_MAIN);
+                lv_obj_set_style_border_side(cur, overlay_cell_border_side(o, index), LV_PART_MAIN);
+            }
+        }
+        return;
+    }
+
+    // Borderless degenerate: no outline to recolor, so mark the current piece by the perpendicular
+    // burst (new = green, enlarged; re-read = white at normal size).
+    const int32_t th      = o->segment_thickness;
     const int32_t track_y = (BUTTON_HEIGHT - th) / 2;
     const int32_t bth     = th + th * SEGMENT_BULGE_PCT / 100;
 
@@ -523,7 +643,12 @@ void camera_preview_overlay_segment_event(camera_preview_overlay_t *o,
         o->segment_decoded[piece_index] = 1;
         o->segment_lit++;
         lv_obj_t *cell = o->segment_cells ? o->segment_cells[piece_index] : NULL;
-        if (cell) lv_obj_remove_flag(cell, LV_OBJ_FLAG_HIDDEN);
+        if (cell) {
+            if (o->segment_bordered)
+                lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, LV_PART_MAIN);  // fill the outlined box green
+            else
+                lv_obj_remove_flag(cell, LV_OBJ_FLAG_HIDDEN);              // reveal the bare fill
+        }
         overlay_paint_segment_percent(o);
     }
 

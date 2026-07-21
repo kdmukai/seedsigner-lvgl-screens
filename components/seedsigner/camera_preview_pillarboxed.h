@@ -56,9 +56,11 @@ typedef struct {
     camera_overlay_frame_status_t frame_status;
 
     // Segmented progress for indexed animated-QR cycles (BBQR / Specter) — the vertical-bar
-    // analogue of camera_preview_overlay's fields. total_segments > 0 renders the track as
-    // total_segments contiguous cells along the bar (frame 0 at the landscape-bottom anchor,
-    // growing toward the top) and lights each decoded frame's own cell, out-of-order aware.
+    // analogue of camera_preview_overlay's fields. total_segments > 0 renders the thickened bar
+    // as total_segments discrete per-frame cells (frame 0 at the landscape-bottom anchor, growing
+    // toward the top) and fills each decoded frame's own cell, out-of-order aware. Cells wide
+    // enough are drawn as OUTLINED boxes (empty from the start, filling green as frames decode);
+    // too many segments drops the outlines to bare fills.
     // total_segments <= 0 (default) keeps the continuous fill (UR/fountain/unknown-total).
     int                           total_segments;      // 0 => continuous mode
     const uint8_t                *decoded;             // len == total_segments; nonzero = frame decoded. NULL => none lit
@@ -93,16 +95,17 @@ void camera_preview_pillarboxed_set_progress(camera_preview_pillarboxed_t *o,
 // decode event; the screen owns the decoded list and derives the pre-rotated percent.
 
 // Announce a segmented scan: the first decoded frame revealed a cycle of `total_segments`
-// pieces. Builds the empty N-cell vertical bar, resets the decoded list, and reveals the
-// meter (segmented implies an animated QR). Idempotent for the same N; a different N rebuilds.
+// pieces. Builds the empty N-cell vertical bar (outlined cells, or bare fills if too dense),
+// resets the decoded list, and reveals the meter (segmented implies an animated QR). Idempotent
+// for the same N; a different N rebuilds.
 // total_segments <= 0 is a no-op (use set_progress() for continuous/UR/fountain).
 void camera_preview_pillarboxed_begin_segments(camera_preview_pillarboxed_t *o, int total_segments);
 
-// Report one decode event. ADDED lights piece `piece_index` (0-based) once, advances the
-// derived percent, and makes it the current cell drawn as a green "burst" (enlarged
-// perpendicular to the bar). REPEATED passes the re-read index too: no percent change, but its
-// already-lit cell becomes the current cell drawn WHITE at normal size, so the piece stuck in
-// view is visible. MISS updates only the dot (pass piece_index = -1). No-op before
+// Report one decode event. ADDED fills piece `piece_index` (0-based) green once, advances the
+// derived percent, and makes it the current cell — marked by a bright WHITE outline (or, in the
+// borderless degenerate, a green perpendicular "burst"). REPEATED passes the re-read index too:
+// no percent change, but its already-filled cell becomes the current cell drawn WHITE, so the
+// piece stuck in view is visible. MISS updates only the dot (pass piece_index = -1). No-op before
 // begin_segments().
 void camera_preview_pillarboxed_segment_event(camera_preview_pillarboxed_t *o,
                                               camera_overlay_frame_status_t status,
