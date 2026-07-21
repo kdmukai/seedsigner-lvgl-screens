@@ -565,11 +565,12 @@ screen_scaffold_t create_top_nav_screen_scaffold(const json &cfg, bool scrollabl
         out.button_list_count = i + 1;
     }
 
-    // Match the legacy `button_list()` default: highlight the only button
-    // when there is exactly one; otherwise leave them all unselected.
-    if (out.button_list_count == 1) {
-        button_set_active(out.button_list[0], true);
-    }
+    // Leave every button unselected on load, whatever the list length (matching
+    // button_list()'s reverted default). Hardware navigation highlights the initial
+    // focused item via the nav layer; touch shows no active row until a finger lands.
+    // A one-button list is no longer special-cased to pre-highlight its sole button —
+    // that highlight had no touch-mode counterpart and leaked an active-colored button
+    // onto touch screens.
 
     return out;
 }

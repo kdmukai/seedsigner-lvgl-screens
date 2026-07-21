@@ -1382,7 +1382,6 @@ void large_button_grid(lv_obj_t* body, lv_obj_t* screen_root,
 
 lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size_t item_count, bool is_button_text_centered, button_style_t style) {
     lv_obj_t* last_button = NULL;
-    lv_obj_t* first_button = NULL;
     if (!lv_parent || !items || item_count == 0) {
         return last_button;
     }
@@ -1408,23 +1407,20 @@ lv_obj_t* button_list(lv_obj_t* lv_parent, const button_list_item_t *items, size
         opts.is_checked = items[i].is_checked;  // per-item checked state
         opts.icon_column_w = icon_column_w;     // shared column so labels line up
         last_button = button_ex(lv_parent, &opts);
-        if (i == 0) {
-            first_button = last_button;
-        }
     }
 
-    // Default behavior:
-    // - no button highlighted when there are multiple buttons
-    // - highlight the only button when there is exactly one
-    if (item_count == 1 && first_button) {
-        button_set_active(first_button, true);
-    } else {
-        uint32_t child_count = lv_obj_get_child_count(lv_parent);
-        for (uint32_t i = 0; i < child_count; ++i) {
-            lv_obj_t* child = lv_obj_get_child(lv_parent, i);
-            if (child && lv_obj_check_type(child, &lv_button_class)) {
-                button_set_active(child, false);
-            }
+    // Default behavior: NO button carries a persistent highlight on load, whatever
+    // the list length. Under hardware navigation the nav layer focuses (and thereby
+    // highlights) the initial item; touch mode shows no active row until a finger
+    // lands on one. A one-button list used to pre-highlight its sole button here,
+    // but touch never re-derives focus, so that highlight leaked an active-colored
+    // button onto touch screens — reverted so single-button lists match the standard
+    // unselected color like every other list.
+    uint32_t child_count = lv_obj_get_child_count(lv_parent);
+    for (uint32_t i = 0; i < child_count; ++i) {
+        lv_obj_t* child = lv_obj_get_child(lv_parent, i);
+        if (child && lv_obj_check_type(child, &lv_button_class)) {
+            button_set_active(child, false);
         }
     }
 
