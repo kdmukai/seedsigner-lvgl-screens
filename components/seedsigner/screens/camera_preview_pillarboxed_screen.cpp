@@ -27,6 +27,15 @@
 //   progress      (int 0..100, default 0)  animated-QR decode percent.
 //   frame_status  (int 0..3, default 0)  most-recent-frame status dot
 //            (0 none / 1 added=green / 2 repeated=gray / 3 miss=hidden).
+//   total_segments (int, default 0)  >0 switches the vertical bar to a segmented per-frame
+//            view (BBQR/Specter indexed cycle); percent is derived from the decoded mask.
+//   decoded_count  (int, default 0)  segmented only: light the first K frames.
+//   decoded_range  (object {start,count}, optional)  segmented only: light a contiguous run
+//            at an offset (so the chunk needn't hug the anchor end).
+//   decoded_indices (int[], optional)  segmented only: light explicit 0-based frames
+//            (out-of-order aware); unions with the above.
+//   just_decoded_index (int, default -1)  0-based currently-read piece; drawn as the
+//            highlighted "current" cell (e.g. the piece a repeated frame is re-reading).
 //   square        (object {x,y,w,h}, optional)  explicit preview-square rect override.
 
 #include "screen_scaffold.h"             // parse_optional_screen_json_ctx, load_screen_and_cleanup_previous
@@ -36,6 +45,8 @@
 #include "lvgl.h"                         // bare-root + placeholder build, lv_display_get_*_resolution, lv_memzero
 
 #include <nlohmann/json.hpp>
+
+#include <vector>                         // std::vector (decoded-frame mask)
 
 using json = nlohmann::json;
 
@@ -91,6 +102,39 @@ void camera_preview_pillarboxed_screen(void *ctx_json) {
     spec.scanning_active  = cfg.value("scanning", true);
     spec.progress_percent = cfg.value("progress", 0);
     spec.frame_status     = (camera_overlay_frame_status_t)cfg.value("frame_status", 0);
+
+    // Segmented-progress state (BBQR/Specter indexed cycle) — same authoring as the landscape
+    // overlay wrapper: total_segments > 0 switches the vertical bar to per-frame cells; the mask
+    // is built from decoded_count (first K), decoded_range {start,count} (a contiguous run at an
+    // offset), and decoded_indices (explicit 0-based frames, out-of-order aware), all unioned.
+    // The mask outlives the create() call below.
+    std::vector<uint8_t> decoded_mask;
+    int total_segments = cfg.value("total_segments", 0);
+    if (total_segments > 0) {
+        decoded_mask.assign((size_t)total_segments, 0);
+
+        int decoded_count = cfg.value("decoded_count", 0);
+        for (int i = 0; i < decoded_count && i < total_segments; ++i) decoded_mask[i] = 1;
+
+        if (cfg.contains("decoded_range") && cfg["decoded_range"].is_object()) {
+            const auto &r = cfg["decoded_range"];
+            int start = r.value("start", 0);
+            int count = r.value("count", 0);
+            for (int i = start; i < start + count && i < total_segments; ++i) {
+                if (i >= 0) decoded_mask[(size_t)i] = 1;
+            }
+        }
+        if (cfg.contains("decoded_indices") && cfg["decoded_indices"].is_array()) {
+            for (const auto &v : cfg["decoded_indices"]) {
+                int idx = v.is_number_integer() ? v.get<int>() : -1;
+                if (idx >= 0 && idx < total_segments) decoded_mask[(size_t)idx] = 1;
+            }
+        }
+        spec.scanning_active = true;  // segments imply scanning
+    }
+    spec.total_segments     = total_segments;
+    spec.decoded            = decoded_mask.empty() ? nullptr : decoded_mask.data();
+    spec.just_decoded_index = cfg.value("just_decoded_index", -1);
 
     camera_preview_pillarboxed_t *chrome = camera_preview_pillarboxed_create(scr, &spec);
     camera_preview_pillarboxed_destroy(chrome);

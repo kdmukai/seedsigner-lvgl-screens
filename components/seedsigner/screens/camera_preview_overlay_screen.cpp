@@ -42,6 +42,17 @@
 //            > 0 forces scanning on.
 //   frame_status       (int 0..3, default 0)  most-recent-frame decode status dot
 //            (0 none / 1 added / 2 repeated / 3 miss).
+//   total_segments     (int, default 0)  >0 switches the progress track to a segmented
+//            per-frame view (BBQR/Specter indexed cycle); the percent is derived from the
+//            decoded mask. 0 keeps the continuous fill (UR/fountain/unknown-total).
+//   decoded_count      (int, default 0)  segmented only: light the first K frames
+//            (compact authoring for dense/degenerate cases).
+//   decoded_range      (object {start,count}, optional)  segmented only: light a
+//            contiguous run at an offset, so the chunk doesn't hug the left edge.
+//   decoded_indices    (int[], optional)  segmented only: light these explicit 0-based
+//            frames; unions with decoded_count. Out-of-order aware (e.g. [3] = middle-first).
+//   just_decoded_index (int, default -1)  0-based currently-read piece; drawn as the
+//            highlighted "current" cell (e.g. the piece a repeated frame is re-reading).
 //   fill_landscape     (bool, default: short display dim <= 240)  preview geometry.
 //            Higher-res DSI panels (short dim > 240) default false = a center-cut
 //            SQUARE with static side gutters; the Pi Zero (<= 240) defaults true =
@@ -58,6 +69,7 @@
 #include <nlohmann/json.hpp>          // json (optional cfg read)
 
 #include <string>                     // std::string (instructions_text)
+#include <vector>                     // std::vector (decoded-frame mask)
 
 using json = nlohmann::json;
 
@@ -153,6 +165,43 @@ void camera_preview_overlay_screen(void *ctx_json) {
     spec.progress_percent   = cfg.value("progress", 0);
     spec.frame_status       = (camera_overlay_frame_status_t)cfg.value("frame_status", 0);
     if (spec.progress_percent > 0) spec.scanning_active = true;
+
+    // 3. Segmented-progress state (BBQR/Specter indexed cycles). total_segments > 0
+    //    switches the track to per-frame cells; the decoded mask is authored two ways
+    //    (unioned): decoded_count lights the first K frames (compact for dense/degenerate
+    //    demos), and decoded_indices lights explicit 0-based frames (supports out-of-order,
+    //    e.g. a middle-first scan = decoded_indices:[mid]). The mask outlives create().
+    std::vector<uint8_t> decoded_mask;
+    int total_segments = cfg.value("total_segments", 0);
+    if (total_segments > 0) {
+        decoded_mask.assign((size_t)total_segments, 0);
+
+        int decoded_count = cfg.value("decoded_count", 0);
+        for (int i = 0; i < decoded_count && i < total_segments; ++i) decoded_mask[i] = 1;
+
+        // A contiguous run [start, start+count) at an arbitrary offset — for demos where
+        // the lit chunk should clearly NOT hug the left edge (so it doesn't read as a
+        // left-to-right meter). Unions with the others.
+        if (cfg.contains("decoded_range") && cfg["decoded_range"].is_object()) {
+            const auto &r = cfg["decoded_range"];
+            int start = r.value("start", 0);
+            int count = r.value("count", 0);
+            for (int i = start; i < start + count && i < total_segments; ++i) {
+                if (i >= 0) decoded_mask[(size_t)i] = 1;
+            }
+        }
+
+        if (cfg.contains("decoded_indices") && cfg["decoded_indices"].is_array()) {
+            for (const auto &v : cfg["decoded_indices"]) {
+                int idx = v.is_number_integer() ? v.get<int>() : -1;
+                if (idx >= 0 && idx < total_segments) decoded_mask[(size_t)idx] = 1;
+            }
+        }
+        spec.scanning_active = true;  // segments imply scanning
+    }
+    spec.total_segments     = total_segments;
+    spec.decoded            = decoded_mask.empty() ? nullptr : decoded_mask.data();
+    spec.just_decoded_index = cfg.value("just_decoded_index", -1);
 
     // Build onto the screen (gutter button in the gutter; in-square elements over the
     // preview). Tooling renders one static state, so we free the update handle right

@@ -70,8 +70,25 @@ typedef struct {
     // Initial state. scanning_active=false shows the back affordance; true shows the
     // status bar at progress_percent / frame_status.
     bool                          scanning_active;
-    int                           progress_percent;  // 0..100
+    int                           progress_percent;  // 0..100 (continuous mode only)
     camera_overlay_frame_status_t frame_status;
+
+    // Segmented progress for indexed animated-QR cycles (BBQR / Specter): when
+    // total_segments > 0 the track renders as total_segments contiguous, integer-width
+    // cells instead of the continuous fill, and each decoded frame lights its own cell
+    // (out-of-order aware — a middle-first scan lights the middle cell). total_segments
+    // <= 0 (the default) keeps the continuous fill, which is what UR/fountain codes and
+    // unknown-total scans use (no fixed cycle of discrete parts to map to cells).
+    //
+    // The track is partitioned by cumulative floor (cell i spans [i*W/N, (i+1)*W/N)), so
+    // cell widths differ by at most 1px (e.g. some 3px, some 4px) and always sum to the
+    // full track — never subpixel, never overflow. If total_segments exceeds the track
+    // width in px, the surplus cells collapse to zero width and are skipped: up to
+    // track_width frames (~160 at 240px, ~330 at 480px) get a 1px cell, and any beyond
+    // that simply don't render — an accepted degenerate far past any real BBQR.
+    int                           total_segments;      // 0 => continuous mode
+    const uint8_t                *decoded;             // len == total_segments; nonzero = frame decoded. NULL => none lit
+    int                           just_decoded_index;  // 0-based most-recent new frame, or -1 (reserved: recent-cell emphasis)
 } camera_preview_overlay_spec_t;
 
 // Opaque handle holding the built widgets + cached geometry for live updates.
@@ -95,6 +112,35 @@ void camera_preview_overlay_set_scanning(camera_preview_overlay_t *overlay, bool
 void camera_preview_overlay_set_progress(camera_preview_overlay_t *overlay,
                                          int percent,
                                          camera_overlay_frame_status_t frame_status);
+
+// --- Segmented (indexed-cycle) live interface: begin once, then one event per frame ------
+// For animated QRs with a fixed, indexed cycle (BBQR / Specter). Instead of pushing the
+// whole decoded set each call, the host announces the cycle size once and then reports each
+// decode event; the SCREEN owns the decoded list and derives the percent. This mirrors the
+// app's scan loop 1:1 (decoder.add() -> one DecodeQRStatus per frame; total_segments known
+// after the first frame; the just-added piece index available from the decoder).
+
+// Announce a segmented scan: the first decoded frame revealed a cycle of `total_segments`
+// pieces. Builds the empty N-cell bar and resets the decoded list. Idempotent for the same
+// N (keeps progress); a different N rebuilds. Implies scanning. total_segments <= 0 is a
+// no-op — continuous/UR/fountain scans use set_progress() above.
+void camera_preview_overlay_begin_segments(camera_preview_overlay_t *overlay, int total_segments);
+
+// Report one decode event (a few/sec). `status` sets the most-recent-frame dot, and for a
+// decoded piece `piece_index` (0-based) marks the "current" cell — the piece the camera is on,
+// emphasized differently for new vs re-read:
+//   ADDED    -> `piece_index` is a NEWLY decoded piece: lights its cell once, advances the
+//               derived percent (idempotent if already decoded), and makes it the current cell
+//               drawn as a green "burst" (enlarged perpendicular to the bar).
+//   REPEATED -> `piece_index` is an already-seen piece being re-read: no percent change, but
+//               its (already-lit) cell becomes the current cell drawn WHITE at normal size —
+//               so the user sees which piece is stuck in view. Pass the re-read index, not -1.
+//   MISS/NONE-> nothing decoded; updates the dot only (pass piece_index = -1; current stays).
+// As the cursor advances, the prior current cell settles back to plain decoded green. No-op
+// before begin_segments().
+void camera_preview_overlay_segment_event(camera_preview_overlay_t *overlay,
+                                          camera_overlay_frame_status_t status,
+                                          int piece_index);
 
 // Free the handle struct (does NOT delete the LVGL widgets — they belong to the parent
 // tree). Safe to skip if the parent screen is about to be deleted anyway.

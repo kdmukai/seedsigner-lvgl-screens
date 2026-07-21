@@ -167,7 +167,28 @@ struct camera_preview_pillarboxed {
     bool      meter_shown;     // latched true once an ANIMATED (intermediate) frame is seen —
                                // the meter (container/track/fill/percent) stays hidden until
                                // then, and never shows for a static QR (straight to 100%).
+
+    // Segmented mode (BBQR/Specter indexed cycles): the vertical-bar analogue of the overlay's
+    // per-frame cells. A transparent seg_container spans the track so meter-level show/hide
+    // toggles all cells at once, while each cell keeps its own decoded visibility. Cells are
+    // GREEN, hidden until their frame decodes. Built once; NULL/0 in continuous mode.
+    lv_obj_t *seg_container;   // transparent wrapper over the track (segmented mode only)
+    lv_obj_t **segment_cells;  // one GREEN cell per frame (NULL if it collapsed to zero px)
+    int        segment_count;
+    int32_t    seg_y;          // portrait-Y of the track (== trk_y), cached for cell building
+    int32_t    seg_thick;      // track thickness (== trk_thick), cached for cell building
+
+    // The screen's OWN decoded list (host reports each new piece, not the whole set).
+    uint8_t   *segment_decoded;  // segment_decoded[i] = has piece i been seen
+    int        segment_lit;      // count of decoded pieces (drives the derived percent)
+    int        segment_current;  // currently-read piece (new or re-read), emphasized; -1 = none
+    bool       segment_current_bulge;  // true = current cell is the green burst (new piece)
 };
+
+// A newly decoded piece's cell "bursts": drawn this much larger than the track thickness,
+// perpendicular to the bar (so in the landscape mount it swells sideways), then settles back
+// as the cursor advances. Within the 50–100%-larger range.
+static const int SEGMENT_BULGE_PCT = 100;   // +100% = 2x thickness
 
 static void style_rect(lv_obj_t *o, uint32_t color, lv_opa_t opa, int32_t radius) {
     lv_obj_remove_flag(o, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
@@ -209,9 +230,76 @@ static void pb_meter_set_hidden(camera_preview_pillarboxed *o, bool hidden) {
         if (hidden) lv_obj_add_flag(parts[i], LV_OBJ_FLAG_HIDDEN);
         else        lv_obj_remove_flag(parts[i], LV_OBJ_FLAG_HIDDEN);
     }
+    // The segmented cells (if any) follow the meter as one unit via their container; each
+    // cell's own decoded visibility is preserved underneath.
+    if (o->seg_container) {
+        if (hidden) lv_obj_add_flag(o->seg_container, LV_OBJ_FLAG_HIDDEN);
+        else        lv_obj_remove_flag(o->seg_container, LV_OBJ_FLAG_HIDDEN);
+    }
     if (o->pct) {
         if (hidden) lv_obj_add_flag(o->pct->img, LV_OBJ_FLAG_HIDDEN);
         else        lv_obj_remove_flag(o->pct->img, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+// (Re)build the persistent per-frame cells for segmented mode. Tears down any previous set
+// (deleting seg_container reaps its cells), then partitions the track [fill_lo, fill_hi] into
+// `total` contiguous cells by cumulative floor. Frame 0 sits at the landscape-bottom anchor
+// (fill_hi) and frames grow toward the top (fill_lo), matching the continuous fill direction.
+// Widths differ by <=1px and sum to the track; a cell that collapses to zero width (total >
+// bar px) is stored as NULL. Cells start hidden — segment_event shows each decoded one.
+static void pb_build_segment_cells(camera_preview_pillarboxed *o, int total) {
+    if (o->seg_container) { lv_obj_delete(o->seg_container); o->seg_container = NULL; }
+    if (o->segment_cells) { lv_free(o->segment_cells); o->segment_cells = NULL; }
+    if (o->segment_decoded) { lv_free(o->segment_decoded); o->segment_decoded = NULL; }
+    o->segment_count         = 0;
+    o->segment_lit           = 0;
+    o->segment_current       = -1;
+    o->segment_current_bulge = false;
+    if (total <= 0) return;
+
+    const int32_t L = o->fill_hi - o->fill_lo;   // bar length (portrait X / landscape vertical)
+    if (L <= 0) return;
+
+    o->segment_cells   = (lv_obj_t **)lv_malloc(sizeof(lv_obj_t *) * (size_t)total);
+    o->segment_decoded = (uint8_t *)lv_malloc((size_t)total);
+    if (!o->segment_cells || !o->segment_decoded) {
+        if (o->segment_cells)   { lv_free(o->segment_cells);   o->segment_cells = NULL; }
+        if (o->segment_decoded) { lv_free(o->segment_decoded); o->segment_decoded = NULL; }
+        return;
+    }
+    lv_memzero(o->segment_decoded, (size_t)total);
+    o->segment_count = total;
+
+    // The container is sized to the BURST thickness (not the track thickness) so a new-piece
+    // cell can swell perpendicular without clipping; normal cells sit centered within it at
+    // y_off. The container stays centered on the track (seg_y + seg_thick/2).
+    const int32_t bth   = o->seg_thick + o->seg_thick * SEGMENT_BULGE_PCT / 100;
+    const int32_t y_off = (bth - o->seg_thick) / 2;
+
+    // Transparent wrapper spanning the track, parented alongside the track (same parent).
+    o->seg_container = lv_obj_create(lv_obj_get_parent(o->bar_track));
+    lv_obj_set_size(o->seg_container, L, bth);
+    lv_obj_set_pos(o->seg_container, o->fill_lo, o->seg_y - y_off);
+    lv_obj_remove_flag(o->seg_container, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+    lv_obj_set_style_pad_all(o->seg_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(o->seg_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(o->seg_container, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    for (int i = 0; i < total; ++i) {
+        int32_t u0 = (int32_t)((int64_t)i       * L / total);   // units from the anchor
+        int32_t u1 = (int32_t)((int64_t)(i + 1) * L / total);
+        int32_t w  = u1 - u0;
+        if (w <= 0) { o->segment_cells[i] = NULL; continue; }   // collapsed: no pixel for this frame
+
+        // Anchor at fill_hi: in container coords (origin fill_lo) the cell spans [L-u1, L-u0),
+        // centered vertically (y_off) so a burst can grow to fill the taller container.
+        lv_obj_t *cell = lv_obj_create(o->seg_container);
+        lv_obj_set_size(cell, w, o->seg_thick);
+        lv_obj_set_pos(cell, L - u1, y_off);
+        style_rect(cell, (uint32_t)GREEN_INDICATOR_COLOR, LV_OPA_COVER, 0);  // square: adjacent cells merge
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_HIDDEN);              // shown when the frame decodes
+        o->segment_cells[i] = cell;
     }
 }
 
@@ -296,6 +384,8 @@ camera_preview_pillarboxed_t *camera_preview_pillarboxed_create(
     const int32_t trk_radius = trk_thick / 2;
     o->fill_lo = cont_lo + inset;                           // landscape top end of the track
     o->fill_hi = cont_hi - inset;                           // landscape bottom (fill anchor)
+    o->seg_y     = trk_y;                                   // cached for segmented cell building
+    o->seg_thick = trk_thick;
 
     o->bar_track = lv_obj_create(parent);
     lv_obj_set_size(o->bar_track, o->fill_hi - o->fill_lo, trk_thick);
@@ -338,7 +428,17 @@ camera_preview_pillarboxed_t *camera_preview_pillarboxed_create(
     o->meter_shown = false;
     camera_preview_pillarboxed_set_scanning(o, spec->scanning_active);
     apply_dot_status(o, spec->frame_status);
-    if (spec->scanning_active && spec->progress_percent > 0) {
+    if (spec->scanning_active && spec->total_segments > 0) {
+        // Segmented (indexed cycle): realize the static spec snapshot through the same live
+        // path the host drives at runtime — announce the cycle, replay each decoded piece as
+        // an ADDED event, then set the most-recent-frame dot per the spec.
+        camera_preview_pillarboxed_begin_segments(o, spec->total_segments);
+        for (int i = 0; i < spec->total_segments; ++i) {
+            if (spec->decoded && spec->decoded[i])
+                camera_preview_pillarboxed_segment_event(o, CAMERA_OVERLAY_FRAME_ADDED, i);
+        }
+        camera_preview_pillarboxed_segment_event(o, spec->frame_status, spec->just_decoded_index);
+    } else if (spec->scanning_active && spec->progress_percent > 0) {
         o->meter_shown = true;
         pb_meter_set_hidden(o, false);
         pb_update_meter(o, spec->progress_percent > 100 ? 100 : spec->progress_percent);
@@ -381,10 +481,103 @@ void camera_preview_pillarboxed_set_progress(camera_preview_pillarboxed_t *o,
     }
 }
 
+// Move the "current piece" emphasis to cell `index`, reverting the previous current cell to a
+// plain decoded cell (green, normal thickness, centered in the container). `bulge` picks the
+// new style: true = NEW piece, a green burst enlarged perpendicular to the bar; false = RE-READ
+// piece, white at normal size. Geometry/recolor only — safe on any decoded cell, no-op on NULL.
+static void pb_set_current_cell(camera_preview_pillarboxed *o, int index, bool bulge) {
+    if (index == o->segment_current && bulge == o->segment_current_bulge) return;
+
+    const int32_t th    = o->seg_thick;
+    const int32_t bth   = th + th * SEGMENT_BULGE_PCT / 100;
+    const int32_t y_off = (bth - th) / 2;   // a normal cell's y within the burst-tall container
+
+    if (o->segment_current >= 0 && o->segment_current < o->segment_count &&
+        o->segment_cells && o->segment_cells[o->segment_current]) {
+        lv_obj_t *prev = o->segment_cells[o->segment_current];
+        lv_obj_set_style_bg_color(prev, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+        lv_obj_set_height(prev, th);
+        lv_obj_set_y(prev, y_off);
+    }
+
+    o->segment_current       = index;
+    o->segment_current_bulge = bulge;
+
+    if (index >= 0 && index < o->segment_count &&
+        o->segment_cells && o->segment_cells[index]) {
+        lv_obj_t *cur = o->segment_cells[index];
+        if (bulge) {   // new piece — green burst, fills the taller container
+            lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)GREEN_INDICATOR_COLOR), LV_PART_MAIN);
+            lv_obj_set_height(cur, bth);
+            lv_obj_set_y(cur, 0);
+        } else {       // re-read piece — white, normal size
+            lv_obj_set_style_bg_color(cur, lv_color_hex((uint32_t)BODY_FONT_COLOR), LV_PART_MAIN);
+            lv_obj_set_height(cur, th);
+            lv_obj_set_y(cur, y_off);
+        }
+    }
+}
+
+// Repaint the pre-rotated percent from the current lit count.
+static void pb_paint_segment_percent(camera_preview_pillarboxed *o) {
+    int percent = o->segment_count > 0
+                      ? (int)((int64_t)o->segment_lit * 100 / o->segment_count) : 0;
+    std::string text = std::to_string(percent) + "%";
+    rot_text_set(o->pct, text.c_str(), lv_color_hex((uint32_t)BODY_FONT_COLOR), &BUTTON_FONT);
+}
+
+void camera_preview_pillarboxed_begin_segments(camera_preview_pillarboxed_t *o, int total_segments) {
+    if (!o || total_segments <= 0) return;   // continuous/UR/fountain uses set_progress()
+
+    // Build the cells + reset the decoded list once; a same-N re-announce keeps progress.
+    if (o->segment_count != total_segments) {
+        pb_build_segment_cells(o, total_segments);
+    }
+
+    // Segmented always means an animated QR, so reveal the meter (a static QR jumps straight
+    // to 100% via set_progress and never trips its latch). Same latch as set_progress.
+    if (!o->meter_shown) {
+        o->meter_shown = true;
+        pb_meter_set_hidden(o, false);
+    }
+    pb_paint_segment_percent(o);
+}
+
+void camera_preview_pillarboxed_segment_event(camera_preview_pillarboxed_t *o,
+                                              camera_overlay_frame_status_t status,
+                                              int piece_index) {
+    if (!o) return;
+
+    // A newly decoded piece: record it once, light its cell, advance the percent. The screen
+    // owns the decoded list, so a repeated ADDED is a no-op; a collapsed (NULL) cell still
+    // counts toward the percent.
+    if (status == CAMERA_OVERLAY_FRAME_ADDED &&
+        piece_index >= 0 && piece_index < o->segment_count &&
+        o->segment_decoded && !o->segment_decoded[piece_index]) {
+        o->segment_decoded[piece_index] = 1;
+        o->segment_lit++;
+        lv_obj_t *cell = o->segment_cells ? o->segment_cells[piece_index] : NULL;
+        if (cell) lv_obj_remove_flag(cell, LV_OBJ_FLAG_HIDDEN);
+        pb_paint_segment_percent(o);
+    }
+
+    // Mark whichever piece the camera is on — new OR re-read: a NEW piece bursts (green,
+    // enlarged), a re-read is white. MISS carries no piece.
+    if ((status == CAMERA_OVERLAY_FRAME_ADDED || status == CAMERA_OVERLAY_FRAME_REPEATED) &&
+        piece_index >= 0) {
+        pb_set_current_cell(o, piece_index, status == CAMERA_OVERLAY_FRAME_ADDED);
+    }
+
+    apply_dot_status(o, status);
+}
+
 void camera_preview_pillarboxed_destroy(camera_preview_pillarboxed_t *o) {
     if (!o) return;
-    // Free ONLY the handle. The widgets (incl. the rotated-percent image + its buffers,
-    // freed by the image's LV_EVENT_DELETE cb) belong to the parent tree and outlive this
-    // — the desktop tools destroy the handle immediately but keep the widgets to render.
+    // Free ONLY the handle (plus our segment bookkeeping). The widgets (incl. the rotated-
+    // percent image + its buffers, freed by the image's LV_EVENT_DELETE cb, and the segment
+    // cells under seg_container) belong to the parent tree and outlive this — the desktop
+    // tools destroy the handle immediately but keep the widgets to render.
+    if (o->segment_cells)   lv_free(o->segment_cells);
+    if (o->segment_decoded) lv_free(o->segment_decoded);
     lv_free(o);
 }
