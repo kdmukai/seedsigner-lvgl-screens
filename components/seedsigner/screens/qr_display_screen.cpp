@@ -35,7 +35,13 @@
 // raises a passive hint panel — chevron rows naming what the physical keys do —
 // while the keys themselves act. TOUCH mode (no Python equivalent; Python is
 // hardware-only) taps the QR to raise a draggable slider flanked by dim/bright
-// sun icons, with a top-right X to exit. Panel styling ports Python's
+// sun icons, with a top-right X to exit. While the panel is up a full-screen
+// transparent backdrop is raised under it (so a tap OUTSIDE the panel dismisses
+// it) and the exit X is hidden (so that corner can't be mistaken for the panel's
+// close, nor exit the QR on an accidental tap). When the panel hides, the backdrop
+// lowers and the X re-appears after a brief cooldown, so the second tap of the same
+// double-tap that dismissed the panel can't land on the just-restored X and exit.
+// Panel styling ports Python's
 // render_brightness_tip (opacity 224, radius 8). Layout deviation from Python:
 // the panel is a content-sized rounded box bottom-centered 2*COMPONENT_PADDING
 // above the screen edge, where Python renders a full-width band flush to the
@@ -140,6 +146,13 @@ struct qr_display_ctx_t {
     lv_group_t *group;          // hardware keypad group (NULL in touch mode)
     lv_obj_t   *toast;          // brightness+density panel container (built once, hidden)
     lv_timer_t *toast_timer;    // one-shot auto-hide timer (NULL when idle)
+    // Touch-only panel affordances (NULL in hardware mode). While the panel is up, dismiss_layer
+    // is a full-screen transparent tap-catcher raised UNDER the panel so a tap OUTSIDE it dismisses
+    // the panel, and close_btn (the top-right exit X) is hidden so a stray tap there can't be read
+    // as "exit the QR".
+    lv_obj_t   *dismiss_layer;  // full-screen transparent tap-catcher: tap outside the panel dismisses it
+    lv_obj_t   *close_btn;      // top-right X exit affordance; hidden while the panel is up
+    lv_timer_t *close_btn_timer;// one-shot cooldown before the exit X re-appears after the panel hides
     lv_obj_t   *density_slider;      // density slider (touch-draggable / hardware-passive)
     // Hardware directional chevrons (NULL in touch mode) + a shared one-shot pulse timer: on the
     // matching keypress the chevron flashes ACCENT (mimicking a click) then restores.
@@ -175,6 +188,11 @@ qr_display_ctx_t *g_qr_ctx = nullptr;
 // 1.2 s) so there's time to tap and drag it.
 constexpr uint32_t QR_DISPLAY_TOAST_MS_HARDWARE = 1200;
 constexpr uint32_t QR_DISPLAY_TOAST_MS_TOUCH    = 3000;
+
+// After the panel hides, the exit X stays gone this long before re-appearing (~ a typical
+// double-tap interval), so the second tap of an accidental double-tap that dismissed the panel
+// can't land on the just-restored X and exit the QR.
+constexpr uint32_t QR_DISPLAY_CLOSE_COOLDOWN_MS = 300;
 
 // ---------------------------------------------------------------------------
 // QR encode + direct draw
@@ -283,8 +301,36 @@ void qr_encode_and_paint(qr_display_ctx_t *ctx, const uint8_t *data, size_t len)
 // Brightness + toast
 // ---------------------------------------------------------------------------
 
+// One-shot cooldown timer: re-show the exit X once the panel has stayed hidden for
+// QR_DISPLAY_CLOSE_COOLDOWN_MS. Guarded — if the panel came back up during the cooldown, leave the
+// X hidden (show_toast owns it then). Self-deletes (repeat count 1).
+void qr_display_close_reveal_cb(lv_timer_t *timer) {
+    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_timer_get_user_data(timer);
+    ctx->close_btn_timer = NULL;
+    if (ctx->close_btn && ctx->toast && lv_obj_has_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(ctx->close_btn, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Hide the panel and undo the touch-mode "panel is up" affordances: lower the tap-catching backdrop
+// and — after a brief cooldown — restore the top-right exit X. The single choke point for every
+// dismissal path (auto-hide timer, tap-outside, brightness/density interaction that re-arms then
+// times out). The X is restored on a QR_DISPLAY_CLOSE_COOLDOWN_MS delay (not instantly) so the
+// second tap of an accidental double-tap that dismissed the panel can't land on the just-restored
+// X and exit the QR. dismiss_layer / close_btn are NULL in hardware mode, so those steps no-op there.
 void qr_display_hide_toast(qr_display_ctx_t *ctx) {
-    if (ctx->toast) lv_obj_add_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN);
+    if (ctx->toast)         lv_obj_add_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN);
+    if (ctx->dismiss_layer) lv_obj_add_flag(ctx->dismiss_layer, LV_OBJ_FLAG_HIDDEN);
+    if (ctx->close_btn) {
+        if (ctx->close_btn_timer) { lv_timer_del(ctx->close_btn_timer); ctx->close_btn_timer = NULL; }
+        // Stills are captured synchronously (a timer would never fire before the snapshot), so
+        // reveal the X immediately there; live renders arm the cooldown.
+        if (seedsigner_lvgl_is_static_render()) {
+            lv_obj_remove_flag(ctx->close_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ctx->close_btn_timer = lv_timer_create(qr_display_close_reveal_cb, QR_DISPLAY_CLOSE_COOLDOWN_MS, ctx);
+            lv_timer_set_repeat_count(ctx->close_btn_timer, 1);
+        }
+    }
 }
 
 void qr_display_toast_timer_cb(lv_timer_t *timer) {
@@ -295,8 +341,18 @@ void qr_display_toast_timer_cb(lv_timer_t *timer) {
 
 void qr_display_show_toast(qr_display_ctx_t *ctx, uint32_t auto_hide_ms) {
     if (!ctx->toast) return;
+    // Touch: raise the full-screen tap-catcher UNDER the panel and hide the exit X while the panel
+    // is up. A tap outside the panel then lands on the backdrop (qr_display_dismiss_cb) and just
+    // dismisses the panel; hiding the X keeps a tap in that corner from exiting the QR (which,
+    // if the X still worked, a double-tap could trigger the instant the panel closed). The panel
+    // sits above the backdrop, so taps ON it still reach its sliders. Both NULL in hardware mode.
+    if (ctx->dismiss_layer) {
+        lv_obj_remove_flag(ctx->dismiss_layer, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(ctx->dismiss_layer);
+    }
+    if (ctx->close_btn) lv_obj_add_flag(ctx->close_btn, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(ctx->toast, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->toast);
+    lv_obj_move_foreground(ctx->toast);  // panel above the backdrop
     if (ctx->toast_timer) { lv_timer_del(ctx->toast_timer); ctx->toast_timer = NULL; }
     // auto_hide_ms == 0 keeps the toast up persistently (the brightness_tip demo
     // scenario / static stills); a positive value arms a one-shot auto-hide (normal
@@ -417,10 +473,23 @@ void qr_display_key_cb(lv_event_t *e) {
     }
 }
 
-// Touch: tapping the QR raises the (interactive) toast.
+// Touch: tapping the QR raises the (interactive) toast. Only reachable while the panel is DOWN —
+// once it's up, the dismiss_layer covers the QR and swallows the tap instead (see below).
 void qr_display_tap_cb(lv_event_t *e) {
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     if (ctx && ctx->show_tips) qr_display_show_toast(ctx, QR_DISPLAY_TOAST_MS_TOUCH);
+}
+
+// Touch: a tap on the full-screen backdrop (anywhere OUTSIDE the panel — QR area, gutters, or the
+// hidden X's corner) dismisses the panel instead of exiting the QR. Taps that land ON the panel are
+// swallowed by it (it's clickable), so only outside taps reach here. Cancel the pending auto-hide
+// so it doesn't later fire on an already-hidden panel; hide_toast lowers the backdrop and restores
+// the exit X.
+void qr_display_dismiss_cb(lv_event_t *e) {
+    qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
+    if (!ctx) return;
+    if (ctx->toast_timer) { lv_timer_del(ctx->toast_timer); ctx->toast_timer = NULL; }
+    qr_display_hide_toast(ctx);
 }
 
 // Touch: the brightness slider drives the gray live as it is dragged; each change also
@@ -457,9 +526,10 @@ void qr_display_cleanup_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_DELETE) return;
     qr_display_ctx_t *ctx = (qr_display_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
-    if (ctx->toast_timer) lv_timer_del(ctx->toast_timer);
-    if (ctx->pulse_timer) lv_timer_del(ctx->pulse_timer);
-    if (ctx->group)       lv_group_del(ctx->group);
+    if (ctx->toast_timer)     lv_timer_del(ctx->toast_timer);
+    if (ctx->close_btn_timer) lv_timer_del(ctx->close_btn_timer);
+    if (ctx->pulse_timer)     lv_timer_del(ctx->pulse_timer);
+    if (ctx->group)           lv_group_del(ctx->group);
     if (ctx->qr_mask)     lv_draw_buf_destroy(ctx->qr_mask);
     if (ctx->tmp)         lv_free(ctx->tmp);
     if (ctx->out)         lv_free(ctx->out);
@@ -883,7 +953,22 @@ void qr_display_screen(void *ctx_json) {
         // hardware, but touch has no keys, so it gets an affordance clear of the toast.
         lv_obj_add_flag(ctx->qr_obj, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(ctx->qr_obj, qr_display_tap_cb, LV_EVENT_CLICKED, ctx);
-        build_gutter_close_button(ctx->screen, qr_display_close_cb, ctx);
+        ctx->close_btn = build_gutter_close_button(ctx->screen, qr_display_close_cb, ctx);
+
+        // Full-screen transparent tap-catcher for dismissing the brightness/density panel. Built
+        // hidden; qr_display_show_toast raises it UNDER the panel and hides the X, so while the
+        // panel is up a tap anywhere outside it lands here and dismisses (qr_display_dismiss_cb)
+        // rather than re-raising the panel or exiting the QR. Clickable by default (base lv_obj);
+        // it stays above the QR + the hidden X but below the panel (both moved foreground on show).
+        lv_obj_t *dismiss_layer = lv_obj_create(ctx->screen);
+        lv_obj_remove_style_all(dismiss_layer);
+        lv_obj_set_size(dismiss_layer, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_pos(dismiss_layer, 0, 0);
+        lv_obj_set_style_bg_opa(dismiss_layer, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_remove_flag(dismiss_layer, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(dismiss_layer, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_event_cb(dismiss_layer, qr_display_dismiss_cb, LV_EVENT_CLICKED, ctx);
+        ctx->dismiss_layer = dismiss_layer;
     }
 
     // --- Load ---
