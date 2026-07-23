@@ -32,6 +32,10 @@ jobs:
     defaults:
       run:
         shell: ${{ matrix.shell }}
+    env:
+      # ccache's cache dir (persisted by actions/cache below) on the Linux + macOS legs; ci.sh
+      # routes cmake through ccache. Unused on Windows/MSYS2 (ccache not installed there).
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
       - name: Setup MSYS2
@@ -59,12 +63,32 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
-        run: brew install sdl2 sdl2_ttf imagemagick
+        run: brew install sdl2 sdl2_ttf imagemagick ccache
+
+      # Cache C/C++ object files (ccache) on Linux + macOS so unchanged LVGL + screen sources
+      # aren't recompiled every run; ccache is installed with the deps above and ci.sh routes
+      # cmake through it. The Windows/MSYS2 leg is intentionally left uncached — its MinGW
+      # toolchain would need msys2-native ccache (a separate setup); it just builds without one.
+      # First-party actions/cache only — no repo write token. Unique per-run key + prefix
+      # restore-keys so the post-job save is never skipped (which would freeze the cache).
+      - name: Restore ccache
+        if: matrix.platform != 'windows'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-screen-runner-${{ matrix.platform }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-screen-runner-${{ matrix.platform }}-
 
       - name: Build
         run: |
           scripts/ci/ci.sh build-screen-runner \
             ${{ matrix.platform == 'windows' && '-G Ninja' || '' }}
+
+      # Surface cache hit/miss counts — a dead cache is otherwise invisible.
+      - name: ccache stats
+        if: matrix.platform != 'windows'
+        run: ccache -s
 
       - name: Package artifact
         run: scripts/ci/ci.sh package-screen-runner artifact

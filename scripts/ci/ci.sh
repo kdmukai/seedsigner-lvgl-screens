@@ -16,6 +16,17 @@ fi
 # Portable CPU count (nproc is Linux-only; macOS uses sysctl).
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 
+# Optional ccache compiler launcher. When ccache is on PATH — the CI build jobs install
+# it and persist its cache across runs — route every cmake C/C++ compile through it, so
+# unchanged translation units (most of the LVGL submodule + the screens) are served from
+# cache instead of recompiled. A no-op when ccache isn't installed, so local dev builds
+# are unchanged. The `+`-guard on the array expansion keeps it safe under `set -u` even on
+# the empty array (macOS ships bash 3.2), matching the existing `${@+"$@"}` idiom below.
+CCACHE_CMAKE_ARGS=()
+if command -v ccache >/dev/null 2>&1; then
+  CCACHE_CMAKE_ARGS=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
+
 # Allow system-wide pip installs in externally-managed environments (PEP 668).
 # The bare `ubuntu:24.04` Docker image GitLab/Codeberg/Forgejo run in ships
 # Python 3.12 with the EXTERNALLY-MANAGED marker, which makes our `pip3 install`
@@ -40,13 +51,14 @@ case "$COMMAND" in
     # repo's pinned GHCR toolchain image (Docker, preinstalled on runners), so NO shaping
     # toolchain (uharfbuzz/PyICU) is installed here.
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libpng-dev imagemagick rsync python3 python3-pip
+    $SUDO apt-get install -y cmake build-essential ccache libpng-dev imagemagick rsync python3 python3-pip
     ;;
 
   build-screenshots)
     cmake -S tools/apps/screenshot_generator -B tools/apps/screenshot_generator/build \
       -DCMAKE_BUILD_TYPE=Release \
-      -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320
+      -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
+      ${CCACHE_CMAKE_ARGS[@]+"${CCACHE_CMAKE_ARGS[@]}"}
     cmake --build tools/apps/screenshot_generator/build -j"$NPROC"
     ;;
 
@@ -105,13 +117,14 @@ case "$COMMAND" in
 
   install-screen-runner-deps)
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libsdl2-dev libsdl2-ttf-dev imagemagick
+    $SUDO apt-get install -y cmake build-essential ccache libsdl2-dev libsdl2-ttf-dev imagemagick
     ;;
 
   build-screen-runner)
     cmake -S tools/apps/screen_runner -B tools/apps/screen_runner/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DDISPLAY_WIDTH=480 -DDISPLAY_HEIGHT=320 \
+      ${CCACHE_CMAKE_ARGS[@]+"${CCACHE_CMAKE_ARGS[@]}"} \
       ${@+"$@"}
     cmake --build tools/apps/screen_runner/build -j"$NPROC"
     ;;
@@ -186,7 +199,7 @@ PY
     # repo's GHCR image (Docker, preinstalled), so no i18n shaping toolchain here — just cmake +
     # compiler to build the test, plus rsync to stage the built packs.
     $SUDO apt-get update
-    $SUDO apt-get install -y cmake build-essential libpng-dev rsync python3 python3-pip
+    $SUDO apt-get install -y cmake build-essential ccache libpng-dev rsync python3 python3-pip
     ;;
 
   test-runner-core)
@@ -197,7 +210,8 @@ PY
     SCENARIOS="${1:-tools/scenarios/scenarios.json}"
     cmake -S tools/apps/runner_core/test -B tools/apps/runner_core/test/build \
       -DCMAKE_BUILD_TYPE=Release \
-      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240
+      -DDISPLAY_WIDTH=240 -DDISPLAY_HEIGHT=240 \
+      ${CCACHE_CMAKE_ARGS[@]+"${CCACHE_CMAKE_ARGS[@]}"}
     cmake --build tools/apps/runner_core/test/build -j"$NPROC"
     ./tools/apps/runner_core/test/build/test_runner_core "$SCENARIOS"
     ;;

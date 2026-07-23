@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      # ccache's cache dir (persisted by actions/cache below); ci.sh routes cmake through ccache.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - name: Checkout with submodules
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -60,6 +63,21 @@ jobs:
 
       - name: Install screenshot dependencies
         run: scripts/ci/ci.sh install-screenshot-deps
+
+      # Cache C/C++ object files (ccache) for the screenshot_gen build; ccache is installed with
+      # the deps above and ci.sh routes cmake through it. Gated to non-PR events to match the
+      # compile step below — the gallery build only runs on push/dispatch, so there's nothing to
+      # cache on PRs. The WASM web-runner build is not ccache'd (emsdk is cached separately above).
+      # First-party actions/cache only — no repo write token. Unique per-run key + prefix
+      # restore-keys so the post-job save is never skipped (which would freeze the cache).
+      - name: Restore ccache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-pages-${{ github.run_id }}
+          restore-keys: |
+            ccache-pages-
 
       # Build the packs + localized scenarios the gallery renders, from the pinned
       # language-packs checkout (packs build inside its GHCR toolchain image; scenarios
@@ -83,6 +101,11 @@ jobs:
         run: |
           scripts/ci/ci.sh build-screenshots
           scripts/ci/ci.sh generate-screenshots
+
+      # Surface cache hit/miss counts — a dead cache is otherwise invisible.
+      - name: ccache stats
+        if: github.event_name != 'pull_request'
+        run: ccache -s
 
       - name: Setup Emscripten
         uses: emscripten-core/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021  # v14

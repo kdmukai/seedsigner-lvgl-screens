@@ -21,6 +21,9 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    env:
+      # ccache's cache dir (persisted by actions/cache below); ci.sh routes cmake through ccache.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -39,6 +42,20 @@ jobs:
       - name: Install dependencies
         run: scripts/ci/ci.sh install-runner-core-test-deps
 
+      # Cache C/C++ object files (ccache) so unchanged LVGL + screen sources aren't recompiled
+      # every run; ccache is installed with the deps above and ci.sh routes cmake through it.
+      # First-party actions/cache only — read/write to the Actions cache, no repo write token,
+      # preserving the read-only posture above. Unique per-run key + prefix restore-keys:
+      # actions/cache skips the post-job save on an exact-key hit, which would freeze the cache
+      # after first save; a fresh key each run always saves, and restore-keys pulls the newest.
+      - name: Restore ccache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-runner-core-test-${{ github.run_id }}
+          restore-keys: |
+            ccache-runner-core-test-
+
       # The test loads the packs (lang-packs/ — zh/hi/ru … among the curated pack_locales)
       # to verify the font dedup + retire/reap lifecycle across scripts. Built in-run from
       # the pinned language-packs checkout, inside its GHCR toolchain image. Full language
@@ -50,3 +67,8 @@ jobs:
 
       - name: Build and run headless runner_core test
         run: scripts/ci/ci.sh test-runner-core
+
+      # Surface cache hit/miss counts — a dead cache is otherwise invisible.
+      - name: ccache stats
+        if: always()
+        run: ccache -s
