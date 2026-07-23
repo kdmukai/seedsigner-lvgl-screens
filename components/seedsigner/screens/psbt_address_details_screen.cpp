@@ -33,9 +33,10 @@
 //   address                    (string, required)     the full destination address.
 //   button_list                (array, required, non-empty)  the localized action
 //            buttons (Python: "Next").
-//   network                    (string, optional)     device network code ("M"/"T"/"R"),
-//            consulted only when the address format alone cannot pick the accent
-//            color; resolve_address_network also honors btc_amount.network as an echo.
+//   network                    (string, optional)     device network code ("M"/"T"/"R");
+//            selects the address head/tail accent color via network_color()
+//            (absent → mainnet "M"). Per D-6 the host decides the network; the screen
+//            does no address parsing.
 //   initial_selected_index     (int, optional)        overrides the default initial
 //            focus of 0 (navigation layer; Python selected_button).
 //   input.mode                 (string, optional)     "touch" | "hardware" input-mode
@@ -49,7 +50,7 @@
 #include "seedsigner.h"       // psbt_address_details_screen decl
 #include "components.h"       // formatted_address + formatted_address_opts_t, SEEDSIGNER_ICON_COLOR_DEFAULT
 #include "gui_constants.h"    // COMPONENT_PADDING, EDGE_PADDING
-#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, btc_amount_from_cfg, network_color, resolve_address_network
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, btc_amount_from_cfg, network_color
 
 #include "lvgl.h"             // lv_obj flex/style setters + lv_display_get_horizontal_resolution
 
@@ -120,14 +121,16 @@ void psbt_address_details_screen(void *ctx_json) {
 
     // 2. Fully-wrapped destination address (Python: FormattedAddress with no line
     //    cap) at Python's column width (display width minus the two edge paddings).
-    //    The verifiable head/tail runs carry the network accent color; the network
-    //    is resolved from the address format itself, falling back to the cfg setting.
+    //    The verifiable head/tail runs carry the NETWORK accent color. Per D-6 the
+    //    HOST decides the network and passes cfg["network"]; the screen owns the
+    //    palette via network_color() and never infers the network from the address.
+    //    Absent network defaults to mainnet.
     const int32_t display_width = lv_display_get_horizontal_resolution(NULL);
     formatted_address_opts_t address_opts = {};
     address_opts.address      = address.c_str();
     address_opts.width        = display_width - 2 * EDGE_PADDING;
     address_opts.max_lines    = 0;                                                       // wrap to as many lines as needed
-    address_opts.accent_color = network_color(resolve_address_network(cfg, address));   // head/tail = network color
+    address_opts.accent_color = network_color(cfg.value("network", std::string("M")));  // head/tail = network accent
     address_opts.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;                           // -> LABEL_FONT_COLOR (gray prefix + middle)
     formatted_address(screen.upper_body, &address_opts);
 

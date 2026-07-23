@@ -112,11 +112,10 @@ void balance_wrapped_label_column(lv_obj_t *label);
 // Shared by the psbt_overview / psbt_address_details / psbt_change_details screen
 // files (definitions in screen_helpers.cpp).
 
-// Map a network name ("mainnet"/"testnet"/"regtest") to its accent color.
+// Map a network code ("M"/"T"/"R", the standardized host contract; long names also
+// tolerated for legacy scenarios) to its accent color. Per D-6 the host supplies the
+// network; screens never infer it from an address.
 uint32_t network_color(const std::string &net);
-
-// Resolve the effective network for an address (cfg override, else address prefix).
-std::string resolve_address_network(const nlohmann::json &cfg, const std::string &address);
 
 // Build the send-amount headline (coin icon + amount) from cfg["btc_amount"].
 lv_obj_t *btc_amount_from_cfg(lv_obj_t *parent, const nlohmann::json &j);

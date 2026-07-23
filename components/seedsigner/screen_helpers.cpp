@@ -613,50 +613,6 @@ uint32_t network_color(const std::string &net) {
 }
 
 
-// The device's configured Network ("M"/"T"/"R"), from top-level cfg["network"] or echoed
-// on cfg["btc_amount"]; empty if the host didn't provide it. (The legacy long names are
-// also honored by network_color downstream.)
-static std::string network_setting(const json &cfg) {
-    if (cfg.contains("network") && cfg["network"].is_string()) {
-        return cfg["network"].get<std::string>();
-    }
-    if (cfg.contains("btc_amount") && cfg["btc_amount"].is_object() &&
-        cfg["btc_amount"].contains("network") && cfg["btc_amount"]["network"].is_string()) {
-        return cfg["btc_amount"]["network"].get<std::string>();
-    }
-    return "";
-}
-
-
-// Resolve which network to COLOR a PSBT address by, as a Python network code ("M"/"T"/"R").
-// The address FORMAT is prioritized over the device's Network setting: an unambiguous
-// prefix decides outright, so a mainnet address on a regtest-configured device still reads
-// as mainnet — a useful "this isn't the network you think" signal — rather than being
-// recolored to match the setting. Only mainnet (bc1/1/3) and regtest (bcrt1) are
-// unambiguous; tb1 is testnet-or-signet (no separate signet marker → testnet). The base58
-// m/n/2 prefixes are shared by testnet/signet/regtest — knowing only that they are NOT
-// mainnet, the device setting disambiguates testnet vs regtest, and an absent (or a
-// disagreeing mainnet) setting defaults to testnet (the common case).
-std::string resolve_address_network(const json &cfg, const std::string &address) {
-    if (address.rfind("bcrt1", 0) == 0) return "R";
-    if (address.rfind("bc1",  0) == 0)  return "M";
-    if (address.rfind("tb1",  0) == 0)  return "T";
-    if (!address.empty()) {
-        char c = address[0];
-        if (c == '1' || c == '3') return "M";
-        if (c == 'm' || c == 'n' || c == '2') {
-            std::string s = network_setting(cfg);
-            if (s == "R" || s == "regtest") return "R";
-            if (s == "T" || s == "testnet") return "T";
-            return "T";   // absent, or a mainnet setting that disagrees with the format
-        }
-    }
-    // Unrecognized format: defer to the device setting, else mainnet.
-    std::string s = network_setting(cfg);
-    return s.empty() ? "M" : s;
-}
-
-
 // Build a components.btc_amount from a cfg object: maps network -> icon color (an
 // explicit icon_color hex overrides) and forwards the host-formatted display strings.
 // Shared by every amount-showing screen (PSBT overview / detail / change).
@@ -671,7 +627,7 @@ lv_obj_t *btc_amount_from_cfg(lv_obj_t *parent, const json &j) {
     o.unit          = unit.empty() ? nullptr : unit.c_str();
     o.primary_small = j.value("primary_small", false);
 
-    o.icon_color = network_color(j.value("network", std::string("mainnet")));
+    o.icon_color = network_color(j.value("network", std::string("M")));
     if (j.contains("icon_color") && j["icon_color"].is_string()) {
         o.icon_color = parse_hex_color(j["icon_color"].get<std::string>());
     }

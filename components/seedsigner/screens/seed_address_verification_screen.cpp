@@ -53,10 +53,10 @@
 //            "<sig_type> - <script_type>[ (<network>)]" line (the host/View
 //            composes it from the localized sig-type, script-type, and network
 //            display names).
-//   network                   (string, default "mainnet")  selects the address
-//            head/tail accent color; this screen recognizes the long names
-//            "mainnet"/"testnet"/"regtest" only (see the reserved-mapping note
-//            in the body).
+//   network                   (string, default "M")   selects the address head/tail
+//            accent color via the shared network_color(): the standardized host
+//            contract is the Python network code "M"/"T"/"R" (long names are also
+//            tolerated for legacy scenarios). No address parsing (D-6).
 //   progress_text             (string, default "")   initial progress line; the
 //            empty default renders blank until the first host push — a live-push
 //            contract, not missing content (the host worker owns the text).
@@ -75,8 +75,8 @@
 #include "screen_scaffold.h"  // parse_screen_json_ctx / create_top_nav_screen_scaffold / bind_screen_navigation / load_screen_and_cleanup_previous
 #include "seedsigner.h"       // seed_address_verification_screen + seed_address_verification_set_progress decls, screen_scaffold_t, text_top_leading
 #include "components.h"       // formatted_address + formatted_address_opts_t, SEEDSIGNER_ICON_COLOR_DEFAULT
-#include "gui_constants.h"    // COMPONENT_PADDING, EDGE_PADDING, ACCENT_COLOR, TESTNET_COLOR, REGTEST_COLOR, BODY_FONT, BODY_FONT_COLOR, LABEL_FONT_COLOR, KEYBOARD_FONT, seedsigner_latin_font
-#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title
+#include "gui_constants.h"    // COMPONENT_PADDING, EDGE_PADDING, BODY_FONT, BODY_FONT_COLOR, LABEL_FONT_COLOR, KEYBOARD_FONT, seedsigner_latin_font
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, network_color
 
 #include "lvgl.h"             // lv_label + per-object style setters, lv_font glyph metrics
 
@@ -185,18 +185,12 @@ void seed_address_verification_screen(void *ctx_json) {
     // the descender-padded container height — see the type-line margin note below.
     lv_obj_set_style_pad_row(screen.upper_body, 0, LV_PART_MAIN);
 
-    // Network accent color for the address head/tail highlight. Python colors the
-    // verifiable chars by network (components.py get_address_..): mainnet -> ACCENT
-    // (orange), testnet -> TESTNET_COLOR (green), regtest -> REGTEST_COLOR (cyan). The
-    // host passes cfg["network"]; default mainnet. (The prefix + middle stay gray.)
-    // NOTE: this inline mapping recognizes the LONG network names only, unlike the
-    // shared network_color()/resolve_address_network() helpers ("M"/"T"/"R" codes +
-    // address-prefix inference) — slated for shared-helper migration once that
-    // behavior divergence is adjudicated.
-    std::string network = cfg.value("network", std::string("mainnet"));
-    uint32_t net_color = ACCENT_COLOR;
-    if      (network == "testnet") net_color = (uint32_t)TESTNET_COLOR;
-    else if (network == "regtest") net_color = (uint32_t)REGTEST_COLOR;
+    // Network accent color for the address head/tail highlight (the prefix + middle
+    // stay gray). Per D-6 the HOST decides the network and passes cfg["network"]; the
+    // screen owns the palette via the shared network_color() helper (it accepts both
+    // the long names and the "M"/"T"/"R" codes). No address parsing — the screen never
+    // infers the network from the address. Absent network defaults to mainnet.
+    uint32_t net_color = network_color(cfg.value("network", std::string("M")));
 
     // 1. FormattedAddress — reuses the shared formatted_address AS-IS (its
     //    bech32/base58 prefix-gray + next-7-accent styling is the accepted repo

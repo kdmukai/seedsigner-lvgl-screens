@@ -69,7 +69,7 @@
 #include "seedsigner.h"       // seed_sign_message_confirm_address_screen decl, screen_scaffold_t fields
 #include "components.h"       // icon_text_line + icon_text_line_opts_t, formatted_address + formatted_address_opts_t, SEEDSIGNER_ICON_COLOR_DEFAULT
 #include "gui_constants.h"    // COMPONENT_PADDING, EDGE_PADDING, INFO_COLOR, SeedSignerIconConstants
-#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, network_color
 
 #include "lvgl.h"             // upper_body flex/margin setters + lv_display_get_horizontal_resolution
 
@@ -165,15 +165,16 @@ void seed_sign_message_confirm_address_screen(void *ctx_json) {
     //    fixed-width, wrapped form (Python: FormattedAddress, max_lines=3). Width
     //    is the body's inner column (full display minus the scaffold's edge
     //    padding), so the wrapped block centers on-screen exactly as
-    //    psbt_address_details_screen's does. The accent stays the component's
-    //    mainnet-orange default — cfg["network"] is not consulted (see the
-    //    banner); the host derives the address.
+    //    psbt_address_details_screen's does. Head/tail carry the NETWORK accent per
+    //    D-6: the HOST decides the network and passes cfg["network"]; the screen owns
+    //    the palette via network_color() and never infers the network from the
+    //    address. Absent network defaults to mainnet.
     const int32_t display_width = lv_display_get_horizontal_resolution(NULL);
     formatted_address_opts_t address_opts = {};
     address_opts.address      = address.c_str();
     address_opts.width        = display_width - 2 * EDGE_PADDING;
     address_opts.max_lines    = 3;                                          // Python max_lines = 3
-    address_opts.accent_color = SEEDSIGNER_ICON_COLOR_DEFAULT;              // -> ACCENT_COLOR (mainnet orange)
+    address_opts.accent_color = network_color(cfg.value("network", std::string("M")));  // head/tail = network accent
     address_opts.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;              // -> LABEL_FONT_COLOR (gray)
     lv_obj_t *address_block = formatted_address(screen.upper_body, &address_opts);
     // Double gap below the derivation line (Python: + 2*COMPONENT_PADDING).

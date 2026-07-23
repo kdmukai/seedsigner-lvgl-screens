@@ -79,7 +79,7 @@
 #include "components.h"       // formatted_address + formatted_address_opts_t, SEEDSIGNER_ICON_COLOR_DEFAULT
 #include "gui_constants.h"    // EDGE_PADDING, COMPONENT_PADDING, SUCCESS_COLOR, BODY_FONT, BODY_FONT_COLOR, KEYBOARD_FONT, ICON_PRIMARY_SCREEN_FONT__SEEDSIGNER, SeedSignerIconConstants
 #include "navigation.h"       // NAV_INDEX_NONE
-#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title
+#include "screen_helpers.h"   // ensure_top_nav_structure, require_top_nav_title, network_color
 
 #include "lvgl.h"             // labels, per-object style setters, lv_font glyph metrics
 
@@ -186,15 +186,18 @@ void seed_address_verification_success_screen(void *ctx_json) {
     // 3. FormattedAddress — reuses the shared component AS-IS (its prefix-gray +
     //    next-7-accent styling is the repo standard). ABBREVIATED to one line
     //    (max_lines = 1): head highlight + as much middle as fits, then a gray "..."
-    //    up to the highlighted last-7. Mainnet ACCENT (orange) head/tail, matching
-    //    Python (this screen does NOT network-tint — see the banner). Width is the
-    //    body's inner column (display minus the two edge paddings). Python's gap below
-    //    the headline is COMPONENT_PADDING.
+    //    up to the highlighted last-7. Head/tail carry the NETWORK accent so
+    //    testnet/regtest read distinctly, mirroring the progress screen. Per D-6 the
+    //    HOST decides the network and passes cfg["network"]; the screen owns the
+    //    palette via network_color() and never infers the network from the address.
+    //    Absent network defaults to mainnet (unchanged look until the host supplies it).
+    //    Width is the body's inner column (display minus the two edge paddings);
+    //    Python's gap below the headline is COMPONENT_PADDING.
     formatted_address_opts_t address_opts = {};
     address_opts.address      = address.c_str();
     address_opts.width        = display_width - 2 * EDGE_PADDING;
     address_opts.max_lines    = 1;                                 // abbreviated head…"..."tail
-    address_opts.accent_color = SEEDSIGNER_ICON_COLOR_DEFAULT;     // -> ACCENT_COLOR (mainnet orange), Python-faithful
+    address_opts.accent_color = network_color(cfg.value("network", std::string("M")));  // head/tail = network accent
     address_opts.base_color   = SEEDSIGNER_ICON_COLOR_DEFAULT;     // -> LABEL_FONT_COLOR (gray prefix + middle)
     lv_obj_t *address_block = formatted_address(screen.upper_body, &address_opts);
     lv_obj_set_style_margin_top(address_block, COMPONENT_PADDING, LV_PART_MAIN);
