@@ -193,8 +193,24 @@ typedef enum {
 void io_test_screen(void *ctx_json);
 
 // Reflect the camera capture phase (the host's async single-frame grab): show/hide the
-// "Capturing…" band and toggle the KEY2 "Clear" label. Safe no-op when inactive.
+// "Capturing…" band and toggle the KEY2 "Clear" label. IO_TEST_CAPTURE_IDLE (the "Clear"
+// / initial state) also re-hides the captured still. Safe no-op when inactive.
 void io_test_set_capture_state(io_test_capture_state_t state);
+
+// io_test owns a host-blitted RGB565 pixel plane behind its chrome (the owned-plane model
+// of seedsigner-raspi-lvgl camera_preview.cpp). The plane is a CENTERED SQUARE whose side
+// is the display's short dimension; the host CENTER-CROPS its (rotated / non-square) camera
+// frame to that square and blits it. This is the Pi/ESP camera-square for the I/O self-test.
+//
+// Report the exact square side the host must produce (width == height). Both out-params are
+// set to 0 when no io_test_screen is currently active.
+void io_test_get_camera_plane_dims(int *width, int *height);
+
+// Blit a host-captured RGB565 still into the pixel plane and reveal it. `rgb565` must be
+// exactly side*side*2 bytes (see io_test_get_camera_plane_dims); a size mismatch or the
+// no-active-screen case is a silent no-op. Copies into the plane's stable buffer and
+// invalidates. Cleared (hidden) again by io_test_set_capture_state(IO_TEST_CAPTURE_IDLE).
+void io_test_blit_camera(const uint8_t *rgb565, size_t nbytes);
 
 // Push the next frame into a live qr_display_screen (host-driven animation, mirroring
 // the camera-overlay set_* live-update pattern). Re-encodes + repaints the QR in place
