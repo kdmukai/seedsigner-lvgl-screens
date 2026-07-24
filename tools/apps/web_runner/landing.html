@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeedSigner LVGL Screens</title>
+<!--
+  The Pages landing page (deployed to /). A tiny committed static file — no build — that
+  fronts the two interactive apps so neither is hidden behind the other:
+    /gallery/  → the on-the-fly screen gallery (every screen, one language × one resolution)
+    /play/     → the interactive screen playground (one screen, live JSON, hardware controls)
+  assemble-site (scripts/ci/ci.sh) copies this to the site root. See docs/web-gallery-todo.md.
+-->
+<style>
+  :root {
+    --bg: #121212; --panel: #1a1a1a; --line: #303030; --text: #e8e8e8;
+    --dim: #9a9a9a; --accent: #ff9f0a; --blue: #3d6b8c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 56px 20px 40px; }
+  .brand { color: var(--accent); font-weight: 700; font-size: 24px; letter-spacing: .01em; }
+  h1 { font-size: 30px; margin: 18px 0 6px; }
+  .sub { color: var(--dim); font-size: 17px; line-height: 1.55; margin: 0 0 36px; max-width: 640px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  a.card { display: flex; flex-direction: column; gap: 10px; text-decoration: none; color: inherit;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px;
+    transition: border-color .15s ease, transform .15s ease; }
+  a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  a.card .icon { font-size: 30px; }
+  a.card h2 { margin: 0; font-size: 20px; }
+  a.card h2 .arrow { color: var(--accent); }
+  a.card p { margin: 0; color: var(--dim); font-size: 15px; line-height: 1.5; }
+
+  footer { color: var(--dim); font-size: 13.5px; margin-top: 40px; line-height: 1.6; }
+  footer a { color: var(--blue); }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">SeedSigner</div>
+  <h1>LVGL Screens</h1>
+  <p class="sub">Portable C/C++ screen implementations for SeedSigner, rendered live in your
+    browser with the real LVGL engine (WASM) &mdash; the same screens that run on the ESP32-P4
+    and Raspberry&nbsp;Pi&nbsp;Zero.</p>
+
+  <div class="cards">
+    <a class="card" href="gallery/">
+      <span class="icon">🖼️</span>
+      <h2>Gallery <span class="arrow">&rarr;</span></h2>
+      <p>Every screen at a glance. Pick a language and a device resolution; the whole scenario
+        corpus renders on the fly. Click any screen to download it as a PNG.</p>
+    </a>
+    <a class="card" href="play/">
+      <span class="icon">🎛️</span>
+      <h2>Playground <span class="arrow">&rarr;</span></h2>
+      <p>Drive one screen interactively &mdash; edit its JSON live, switch language and
+        resolution, and use the on-screen hardware controls (joystick + KEY1&ndash;3).</p>
+    </a>
+  </div>
+
+  <footer>
+    Built from <a href="https://github.com/kdmukai/seedsigner-lvgl-screens">seedsigner-lvgl-screens</a>.
+    Both apps share one WASM/LVGL engine and one set of scenario + language assets.
+  </footer>
+</main>
+</body>
+</html>

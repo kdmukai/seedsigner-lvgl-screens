@@ -203,6 +203,7 @@
           </select>
         </label>
       </div>
+      <button id="dl-btn" title="Download this screen as a PNG (for a PR / issue)">⬇ PNG</button>
       <button id="fs-btn">Fullscreen</button>
     </div>
 
@@ -357,6 +358,13 @@
     app.loadStaged = Module.cwrap('ss_load_staged', 'number', ['string']);
     // Locale picker: stage one endonym image per image row, keyed by (locale, file).
     app.stageEndonym = Module.cwrap('ss_stage_endonym', null, ['string', 'string', 'number', 'number']);
+    // Framebuffer capture (download-PNG button): current size + a byte offset to the
+    // RGB565 plane in the WASM heap. JS expands it to RGBA on an offscreen 2D canvas —
+    // the live WebGL canvas can't be toBlob()'d (returns black without preserveDrawingBuffer).
+    app.getWidth       = Module.cwrap('ss_get_width', 'number', []);
+    app.getHeight      = Module.cwrap('ss_get_height', 'number', []);
+    app.getFramebuffer = Module.cwrap('ss_get_framebuffer', 'number', []);
+    app.renderNow      = Module.cwrap('ss_render_now', null, []);
     app.ready = true;
     relayout();
     initUI();
@@ -551,6 +559,62 @@
       document.getElementById('dpad').classList.toggle('hidden', app.isTouch);
       document.getElementById('sidekeys').classList.toggle('hidden', app.isTouch);
       relayout();
+    }
+
+    // ---- Framebuffer capture → PNG download ----
+    // The shared capture primitive (same one the web gallery grids): read the RGB565
+    // framebuffer straight from the WASM heap and expand it to RGBA on an offscreen 2D
+    // canvas, using the EXACT shift the SDL present uses (runner_sdl.cpp) so the file
+    // matches the on-screen pixels. `rotateCW` presents portrait-authored screens 90° CW
+    // into a landscape canvas, mirroring frame()'s SDL_RenderCopyEx. Returns the canvas.
+    function paintFramebuffer(rotateCW) {
+      var w = app.getWidth(), h = app.getHeight();
+      var ptr = app.getFramebuffer();                       // byte offset into the WASM heap
+      // Re-view HEAPU16 at call time — memory growth swaps the backing ArrayBuffer.
+      var fb = new Uint16Array(Module.HEAPU16.buffer, ptr, w * h);
+      var img = new ImageData(w, h), d = img.data;
+      for (var i = 0, p = 0; i < w * h; i++, p += 4) {
+        var c = fb[i];
+        d[p]     = (c >> 11) << 3;          // R: top 5 bits
+        d[p + 1] = ((c >> 5) & 0x3F) << 2;  // G: middle 6 bits
+        d[p + 2] = (c & 0x1F) << 3;         // B: low 5 bits
+        d[p + 3] = 255;
+      }
+      var src = document.createElement('canvas');
+      src.width = w; src.height = h;
+      src.getContext('2d').putImageData(img, 0, 0);
+      if (!rotateCW) return src;
+      // Rotate the native-portrait plane 90° CW onto a landscape canvas (dims swap).
+      var out = document.createElement('canvas');
+      out.width = h; out.height = w;
+      var ctx = out.getContext('2d');
+      ctx.translate(out.width / 2, out.height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(src, -w / 2, -h / 2);
+      return out;
+    }
+    // Whether the current scenario is portrait-authored (presented rotated) — the same
+    // flag render() applies via ss_set_present_rotation.
+    function currentRotate() {
+      var idx = parseInt(scenSel.value, 10) || 0;
+      var entry = (catalog[screenSel.value] || [])[idx];
+      return !!(entry && entry.rotate);
+    }
+    function downloadPng() {
+      if (!app.ready || !app.getFramebuffer) return;
+      if (app.renderNow) app.renderNow();   // settle to a fully-painted frame first
+      var canvas = paintFramebuffer(currentRotate());
+      var name = [screenSel.value || 'screen', currentScenarioName() || 'default',
+                  resSel.value, app.locale].filter(Boolean).join('__')
+                 .replace(/[^0-9A-Za-z_.-]+/g, '_');
+      canvas.toBlob(function (blob) {
+        if (!blob) { setError('PNG capture failed.', false); return; }
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name + '.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      }, 'image/png');
     }
 
     // ---- Deep-link state ----
@@ -756,6 +820,7 @@
     document.getElementById('fs-btn').addEventListener('click', function () {
       isFullscreen() ? exitFullscreen() : enterFullscreen();
     });
+    document.getElementById('dl-btn').addEventListener('click', downloadPng);
     document.getElementById('fs-exit').addEventListener('click', exitFullscreen);
     document.addEventListener('fullscreenchange', relayout);
     document.addEventListener('webkitfullscreenchange', relayout);

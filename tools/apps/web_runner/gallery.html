@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeedSigner LVGL Screen Gallery</title>
+<!--
+  web_gallery — on-the-fly, in-browser render of the WHOLE scenario corpus at one
+  language × one resolution. It is a SECOND SHELL over the exact same WASM engine the
+  interactive playground uses: it loads index.js / index.wasm (built from web_runner.cpp)
+  and drives the same ss_* C API, sharing the same assets/ (scenario catalogs + font
+  packs). No separate build — see docs/web-gallery-todo.md.
+
+  Why the browser is never overwhelmed: you only ever materialize ONE slice
+  (one language × one resolution ≈ 140–160 renders). Resolution is a pure runtime
+  switch; language is a tiny JSON swap. The ~12k-PNG pre-render matrix is gone.
+
+  How each cell is produced: expand the scenario's context client-side → ss_load_screen
+  (ticks + renders synchronously) → read the RGB565 framebuffer straight from the WASM
+  heap → expand to RGBA on an offscreen 2D canvas → drop that canvas into the grid at
+  native device size. Click a cell to download it as a PNG (for a PR / issue).
+-->
+<style>
+  :root {
+    --bg: #121212; --panel: #1a1a1a; --panel2: #222; --line: #303030;
+    --text: #e8e8e8; --dim: #9a9a9a; --accent: #ff9f0a; --err: #e0533d; --ok: #4f9e54;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 16px; }
+
+  header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 10; }
+  header .brand { color: var(--accent); font-weight: 700; font-size: 18px; }
+  header .rest { color: var(--dim); font-size: 15px; margin-right: auto; }
+  header a { color: var(--dim); text-decoration: none; border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+  header a:hover { border-color: #555; color: var(--text); }
+
+  label { font-size: 14px; color: var(--dim); display: flex; flex-direction: column; gap: 3px; }
+  select { font: inherit; color: var(--text); background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 130px; }
+
+  #status { padding: 8px 16px; font-size: 14px; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  #status.err { color: var(--err); }
+
+  /* The grid: auto-fill columns wide enough for one device screen at native size.
+     Device resolutions are already small, so cells present 1:1 (no thumbnailing). */
+  #grid { display: grid; gap: 16px; padding: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(var(--cell-w, 260px), max-content)); }
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+    align-items: center; }
+  figure canvas { display: block; image-rendering: pixelated; background: #000;
+    border-radius: 3px; cursor: pointer; }
+  figure.err { outline: 1px solid var(--err); }
+  figcaption { font-size: 12.5px; line-height: 1.35; text-align: center; word-break: break-word; }
+  figcaption .screen { color: var(--text); font-weight: 600; }
+  figcaption .scenario { color: var(--dim); font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+  /* Off-screen host canvas for the SDL/WebGL engine. It renders here; we never look at
+     it — every visible cell is painted from the RGB565 framebuffer instead. */
+  #engine-holder { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px;
+    overflow: hidden; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">SeedSigner</span>
+  <span class="rest">LVGL Screen Gallery &mdash; every screen, rendered live</span>
+  <label>Language
+    <!-- Pre-seeded with English so the selector shows a sensible default from the first
+         paint (never a blank <select> during the locales.json fetch); loadLocales() clears
+         and repopulates it with the full list once that arrives, keeping English selected. -->
+    <select id="locale-select"><option value="en" selected>English</option></select>
+  </label>
+  <label>Resolution
+    <select id="res-select">
+      <option value="240x240">240 × 240</option>
+      <option value="320x240">320 × 240</option>
+      <option value="480x320">480 × 320</option>
+      <option value="800x480">800 × 480</option>
+    </select>
+  </label>
+  <a href="index.html" title="Open the interactive playground">Playground &rarr;</a>
+</header>
+
+<div id="status">Loading engine&hellip;</div>
+<div id="grid"></div>
+
+<div id="engine-holder"><canvas id="engine-canvas" oncontextmenu="event.preventDefault()"></canvas></div>
+
+<script type="text/javascript">
+  // ---- App state ----
+  var app = {
+    ready: false,
+    locale: 'en',
+    displayW: 240, displayH: 240,
+    loadScreen: null, setResolution: null, setPresentRotation: null,
+    getWidth: null, getHeight: null, getFramebuffer: null,
+    registerManifest: null, packFiles: null, stageBlob: null, stageEndonym: null, loadStaged: null,
+  };
+  // Bumped on every slice (re)render; an in-flight loop checks it and bails when
+  // superseded, so a fast dropdown change can't leave two renders interleaving.
+  var renderToken = 0;
+  // Cache-bust runtime assets per page load (GitHub Pages sets a fixed Cache-Control).
+  var ASSET_BUST = '?_=' + Date.now();
+
+  // Emscripten module config: point the engine at the OFF-SCREEN canvas (we only ever
+  // read the framebuffer, never this canvas) and pick up the ready hook.
+  var Module = {
+    canvas: document.getElementById('engine-canvas'),
+    print:    function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+  };
+
+  function setStatus(msg, isErr) {
+    var el = document.getElementById('status');
+    el.textContent = msg; el.className = isErr ? 'err' : '';
+  }
+
+  // ---- Scenario catalog (fetched per locale, expanded client-side) ----
+  // Same RFC 7396 merge-patch the C runner_core and the playground use, so a scenario /
+  // translation edit is a static-file swap with no rebuild.
+  function mergePatch(target, patch) {
+    if (patch && typeof patch === 'object' && !Array.isArray(patch)) {
+      var out = (target && typeof target === 'object' && !Array.isArray(target)) ? Object.assign({}, target) : {};
+      Object.keys(patch).forEach(function (k) {
+        if (patch[k] === null) delete out[k]; else out[k] = mergePatch(out[k], patch[k]);
+      });
+      return out;
+    }
+    return patch;
+  }
+  function slugify(name) {
+    return (name || '').replace(/[^0-9A-Za-z_]+/g, '_').replace(/^_+|_+$/g, '') || 'variation';
+  }
+  function buildCatalog(root) {
+    var cat = {};
+    Object.keys(root || {}).forEach(function (screen) {
+      var def = root[screen] || {};
+      var base = def.context || {};
+      // Tool-only screenshot.render_as_landscape: portrait-authored screens (pillarboxed
+      // scan chrome) render portrait and present 90° CW. Lives at screen level; a
+      // variation may override it via its own screenshot block.
+      var baseRotate = !!(def.screenshot && def.screenshot.render_as_landscape);
+      var entries = [{ name: '(default)', context: base, rotate: baseRotate }];
+      (def.variations || []).forEach(function (v) {
+        var rot = (v.screenshot && typeof v.screenshot.render_as_landscape === 'boolean')
+                    ? v.screenshot.render_as_landscape : baseRotate;
+        entries.push({ name: slugify(v.name || 'variation'), context: mergePatch(base, v.context || {}), rotate: rot });
+      });
+      cat[screen] = entries;
+    });
+    return cat;
+  }
+
+  // ---- Framebuffer capture (identical primitive to the playground's download button) ----
+  // Read the RGB565 plane straight from the WASM heap, expand to RGBA with the EXACT
+  // shift the SDL present uses (runner_sdl.cpp) so cells match the on-screen pixels.
+  // rotateCW presents portrait-authored screens 90° CW into a landscape canvas.
+  function paintFramebuffer(rotateCW) {
+    var w = app.getWidth(), h = app.getHeight();
+    var ptr = app.getFramebuffer();                      // byte offset into the WASM heap
+    var fb = new Uint16Array(Module.HEAPU16.buffer, ptr, w * h);  // re-view (growth-safe)
+    var img = new ImageData(w, h), d = img.data;
+    for (var i = 0, p = 0; i < w * h; i++, p += 4) {
+      var c = fb[i];
+      d[p]     = (c >> 11) << 3;          // R
+      d[p + 1] = ((c >> 5) & 0x3F) << 2;  // G
+      d[p + 2] = (c & 0x1F) << 3;         // B
+      d[p + 3] = 255;
+    }
+    var src = document.createElement('canvas');
+    src.width = w; src.height = h;
+    src.getContext('2d').putImageData(img, 0, 0);
+    if (!rotateCW) return src;
+    var out = document.createElement('canvas');
+    out.width = h; out.height = w;                        // dims swap for the 90° rotation
+    var ctx = out.getContext('2d');
+    ctx.translate(out.width / 2, out.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(src, -w / 2, -h / 2);
+    return out;
+  }
+
+  // ---- Locale packs (option B: JS pre-fetches, the shared loader orchestrates) ----
+  // Byte-for-byte the playground's applyLocaleFonts: fetch each pack file the render
+  // layer asks for (ss_pack_files), stage them all, then ss_load_staged once. Latin
+  // locales get an empty list and fall back to the compiled-in OpenSans floor.
+  var fontCache = {};     // 'locale/file' -> Uint8Array
+  var manifestDone = {};  // locale -> true once its manifest.json is fetched+registered (or 404'd)
+  var endonymCache = {};  // 'locale/file' -> Uint8Array|null (picker endonym images)
+
+  async function applyLocaleFonts(locale) {
+    if (!manifestDone[locale]) {
+      try {
+        var mresp = await fetch('assets/lang-packs/' + locale + '/manifest.json' + ASSET_BUST);
+        if (mresp.ok) {
+          var mbytes = new Uint8Array(await mresp.arrayBuffer());
+          var mptr = Module._malloc(mbytes.length);
+          Module.HEAPU8.set(mbytes, mptr);
+          app.registerManifest(mptr, mbytes.length);
+          Module._free(mptr);
+        }
+      } catch (e) { /* no manifest => baked-floor locale */ }
+      manifestDone[locale] = true;
+    }
+    var files;
+    try { files = JSON.parse(app.packFiles(locale)); } catch (e) { files = []; }
+    for (var i = 0; i < files.length; i++) {
+      var key = locale + '/' + files[i];
+      if (!fontCache[key]) {
+        var resp = await fetch('assets/lang-packs/' + locale + '/' + files[i] + ASSET_BUST);
+        if (!resp.ok) throw new Error('pack ' + files[i] + ' (' + resp.status + ')');
+        fontCache[key] = new Uint8Array(await resp.arrayBuffer());
+      }
+    }
+    // --- no awaits past this point (stage + load in one flush) ---
+    for (var j = 0; j < files.length; j++) {
+      var bytes = fontCache[locale + '/' + files[j]];
+      var ptr = Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes, ptr);
+      app.stageBlob(files[j], ptr, bytes.length);
+      Module._free(ptr);
+    }
+    app.loadStaged(locale);
+  }
+
+  // The locale picker draws each language's name from a pre-rendered endonym IMAGE
+  // (no runtime font); those blobs must be staged before the screen builds. Fetch every
+  // one the scenario references, then stage them in one flush (mirrors the playground).
+  async function stagePickerEndonyms(ctx) {
+    var rows = (ctx && ctx.rows) || [];
+    var H = app.displayH, needed = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || !row.locale || !row.image) continue;   // live-text row
+      var file = (typeof row.image === 'string') ? row.image : ('endonym_' + H + '.bin');
+      needed.push({ locale: row.locale, file: file });
+    }
+    for (var j = 0; j < needed.length; j++) {
+      var key = needed[j].locale + '/' + needed[j].file;
+      if (endonymCache[key] === undefined) {
+        var resp = await fetch('assets/lang-packs/' + needed[j].locale + '/' + needed[j].file + ASSET_BUST);
+        endonymCache[key] = resp.ok ? new Uint8Array(await resp.arrayBuffer()) : null;
+      }
+    }
+    // --- no awaits past this point ---
+    for (var k = 0; k < needed.length; k++) {
+      var bytes = endonymCache[needed[k].locale + '/' + needed[k].file];
+      if (!bytes) continue;
+      var ptr = Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes, ptr);
+      app.stageEndonym(needed[k].locale, needed[k].file, ptr, bytes.length);
+      Module._free(ptr);
+    }
+  }
+
+  // ---- Slice render ----
+  function raf() { return new Promise(function (r) { requestAnimationFrame(r); }); }
+
+  // Size the grid columns to the actual cell width (native landscape device width + the
+  // figure's padding/border) so auto-fill packs them tightly with no horizontal overflow.
+  // All cells at a given resolution present landscape, so displayW is the max.
+  function updateCellWidth() {
+    document.documentElement.style.setProperty('--cell-w', (app.displayW + 22) + 'px');
+  }
+
+  // Build one grid cell: set orientation, load the screen, paint its framebuffer into a
+  // canvas, and append it with a caption. Returns nothing; appends to #grid. Assumes
+  // fonts for app.locale are already loaded.
+  async function renderCell(fn, entry) {
+    // Orientation must be applied BEFORE the load so the screen builds in the right frame.
+    app.setPresentRotation(entry.rotate ? 1 : 0);
+    // The picker needs its endonym images staged first (async fetch).
+    if (fn === 'locale_picker_screen') {
+      try { await stagePickerEndonyms(entry.context); } catch (e) { /* fall back to live text */ }
+    }
+    // Load ticks+renders once; ss_render_now() settles the frame synchronously (one pass
+    // doesn't flush the whole framebuffer at larger sizes / for load transitions) so the
+    // full screen is painted before we capture.
+    var rc;
+    try {
+      rc = app.loadScreen(fn, JSON.stringify(entry.context));
+      if (rc === 1) app.renderNow();
+    } catch (e) { rc = -1; }
+    var canvas = (rc === 1) ? paintFramebuffer(!!entry.rotate) : null;
+
+    var fig = document.createElement('figure');
+    if (canvas) {
+      // Present at native device pixels (the canvas' own width/height); no CSS scaling.
+      canvas.title = 'Click to download PNG';
+      canvas.addEventListener('click', function () { downloadCell(fn, entry, canvas); });
+      fig.appendChild(canvas);
+    } else {
+      fig.className = 'err';
+      var ph = document.createElement('div');
+      ph.style.cssText = 'color:var(--err);font-size:12px;padding:20px;text-align:center;';
+      ph.textContent = (rc === 0) ? 'unknown screen' : 'render failed';
+      fig.appendChild(ph);
+    }
+    var cap = document.createElement('figcaption');
+    cap.innerHTML = '<span class="screen"></span><br><span class="scenario"></span>';
+    cap.querySelector('.screen').textContent = fn;
+    cap.querySelector('.scenario').textContent = entry.name;
+    fig.appendChild(cap);
+    document.getElementById('grid').appendChild(fig);
+  }
+
+  function downloadCell(fn, entry, canvas) {
+    var name = [fn, entry.name, app.displayW + 'x' + app.displayH, app.locale]
+                 .join('__').replace(/[^0-9A-Za-z_.-]+/g, '_');
+    canvas.toBlob(function (blob) {
+      if (!blob) return;
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }, 'image/png');
+  }
+
+  // Render the whole current slice (one locale × one resolution). Cancels any in-flight
+  // render, rebuilds the grid, and fills it progressively (a handful of cells per frame
+  // so the page stays responsive and cells stream in).
+  var BATCH = 6;
+  async function renderSlice() {
+    if (!app.ready) return;
+    var token = ++renderToken;
+    var grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    updateCellWidth();
+
+    var localeLabel = document.getElementById('locale-select').selectedOptions[0];
+    localeLabel = localeLabel ? localeLabel.textContent : app.locale;
+
+    // Fetch + expand this locale's catalog.
+    var root;
+    try {
+      var r = await fetch('assets/scenarios/' + app.locale + '.json' + ASSET_BUST);
+      if (!r.ok) throw new Error('scenarios ' + r.status);
+      root = await r.json();
+    } catch (e) { setStatus('Could not load "' + app.locale + '": ' + e.message, true); return; }
+    if (token !== renderToken) return;
+    var catalog = buildCatalog(root);
+
+    // Flatten to a work list (screens alphabetical; base scenario first per screen).
+    // render_as_landscape screens (portrait-authored, presented rotated to landscape — the
+    // pillarboxed camera chrome) are landscape-ONLY: they have no meaning on a square panel
+    // like the Pi Zero 240×240 and render wrong there. Drop them when the target is square.
+    var isSquare = app.displayW === app.displayH;
+    var cells = [], hiddenLandscapeOnly = 0;
+    Object.keys(catalog).sort().forEach(function (fn) {
+      (catalog[fn] || []).forEach(function (entry) {
+        if (isSquare && entry.rotate) { hiddenLandscapeOnly++; return; }
+        cells.push({ fn: fn, entry: entry });
+      });
+    });
+
+    var res = app.displayW + '×' + app.displayH;
+    for (var i = 0; i < cells.length; i++) {
+      if (token !== renderToken) return;   // superseded by a newer slice
+      setStatus('Rendering ' + (i + 1) + ' / ' + cells.length + '  •  ' + localeLabel + '  •  ' + res);
+      await renderCell(cells[i].fn, cells[i].entry);
+      if (i % BATCH === BATCH - 1) { await raf(); }
+    }
+    if (token !== renderToken) return;
+    setStatus(cells.length + ' screens  •  ' + localeLabel + '  •  ' + res +
+              (hiddenLandscapeOnly ? '  •  ' + hiddenLandscapeOnly + ' landscape-only hidden (square target)' : '') +
+              '   (click any screen to download it as a PNG)');
+  }
+
+  // ---- Deep-link (res + language survive a refresh / shared link) ----
+  function parseUrl() {
+    var p = new URLSearchParams(window.location.search);
+    return { lang: p.get('lang'), res: p.get('res') };
+  }
+  function updateUrl() {
+    var p = new URLSearchParams();
+    if (app.locale) p.set('lang', app.locale);
+    var res = document.getElementById('res-select').value;
+    if (res) p.set('res', res);
+    window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
+  }
+
+  // ---- Engine ready ----
+  window.ssOnReady = function (w, h) {
+    app.displayW = w; app.displayH = h;
+    app.loadScreen         = Module.cwrap('ss_load_screen', 'number', ['string', 'string']);
+    app.setResolution      = Module.cwrap('ss_set_resolution', null, ['number', 'number']);
+    app.setPresentRotation = Module.cwrap('ss_set_present_rotation', null, ['number']);
+    app.getWidth           = Module.cwrap('ss_get_width', 'number', []);
+    app.getHeight          = Module.cwrap('ss_get_height', 'number', []);
+    app.getFramebuffer     = Module.cwrap('ss_get_framebuffer', 'number', []);
+    app.renderNow          = Module.cwrap('ss_render_now', null, []);
+    app.registerManifest   = Module.cwrap('ss_register_manifest', 'number', ['number', 'number']);
+    app.packFiles          = Module.cwrap('ss_pack_files', 'string', ['string']);
+    app.stageBlob          = Module.cwrap('ss_stage_blob', null, ['string', 'number', 'number']);
+    app.stageEndonym       = Module.cwrap('ss_stage_endonym', null, ['string', 'string', 'number', 'number']);
+    app.loadStaged         = Module.cwrap('ss_load_staged', 'number', ['string']);
+    app.ready = true;
+    initUI();
+  };
+  // The engine may re-announce its backing size after a resolution switch.
+  window.ssOnResize = function (w, h) { app.displayW = w; app.displayH = h; };
+
+  // ---- UI wiring ----
+  function initUI() {
+    var localeSel = document.getElementById('locale-select');
+    var resSel    = document.getElementById('res-select');
+    var pending   = parseUrl();
+
+    // Apply a resolution (engine + font px), returning a promise that resolves once the
+    // locale's packs are re-registered at the new px. Deliberately mirrors the playground:
+    // ss_set_resolution resets to landscape and rebuilds the profile with the BAKED fonts,
+    // so re-run the loader before rendering or pack glyphs flash as .notdef boxes.
+    function applyResolution(res) {
+      var p = res.split('x');
+      app.setResolution(parseInt(p[0], 10), parseInt(p[1], 10));
+      return applyLocaleFonts(app.locale);
+    }
+
+    // Full (re)render for a locale: fonts, then the slice.
+    function reload() {
+      applyLocaleFonts(app.locale).then(renderSlice).catch(function (e) {
+        setStatus('Locale "' + app.locale + '": ' + (e && e.message ? e.message : e), true);
+      });
+    }
+
+    localeSel.addEventListener('change', function () {
+      app.locale = this.value; updateUrl(); reload();
+    });
+    resSel.addEventListener('change', function () {
+      updateUrl();
+      applyResolution(this.value).then(renderSlice).catch(function (e) {
+        setStatus('Resolution: ' + (e && e.message ? e.message : e), true);
+      });
+    });
+
+    // Populate the language dropdown from the shared locale index, then do the first
+    // render. Restore res + language from the URL first (font px is per-resolution).
+    fetch('assets/scenarios/locales.json' + ASSET_BUST)
+      .then(function (r) { return r.json(); })
+      .then(function (list) {
+        localeSel.innerHTML = '';   // drop the pre-seeded English; repopulate with the full list
+        var codes = [];
+        (list || []).forEach(function (l) {
+          var o = document.createElement('option'); o.value = l.code; o.textContent = l.name;
+          localeSel.appendChild(o); codes.push(l.code);
+        });
+        // Default to English (the dev reference); a valid ?lang= wins on a deep-link.
+        app.locale = (pending.lang && codes.indexOf(pending.lang) >= 0)
+          ? pending.lang : (codes.indexOf('en') >= 0 ? 'en' : ((list && list[0]) ? list[0].code : 'en'));
+      })
+      .catch(function () {
+        // No locale index (e.g. opened without assets): keep the lone pre-seeded English.
+        localeSel.innerHTML = '<option value="en" selected>English</option>';
+        app.locale = 'en';
+      })
+      .then(function () {
+        localeSel.value = app.locale;
+        // Restore resolution from the URL if valid; else keep the engine's native size.
+        var startRes = app.displayW + 'x' + app.displayH;
+        if (pending.res) {
+          var ok = Array.prototype.some.call(resSel.options, function (o) { return o.value === pending.res; });
+          if (ok) startRes = pending.res;
+        }
+        resSel.value = startRes;
+        updateUrl();
+        return applyResolution(startRes);
+      })
+      .then(renderSlice)
+      .catch(function (e) { setStatus('Startup: ' + (e && e.message ? e.message : e), true); });
+  }
+</script>
+<script async src="index.js"></script>
+</body>
+</html>
