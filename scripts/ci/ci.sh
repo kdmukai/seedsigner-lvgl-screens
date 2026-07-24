@@ -176,6 +176,10 @@ PY
     # (tools/scenarios/localized/) from `build-fontpacks`. No pack build here.
     python3 tools/apps/web_runner/stage_assets.py \
       --dest tools/apps/web_runner/build-wasm
+
+    # The web gallery is a SECOND static shell over the same engine + assets/ (not an
+    # emscripten build). Drop it beside the bundle; assemble-site splits it to /gallery/.
+    cp tools/apps/web_runner/gallery.html tools/apps/web_runner/build-wasm/
     ;;
 
   package-web-runner)
@@ -222,22 +226,38 @@ PY
 
   assemble-site)
     # Assemble the full Pages site from already-built outputs:
-    #   <site>/             screenshot gallery (manifest.json + img/)
-    #   <site>/play/        the web runner playground (index.html)
+    #   <site>/             simple landing page (links Gallery + Playground)
+    #   <site>/gallery/     the on-the-fly web gallery (renders the whole corpus live)
+    #   <site>/play/        the interactive web runner playground
+    # Both apps are the SAME WASM engine (index.{js,wasm}) + the SAME runtime assets/
+    # (scenario catalogs + font packs + locale index); they differ only in their HTML shell
+    # (index.html = playground, gallery.html = gallery). The pre-rendered PNG screenshot
+    # gallery is deliberately NO LONGER deployed — the web gallery renders on the fly, and the
+    # headless screenshot generator's output is now a regression artifact only (see
+    # docs/web-gallery-todo.md + docs/reenable-screenshot-diff-ci-todo.md).
     # Deployed atomically by the official Pages action. Usage: ci.sh assemble-site [DIR]
     SITE_DIR="${1:-site}"
+    BUILD=tools/apps/web_runner/build-wasm
     rm -rf "$SITE_DIR"
-    mkdir -p "$SITE_DIR/play"
-    if [ -d tools/apps/screenshot_generator/screenshots ]; then
-      cp -r tools/apps/screenshot_generator/screenshots/. "$SITE_DIR/"
-    fi
-    # Multi-file web runner: engine (index.{html,js,wasm}) + runtime assets/
-    # (scenario catalogs + font packs + locale index), all served statically.
-    cp tools/apps/web_runner/build-wasm/index.html "$SITE_DIR/play/"
-    cp tools/apps/web_runner/build-wasm/index.js   "$SITE_DIR/play/"
-    cp tools/apps/web_runner/build-wasm/index.wasm "$SITE_DIR/play/"
-    cp -r tools/apps/web_runner/build-wasm/assets  "$SITE_DIR/play/"
-    echo "Assembled site at $SITE_DIR (gallery at /, web runner at /play/)"
+    mkdir -p "$SITE_DIR/play" "$SITE_DIR/gallery"
+
+    # Landing page at the root.
+    cp tools/apps/web_runner/landing.html "$SITE_DIR/index.html"
+
+    # /play/ — the playground shell + engine + assets.
+    cp "$BUILD/index.html" "$SITE_DIR/play/"
+    cp "$BUILD/index.js"   "$SITE_DIR/play/"
+    cp "$BUILD/index.wasm" "$SITE_DIR/play/"
+    cp -r "$BUILD/assets"  "$SITE_DIR/play/"
+
+    # /gallery/ — the gallery shell (as index.html) over a COPY of the same engine + assets,
+    # so each app is a self-contained directory (no cross-directory fetches).
+    cp "$BUILD/gallery.html" "$SITE_DIR/gallery/index.html"
+    cp "$BUILD/index.js"     "$SITE_DIR/gallery/"
+    cp "$BUILD/index.wasm"   "$SITE_DIR/gallery/"
+    cp -r "$BUILD/assets"    "$SITE_DIR/gallery/"
+
+    echo "Assembled site at $SITE_DIR (landing at /, gallery at /gallery/, playground at /play/)"
     ;;
 
   screenshot-diff-summary)

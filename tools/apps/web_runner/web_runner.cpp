@@ -261,6 +261,29 @@ EMSCRIPTEN_KEEPALIVE void ss_scroll(int dy) {
 EMSCRIPTEN_KEEPALIVE int ss_get_width()  { return runner_core::width(); }
 EMSCRIPTEN_KEEPALIVE int ss_get_height() { return runner_core::height(); }
 
+// The RGB565 framebuffer as a byte offset into the WASM heap (Emscripten marshals
+// the pointer as a plain number). width()*height() uint16_t entries, row-major — JS
+// reads them straight from HEAPU16 and expands RGB565 -> RGBA to paint an offscreen
+// 2D canvas. This is the shared capture primitive behind the runner's "download PNG"
+// button and the web gallery's grid: NEVER canvas.toBlob() the live WebGL canvas
+// (returns black without preserveDrawingBuffer). Valid after the first tick(); since
+// ss_load_screen ticks synchronously, the buffer holds the just-loaded screen when
+// this is called right after it. The pixel plane is always the LVGL canvas' NATIVE
+// orientation (portrait for the rotated-present screens) — the caller rotates in JS,
+// mirroring the SDL present in frame().
+EMSCRIPTEN_KEEPALIVE const uint16_t* ss_get_framebuffer() { return runner_core::framebuffer(); }
+
+// Settle the current screen to a fully-painted frame SYNCHRONOUSLY. ss_load_screen ticks
+// once, which lays out and starts the render — but at larger resolutions, or for screens
+// with a load transition, one pass hasn't flushed the whole framebuffer yet (the interactive
+// runner never notices because its rAF present loop finishes the paint over the next frames).
+// The gallery and the download button read the framebuffer directly with no such loop, so
+// they call this first: a few extra timer-handler passes advance a couple of frames' worth
+// of time and complete the paint. Cheap, and a no-op in effect for already-settled screens.
+EMSCRIPTEN_KEEPALIVE void ss_render_now() {
+    for (int i = 0; i < 3; ++i) runner_core::tick(16);
+}
+
 // ---- Locale packs (option B: JS pre-fetches, the shared loader orchestrates) --
 // Packs are NOT baked into the bundle: JavaScript fetches each per-locale file
 // (.ttf packs + runs.bin for complex scripts) at runtime, so a font/translation
